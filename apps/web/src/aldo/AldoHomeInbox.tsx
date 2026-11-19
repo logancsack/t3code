@@ -25,11 +25,19 @@ import { AldoApiError } from "./api";
 import {
   answerAldoThread,
   approveAldoPlan,
+  replyAldoThread,
   type AldoHomeConversation,
   type AldoHomePending,
   type AldoHomeTarget,
 } from "./homeApi";
-import { elapsed, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
+import {
+  elapsed,
+  NEEDS_YOU_LABEL,
+  needsYouKind,
+  repoName,
+  waitingQuestion,
+  waitingReply,
+} from "./home.logic";
 import { useAldoModelName } from "./modelNames";
 import { sendAldoAnswer, useAldoHomeFeed } from "./homeFeed";
 import { PRIMARY, SECONDARY } from "./surface";
@@ -135,7 +143,8 @@ export function NeedsYouCard(props: {
             {model ? <span>· {model}</span> : null}
             <span>· waiting {elapsed(c.at, props.now)}</span>
           </div>
-          {c.summary && kind !== "approval" ? (
+          {/* The form asks the question itself; a thread that only waits is asked in plain words, not with its notes. */}
+          {c.summary && kind !== "approval" && kind !== "question" && kind !== "waiting" ? (
             <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm">{c.summary}</p>
           ) : null}
           <div className="mt-3">
@@ -182,6 +191,20 @@ export function PendingForm(props: {
         onSending={props.onSending}
       />
     );
+  // One that only waits is asked in plain words, its answer sent as a message.
+  if (kind === "waiting") {
+    const pending = waitingQuestion(c);
+    return (
+      <QuestionForm
+        key={pending.requestId}
+        conversation={c}
+        pending={pending}
+        reply={waitingReply}
+        onActed={props.onActed}
+        onSending={props.onSending}
+      />
+    );
+  }
   if (kind === "approval" && c.pending?.kind === "approval")
     return (
       <ApprovalForm
@@ -277,6 +300,8 @@ async function sendAnswer<T>(
 function QuestionForm(props: {
   readonly conversation: AldoHomeConversation;
   readonly pending: Extract<AldoHomePending, { kind: "question" }>;
+  /** Sent as a message instead, in these words: a thread that only waits takes no answer. */
+  readonly reply?: (answer: string) => string;
   readonly onActed: () => void;
   readonly onSending?: (() => void) | undefined;
 }) {
@@ -302,7 +327,13 @@ function QuestionForm(props: {
         props.conversation,
         requestId,
         { answers: given, other },
-        () => answerAldoThread(props.conversation.thread, { requestId, answers: given }),
+        props.reply
+          ? () =>
+              replyAldoThread(
+                props.conversation.thread,
+                props.reply!(String(given[questions[0]!.id])),
+              ).then(() => "sent")
+          : () => answerAldoThread(props.conversation.thread, { requestId, answers: given }),
       );
       toastManager.add({
         type: "success",

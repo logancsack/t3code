@@ -1,5 +1,17 @@
 import type { AldoApproval, AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./homeApi";
 
+/** An agent's own words for what it's blocked on, as a turn ended with them (never a card's text). */
+export const BLOCKED_NOTE =
+  "Dedicated account remains unspecified. Private holdouts and provenance are prepared but unadmitted; production reports unavailable coverage.";
+
+const blocked: NonNullable<AldoHomeConversation["result"]> = {
+  state: "blocked_on_user",
+  doneWhen: [{ criterion: "Run live model comparisons", met: false, evidence: BLOCKED_NOTE }],
+  checked: [],
+  notChecked: [],
+  decided: [],
+};
+
 export function homeActionsFixture(now = Date.now()): AldoHome {
   const at = new Date(now - 8 * 60_000).toISOString();
   const conversation = (
@@ -125,21 +137,31 @@ export function homeActionsFixture(now = Date.now()): AldoHome {
         canRetry: true,
         summary: "The deployment check lost its connection. No automatic retry is scheduled.",
       }),
-      conversation("waiting", "Advisory comparisons", {
-        summary: "Needs your input.",
-        result: {
-          state: "blocked_on_user",
-          doneWhen: [
+      // From an older Aldo: a turn that ended blocked, with only the agent's notes.
+      conversation("waiting", "Plan: production-grade agent practices for Aldo", {
+        summary: BLOCKED_NOTE,
+        result: blocked,
+      }),
+      // From Aldo now: the same turn, asked in plain words (`ask:` + its turn).
+      conversation("turn-ask", "Advisory comparisons", {
+        summary: "Which account should the live model comparisons use?",
+        result: blocked,
+        pending: {
+          kind: "question",
+          requestId: "ask:turn-9",
+          questions: [
             {
-              criterion: "Run advisory comparisons",
-              met: false,
-              evidence:
-                "Choose the dedicated subscription account before running advisory comparisons. The product changes are already live.",
+              id: "ask",
+              header: "",
+              question: "Which account should the live model comparisons use?",
+              multiSelect: false,
+              options: [
+                { label: "Aldo's included model usage (Recommended)", description: "" },
+                { label: "A separate subscription account", description: "" },
+                { label: "Skip comparisons for now", description: "" },
+              ],
             },
           ],
-          checked: [],
-          notChecked: [],
-          decided: [],
         },
       }),
       conversation("paused", "Finish the report", { state: "working", machine: "asleep" }),
