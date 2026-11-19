@@ -89,6 +89,7 @@ it("updates an already-seeded sleeping picker when models change, including acro
     instanceId: "claudeAgent",
     driver: "claudeAgent",
     checkedAt: "2026-11-19T01:00:00Z",
+    usageLimits: { checkedAt: "2026-11-19T01:00:00Z", windows: [] },
     models: [{ slug: "incumbent", name: "Incumbent", isDefault: true }],
   };
   host.template.providers = [provider];
@@ -142,11 +143,27 @@ it("updates an already-seeded sleeping picker when models change, including acro
   expect(cached().providers[0].models).toEqual([...provider.models, renamed]);
   expect(host.seeds).toHaveBeenCalledTimes(3);
 
-  host.template.providers = [{ ...host.template.providers[0], checkedAt: "2026-11-19T04:00:00Z" }];
+  host.template.providers = [
+    {
+      ...host.template.providers[0],
+      checkedAt: "2026-11-19T04:00:00Z",
+      usageLimits: { checkedAt: "2026-11-19T04:00:00Z", windows: [{ usedPercent: 20 }] },
+    },
+  ];
   await sync();
   expect(host.seeds).toHaveBeenCalledTimes(3);
   host.settings = { responseStreamingMode: "turn" };
   await sync();
   expect(cached().settings.responseStreamingMode).toBe("turn");
   expect(cached().providers[0].models[0].isDefault).toBe(true);
+
+  host.template.providers = [
+    {
+      ...host.template.providers[0],
+      checkedAt: "2026-11-19T05:00:00Z",
+      availability: "unavailable",
+    },
+  ];
+  await sync();
+  expect(cached().providers[0].availability).toBe("unavailable");
 });

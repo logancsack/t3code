@@ -172,8 +172,18 @@ async function seedModelsNow(environments: ReadonlyArray<AldoEnvironment>): Prom
   const config = await aldoServerConfigTemplate();
   if (!config) return;
   const settings = getAldoMachineSettings() ?? {};
-  // Recheck models, names and capabilities too, without rereading every cache just for a new check time.
-  const providers = config.providers.map(({ checkedAt: _checkedAt, ...provider }) => provider);
+  // Catalogs and availability invalidate sleeping copies; usage/CLI telemetry does not.
+  const providers = config.providers.map((provider) => ({
+    instanceId: provider.instanceId,
+    driver: provider.driver,
+    displayName: provider.displayName,
+    models: provider.models,
+    enabled: provider.enabled,
+    installed: provider.installed,
+    status: provider.status,
+    auth: provider.auth,
+    availability: provider.availability,
+  }));
   const template = `v3 ${JSON.stringify([providers, settings])}`;
   const ids = environments
     .map((environment) => environment.environmentId as EnvironmentId)
