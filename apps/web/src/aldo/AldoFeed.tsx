@@ -16,7 +16,7 @@ import { useContext, useState, type ReactNode } from "react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { cn } from "~/lib/utils";
 import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
-import { AldoUpdateCard } from "./AldoUpdateCard";
+import { AldoReply } from "./AldoReply";
 import { AldoPaymentLine } from "./AldoPaymentCard";
 import { AldoPlanCard } from "./AldoPlanCard";
 import { AldoFrame } from "./AldoFrame";
@@ -95,7 +95,18 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
   const readAt = useAldoHomeReadAt((s) => s.at);
   const { shipped, finished, routines, scheduled } = props.digest;
   const groups: ReadonlyArray<readonly [string, ReadonlyArray<ReactNode>]> = [
-    ["Scheduled", scheduled.map((e) => <AldoUpdateCard key={e.key} update={e.update} at={e.at} />)],
+    [
+      "Scheduled",
+      scheduled.map((e) => (
+        <AldoReply
+          key={e.key}
+          text={e.message.text}
+          artifacts={e.message.artifacts}
+          update={e.update}
+          at={e.at}
+        />
+      )),
+    ],
     [
       "Shipped",
       shipped.map((e) => (

@@ -41,6 +41,7 @@ export type AldoFeedEvent =
       readonly key: string;
       readonly at: string;
       readonly update: AldoHomeUpdate;
+      readonly message: Pick<AldoAssistantMessage, "text" | "artifacts">;
     }
   | {
       readonly kind: "finished";
@@ -100,7 +101,9 @@ export type AldoFeedEvent =
 
 /** Saved scheduled turns are status, one latest entry per thread across the whole conversation. */
 export function scheduledEvents(
-  messages: ReadonlyArray<Pick<AldoAssistantMessage, "text" | "at" | "update" | "call" | "source">>,
+  messages: ReadonlyArray<
+    Pick<AldoAssistantMessage, "text" | "at" | "update" | "call" | "source" | "artifacts">
+  >,
 ): AldoFeedEvent[] {
   const latest = new Map<string, AldoFeedEvent>();
   for (const message of messages) {
@@ -111,7 +114,13 @@ export function scheduledEvents(
       : update.id;
     const previous = latest.get(key);
     if (!previous || Date.parse(message.at) >= Date.parse(previous.at))
-      latest.set(key, { kind: "scheduled", key: `scheduled:${key}`, at: message.at, update });
+      latest.set(key, {
+        kind: "scheduled",
+        key: `scheduled:${key}`,
+        at: message.at,
+        update,
+        message,
+      });
   }
   return [...latest.values()];
 }
