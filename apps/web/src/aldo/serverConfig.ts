@@ -121,21 +121,22 @@ export function installAldoServerConfigCapture(): void {
 
 async function template(): Promise<EncodedConfig | null> {
   capture();
-  if (Date.now() - fetchedAt > 60_000) fetchedFromAldo = null;
-  fetchedFromAldo ??= fetchAldoServerConfig()
-    .then((config) => {
-      fetchedAt = Date.now();
-      if (!config) return;
-      const reported = config as EncodedConfig;
-      latest = {
-        ...reported,
-        providers: mergeProviderSnapshots(latest?.providers ?? [], reported.providers),
-      };
-    })
-    .catch(() => {
-      fetchedFromAldo = null;
-    });
-  await fetchedFromAldo;
+  if (!fetchedFromAldo || Date.now() - fetchedAt > 60_000) {
+    // Count from the request, so concurrent callers share it and failures retry after a minute.
+    fetchedAt = Date.now();
+    fetchedFromAldo = fetchAldoServerConfig()
+      .then((config) => {
+        if (!config) return;
+        const reported = config as EncodedConfig;
+        latest = {
+          ...reported,
+          providers: mergeProviderSnapshots(latest?.providers ?? [], reported.providers),
+        };
+      })
+      .catch(() => undefined);
+  }
+  // A usable catalog must not hold up a new thread while its optional refresh runs.
+  if (!latest) await fetchedFromAldo;
   return latest;
 }
 

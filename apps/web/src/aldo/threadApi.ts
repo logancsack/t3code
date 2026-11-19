@@ -14,9 +14,11 @@ import {
   aldoHeldCommand,
 } from "./held.logic";
 
-/** The newest T3 server config Aldo has for the user (see /api/models). */
+/** The newest T3 server config Aldo has for the user; an optional read, bounded even if its body stalls. */
 export async function fetchAldoServerConfig(): Promise<unknown> {
-  const { config } = await api<{ config: unknown }>("/api/models");
+  const { config } = await api<{ config: unknown }>("/api/models", {
+    signal: AbortSignal.timeout(10_000),
+  });
   return config;
 }
 
