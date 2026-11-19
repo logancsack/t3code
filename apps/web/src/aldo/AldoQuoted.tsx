@@ -82,7 +82,7 @@ export function Quoted(props: {
           aria-expanded={whole}
           className={cn(
             FOCUS,
-            "self-start rounded-sm font-medium text-[13px] text-muted-foreground leading-5 hover:text-foreground",
+            "inline-flex min-h-11 self-start items-center rounded-sm px-1 font-medium text-[13px] text-muted-foreground leading-5 hover:text-foreground",
           )}
           onClick={() => setWhole((was) => !was)}
         >

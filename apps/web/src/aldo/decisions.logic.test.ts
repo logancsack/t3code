@@ -434,3 +434,28 @@ it("takes what the user dismissed out of every list and count, and a different a
   const next = { ...question, chatDecision: { id: "request-two", dismissed: false } };
   expect(aldoWaitingCount(home({ conversations: [next] }), NOW)).toBe(1);
 });
+
+it("keeps the real merge action for a user-owned release, without masking a live question", () => {
+  const c = conversation({
+    state: "waiting",
+    machine: "running",
+    progress: {
+      execution: "replied",
+      verdict: "finished",
+      next: { owner: "you", kind: "release" },
+      label: "Release held for you",
+      detail: "Waiting for your merge decision.",
+    },
+  });
+  expect(
+    aldoDecisions(home({ conversations: [c], pullRequests: [pullRequest()] }), NOW).map(
+      (d) => d.kind,
+    ),
+  ).toEqual(["merge"]);
+  const asking = { ...c, pending: question.pending! };
+  expect(
+    aldoDecisions(home({ conversations: [asking], pullRequests: [pullRequest()] }), NOW).map(
+      (d) => d.kind,
+    ),
+  ).toEqual(["question"]);
+});

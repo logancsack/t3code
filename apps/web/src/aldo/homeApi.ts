@@ -59,6 +59,8 @@ export interface AldoChatDecision {
 }
 
 export interface AldoHomeConversation {
+  /** New servers accept failed-thread retries through Continue. */
+  readonly canRetry?: true;
   readonly progress?: {
     readonly execution: "working" | "replied" | "failed" | "stopped" | "unknown";
     readonly verdict: "finished" | "unfinished" | "blocked" | "unknown";
@@ -707,7 +709,7 @@ export async function approveAldoPlan(
 }
 
 /**
- * Carries on a thread that paused or stalled: its computer wakes and its agent
+ * Carries on a thread that paused or stalled (or failed, when `canRetry`): its computer wakes and its agent
  * picks up where it stopped (or gets the message of the user's it was holding).
  * Refused (409) if the thread isn't paused, as Aldo reads it now.
  */
@@ -717,6 +719,15 @@ export async function continueAldoThread(target: AldoHomeTarget): Promise<string
     postedKept({ action: "continue", t3ThreadId: target.threadId }),
   );
   return status;
+}
+
+/** A direct reply to a request made in prose, through the thread view's message route.
+ * Accepted means kept for delivery, not that the agent has acted on it. */
+export async function replyAldoThread(target: AldoHomeTarget, text: string): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(target.environmentId)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ t3ThreadId: target.threadId, text }),
+  });
 }
 
 /** A thread's latest turns as Aldo keeps them (its last three: the messages, and what it waits on). */

@@ -66,7 +66,7 @@ export function ApprovalsSection(props: {
 export function DecidedApproval(props: { readonly approval: AldoApproval; readonly now: number }) {
   const a = props.approval;
   return (
-    <li className="flex list-none items-start gap-2.5 rounded-lg px-2 py-1.5">
+    <li role="status" className="flex list-none items-start gap-2.5 rounded-lg px-2 py-1.5">
       <Badge variant={a.status === "approved" ? "success" : "outline"} size="sm">
         {approvalOutcome(a)}
       </Badge>

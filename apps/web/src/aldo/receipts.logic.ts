@@ -17,6 +17,8 @@ export function receiptText(
   choice: AldoChoice,
   said: string | null = null,
 ): string {
+  if (choice.kind === "reply" || choice.kind === "continue")
+    return said ?? "Request kept for delivery";
   switch (decision.kind) {
     case "aldo-approval": {
       const a = decision.approval;
