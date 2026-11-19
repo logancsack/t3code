@@ -638,6 +638,39 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           T3_ACP_EMIT_FOREIGN_SESSION_UPDATES: "1",
         }),
       );
+      const trailingChunks = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
+      let receivedTail = 0;
+      let drainedPrompt = 0;
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((input) =>
+          makeRuntime(input).pipe(
+            Effect.map((runtime) => ({
+              ...runtime,
+              getEvents: () =>
+                runtime.getEvents().pipe(
+                  Stream.tap((event) => {
+                    const tail = trailingChunks[receivedTail];
+                    if (event._tag !== "ContentDelta" || event.text !== "ck" || !tail)
+                      return Effect.void;
+                    receivedTail += 1;
+                    return Deferred.succeed(tail, undefined);
+                  }),
+                ),
+              drainEvents: Effect.suspend(() => {
+                const tail = trailingChunks[drainedPrompt++];
+                // The mock emits completion before its trailing writes. A queue
+                // drain cannot wait for bytes the OS has not delivered yet: make
+                // those updates queued before testing their real drain/settlement.
+                return tail
+                  ? Deferred.await(tail).pipe(Effect.andThen(runtime.drainEvents))
+                  : runtime.drainEvents;
+              }),
+            })),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
       const adapter = yield* makeTestAdapter(wrapperPath);
 
       const runtimeEvents: ProviderRuntimeEvent[] = [];
@@ -675,9 +708,6 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       });
 
       yield* Deferred.await(turnCompleted);
-      for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
       const readySessions = yield* adapter.listSessions();
       const readySession = readySessions.find((session) => session.threadId === threadId);
       const turnCompletedEvent = runtimeEvents.find(
