@@ -41,7 +41,12 @@ vi.mock("./AldoAssistant", async (original) => ({
   AldoCaption: () => null,
 }));
 vi.mock("./AldoHomeBoard", () => ({ HealthStrip: () => null }));
-vi.mock("./AldoLiveCard", () => ({ AldoOpenContext: createContext(null) }));
+vi.mock("./AldoLiveCard", () => ({
+  AldoOpenContext: createContext(null),
+  AldoThreadCard: ({ target }: { target: { environmentId: string; threadId: string } }) => (
+    <div data-test-live={`${target.environmentId}/${target.threadId}`}>Live work</div>
+  ),
+}));
 vi.mock("./AldoPresence", () => ({ AldoPresence: () => null }));
 vi.mock("./AldoHomeInbox", () => ({
   ThreadLink: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -119,6 +124,7 @@ const home = (overrides: Partial<AldoHome> = {}) =>
     actions: [],
     approvals: [],
     plans: [],
+    upcoming: [],
     ...overrides,
   }) as unknown as AldoHome;
 let root: Root;
@@ -983,4 +989,111 @@ it("keeps a legacy failure's original notes and links in its single Retry card",
   expect(details.querySelector("a")?.getAttribute("href")).toBe(
     "https://github.com/acme/guide/pull/7",
   );
+});
+
+it.each(["native", "turn-ask", "fallback"] as const)(
+  "dedupes %s by conversation, restores snoozed waits and shows the new working turn",
+  async (kind) => {
+    const target = { environmentId: "aldo-1", threadId: "t1" };
+    const pending =
+      kind === "fallback"
+        ? undefined
+        : {
+            kind: "question" as const,
+            requestId: kind === "turn-ask" ? "ask:turn-1" : "native-question",
+            questions: [
+              {
+                id: "scope",
+                header: "",
+                question: "Which pages?",
+                multiSelect: false,
+                options: [
+                  { label: "Home", description: "" },
+                  { label: "All pages", description: "" },
+                ],
+              },
+            ],
+          };
+    const c = {
+      ref: "work",
+      title: "Prepare the guide",
+      repos: [],
+      branch: "",
+      machine: "asleep",
+      state: "waiting" as const,
+      at: at(2),
+      thread: target,
+      ...(pending ? { pending } : {}),
+    };
+    const render = async (conversation: typeof c) => {
+      const read = home({ conversations: [conversation] });
+      backend.home = read;
+      await act(async () => root.render(<Page home={read} />));
+    };
+    useAldoAssistant.setState({
+      entries: [
+        {
+          kind: "action",
+          id: "start-work",
+          tool: "start_thread",
+          label: "Started work",
+          failed: false,
+          open: target,
+        },
+      ],
+    });
+    await render(c);
+    expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(1);
+    expect(container.querySelector("[data-test-live]")).toBeNull();
+    await render({ ...c, snoozedUntil: at(50) } as typeof c);
+    expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(
+      kind === "native" ? 1 : 0,
+    );
+    expect(container.querySelectorAll("[data-test-live]")).toHaveLength(kind === "native" ? 0 : 1);
+    await render({
+      ...c,
+      state: "working",
+      machine: "running",
+      pending: undefined,
+    } as unknown as typeof c);
+    expect(container.querySelector("[data-aldo-decision]")).toBeNull();
+    expect(container.querySelectorAll("[data-test-live]")).toHaveLength(1);
+  },
+);
+
+it("restores the live card once an answer receipt replaces the decision, before Home refreshes", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const c = {
+    ref: "work",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "waiting",
+    at: at(2),
+    thread: target,
+  };
+  const read = home({ conversations: [c] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "action",
+        id: "start-work",
+        tool: "start_thread",
+        label: "Started work",
+        failed: false,
+        open: target,
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  const key = container.querySelector("[data-aldo-decision]")!.getAttribute("data-aldo-decision")!;
+  await act(async () =>
+    useAldoReceipts.setState({
+      receipts: [{ key, at: at(3), text: "You answered", thread: target }],
+    }),
+  );
+  expect(container.querySelector("[data-aldo-decision]")).toBeNull();
+  expect(container.querySelectorAll("[data-test-live]")).toHaveLength(1);
 });

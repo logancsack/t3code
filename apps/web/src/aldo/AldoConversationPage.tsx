@@ -342,16 +342,16 @@ export function AldoConversationPage(props: {
       home ? computerRequests(home).filter((c) => pending.some((item) => item.key === c.key)) : [],
     [home, pending],
   );
-  const decisionThreads = useMemo(
-    () => [
+  const decisionThreads = useMemo(() => {
+    const rendered = new Set(decisions.map((d) => d.key));
+    return [
       ...chatDecisions.flatMap((d) => {
-        const target = decisionThread(d);
+        const target = rendered.has(d.key) ? decisionThread(d) : null;
         return target ? [target] : [];
       }),
       ...computers.map((c) => c.conversation.thread),
-    ],
-    [chatDecisions, computers],
-  );
+    ];
+  }, [chatDecisions, decisions, computers]);
   const placed = useMemo(
     () => [...decisions, ...computers.map(({ key, at }) => ({ key, at }))],
     [decisions, computers],
