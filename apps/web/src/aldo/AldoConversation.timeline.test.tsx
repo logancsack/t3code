@@ -17,6 +17,7 @@ const backend = vi.hoisted(() => ({
   decide: vi.fn(),
   computer: vi.fn(),
   refresh: vi.fn(),
+  home: null as import("./homeApi").AldoHome | null,
 }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: vi.fn,
@@ -61,7 +62,8 @@ vi.mock("./morph", () => ({
 }));
 vi.mock("./homeFeed", () => ({
   refreshAldoHome: backend.refresh,
-  useAldoHomeFeed: (select: (s: { home: null }) => unknown) => select({ home: null }),
+  useAldoHomeFeed: (select: (s: { home: AldoHome | null }) => unknown) =>
+    select({ home: backend.home }),
   useAldoHomeReadAt: (select: (s: { at: number }) => unknown) => select({ at: 0 }),
 }));
 vi.mock("./briefFeed", () => ({
@@ -171,6 +173,7 @@ beforeEach(async () => {
   Element.prototype.scrollIntoView = vi.fn();
   useAldoAssistant.setState({ entries: [], historyLoaded: true, replying: false });
   useAldoReceipts.setState({ receipts: [] });
+  backend.home = null;
   backend.tap.mockReset();
   backend.computer.mockReset().mockResolvedValue({});
   backend.refresh.mockReset().mockResolvedValue(undefined);
@@ -291,6 +294,7 @@ it("answers a question in scrollback and leaves its receipt before later message
     machine: "running",
     at: at(2),
     stateAt: at(2),
+    startedAt: at(1),
     pending: {
       kind: "question" as const,
       requestId: "scope",
@@ -311,6 +315,7 @@ it("answers a question in scrollback and leaves its receipt before later message
   });
   const card = container.querySelector('[data-aldo-decision="question:launch:scope"]')!;
   before(card, textElement("How long will it take?"));
+  expect(container.querySelectorAll("[data-aldo-live-card]")).toHaveLength(0);
   await act(async () =>
     [...card.querySelectorAll("button")]
       .find((b) => b.textContent?.startsWith("Include pricing"))!
@@ -351,14 +356,16 @@ it("lists the links a thread's result ends with under its words, and leaves Aldo
     root.render(<Page home={home()} />);
     await import("./AldoArtifacts");
   });
-  expect(container.querySelector("[data-aldo-artifacts]")).not.toBeNull();
-  const row = container.querySelector<HTMLAnchorElement>("[data-aldo-artifacts] a")!;
+  const card = container.querySelector("[data-aldo-update]")!;
+  const row = card.querySelector<HTMLAnchorElement>("details a")!;
   expect(row.href).toBe("https://github.com/acme/shop/pull/7");
-  expect(row.textContent).toBe("acme/shop #7Pull request");
-  expect(textElement("The checkout fix is live.\nOpen the thread")).toBeDefined();
+  expect(card.querySelector("details")?.open).toBe(false);
+  expect(card.querySelector("p")?.textContent).toBe("The checkout fix is live.");
   expect(container.textContent).not.toContain("Pull request: https://");
-  expect(textElement("Docs: https://acme.example/docs")).toBeDefined();
-  expect(container.querySelectorAll("[data-aldo-artifacts]")).toHaveLength(1);
+  expect(container.querySelector("p a[href='https://acme.example/docs']")?.textContent).toBe(
+    "acme.example",
+  );
+  expect(container.querySelectorAll("[data-aldo-artifacts]")).toHaveLength(0);
 });
 
 it("shows a saved approval outcome even when no messages are loaded", async () => {
@@ -440,7 +447,7 @@ it("jumps to a single older plan in a partial timeline, including on a phone wit
       />,
     ),
   );
-  expect(pill().textContent).toBe("One needs you");
+  expect(pill().textContent).toBe("Review 1 request");
   const card = container.querySelector<HTMLElement>('[data-aldo-plan="plan-1"]')!;
   before(card, textElement("A recent message"));
   const scroll = vi.spyOn(card, "scrollIntoView");
@@ -455,7 +462,7 @@ it("lists pending kinds and times, then closes and reveals the selected inline c
   await act(async () =>
     root.render(<Page home={home({ plans: [plan], approvals: [approval()] })} />),
   );
-  expect(pill().textContent).toBe("Two need you");
+  expect(pill().textContent).toBe("Review 2 requests");
   const card = container.querySelector<HTMLElement>('[data-aldo-decision="aldo:draft-1"]')!;
   const scroll = vi.spyOn(card, "scrollIntoView");
   await click(pill());
@@ -499,7 +506,7 @@ it("updates the open list live and returns to single-item behavior when only one
       <Page home={home({ plans: [plan], approvals: [{ ...a, status: "approved" }, b] })} />,
     ),
   );
-  expect(pill().textContent).toBe("Two need you");
+  expect(pill().textContent).toBe("Review 2 requests");
   expect(dialog()!.querySelectorAll("li")).toHaveLength(2);
   expect(dialog()!.textContent).not.toContain("Launch update");
   await act(async () =>
@@ -516,7 +523,7 @@ it("updates the open list live and returns to single-item behavior when only one
     ),
   );
   await vi.waitFor(() => expect(dialog()).toBeNull());
-  expect(pill().textContent).toBe("One needs you");
+  expect(pill().textContent).toBe("Review 1 request");
   await click(pill());
   expect(dialog()).toBeNull();
   await act(async () => root.render(<Page home={home()} />));
@@ -592,7 +599,7 @@ it.each(["Start · 310 credits/hour", "Decline"])(
     });
     message("Please keep the captions readable", 3);
     await act(async () => root.render(<Page home={read} />));
-    expect(pill().textContent).toBe("One needs you");
+    expect(pill().textContent).toBe("Review 1 request");
     const card = container.querySelector<HTMLElement>("[data-aldo-computer-request]")!;
     before(card, textElement("Please keep the captions readable"));
     expect(card.textContent).toContain("310 credits an hour");
@@ -645,4 +652,95 @@ it("shows a call as its card where it began, and keeps its lines and actions off
   expect(container.textContent).not.toContain("Started a thread");
   before(textElement("Morning"), card);
   before(card, textElement("Thanks, and remind me Wednesday"));
+});
+
+it("offers the request shortcut only while the actionable card is outside the conversation viewport", async () => {
+  let report: IntersectionObserverCallback | undefined;
+  let observed: Element | undefined;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        report = callback;
+      }
+      observe(node: Element) {
+        observed = node;
+      }
+      disconnect() {}
+    },
+  );
+  message("A later message", 15);
+  await act(async () => root.render(<Page home={home({ plans: [plan] })} />));
+  expect(pill().textContent).toBe("Review 1 request");
+  expect(observed).toBe(container.querySelector('[data-aldo-plan="plan-1"]'));
+  await act(async () =>
+    report!(
+      [{ target: observed!, intersectionRatio: 1 } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
+  expect(container.querySelector("[data-aldo-needs-you]")).toBeNull();
+  await act(async () =>
+    report!(
+      [{ target: observed!, intersectionRatio: 0 } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
+  expect(pill().textContent).toBe("Review 1 request");
+});
+
+it("keeps an automated ask from duplicating its action card or reviving it after an answer", async () => {
+  const read = home();
+  backend.home = {
+    ...read,
+    conversations: [
+      {
+        ref: "ask",
+        thread: { environmentId: "aldo-1", threadId: "t1" },
+        title: "Choose the layout",
+        repos: [],
+        branch: "",
+        machine: "asleep",
+        state: "waiting",
+        at: at(1),
+      },
+    ],
+  };
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(2),
+        text: "I need your answer before I can continue.\n\nThread: https://aldo.example/aldo-1/t1",
+        update: {
+          id: "ask",
+          thread: { environmentId: "aldo-1", threadId: "t1" },
+          title: "Choose the layout",
+          state: "needs-you",
+          summary: "I need your answer before I can continue.",
+          checked: [],
+          notChecked: [],
+          links: [],
+        },
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+  backend.home = {
+    ...backend.home,
+    conversations: backend.home!.conversations.map((c) => ({ ...c, state: "working" })),
+  };
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+});
+it("shows a multi-paragraph Home answer as one reply", async () => {
+  const text = "I’ve prepared the draft.\n\nYour source notes are included.";
+  message(text, 1, "assistant");
+  await act(async () => root.render(<Page home={home()} />));
+  expect([...container.querySelectorAll("p")].filter((p) => p.textContent === text)).toHaveLength(
+    1,
+  );
+  expect(container.textContent).not.toContain("Checks reported");
 });

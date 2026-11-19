@@ -42,7 +42,13 @@ import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
-import { aldoChatDecisions, aldoWaitingCount, decisionAt, pausedInChat } from "./decisions.logic";
+import {
+  aldoChatDecisions,
+  aldoWaitingCount,
+  decisionAt,
+  decisionThread,
+  pausedInChat,
+} from "./decisions.logic";
 import { AldoComputerRequest } from "./AldoComputerRequest";
 import { computerRequests, dismissedNeedsYou, pendingNeedsYou } from "./needsYou.logic";
 import { NeedsYouPill } from "./NeedsYouPill";
@@ -299,10 +305,11 @@ export function AldoConversationPage(props: {
   );
   // Every interactive card uses its creation time, including decided approvals
   // supplied by persisted history. Local receipts replace pending cards in place.
+  const chatDecisions = useMemo(() => (home ? aldoChatDecisions(home, now) : []), [home, now]);
   const decisions = useMemo(() => {
     if (!home) return [];
     return [
-      ...aldoChatDecisions(home, now)
+      ...chatDecisions
         .filter(
           (d) =>
             !receipts.some((r) => r.key === d.key) &&
@@ -318,7 +325,7 @@ export function AldoConversationPage(props: {
         .filter((c) => !c.computers?.some((computer) => computer.status === "asked"))
         .map((c) => ({ key: `paused:${c.ref}`, at: c.stateAt ?? c.at })),
     ];
-  }, [home, now, receipts]);
+  }, [home, now, receipts, chatDecisions]);
   const pending = useMemo(
     () =>
       home
@@ -335,6 +342,16 @@ export function AldoConversationPage(props: {
       home ? computerRequests(home).filter((c) => pending.some((item) => item.key === c.key)) : [],
     [home, pending],
   );
+  const decisionThreads = useMemo(
+    () => [
+      ...chatDecisions.flatMap((d) => {
+        const target = decisionThread(d);
+        return target ? [target] : [];
+      }),
+      ...computers.map((c) => c.conversation.thread),
+    ],
+    [chatDecisions, computers],
+  );
   const placed = useMemo(
     () => [...decisions, ...computers.map(({ key, at }) => ({ key, at }))],
     [decisions, computers],
@@ -345,7 +362,7 @@ export function AldoConversationPage(props: {
         <>
           <AldoUpNext home={home} now={now} only={keys} placedAt={placedAt} />
           {/* At the end, under what needs the user: what finished and hasn't landed yet. */}
-          {keys === null ? <AldoFinished home={home} now={now} /> : null}
+          {keys === null ? <AldoFinished home={home} now={now} told={told} /> : null}
           {computers
             .filter((c) => keys?.includes(c.key))
             .map((request) => (
@@ -353,7 +370,7 @@ export function AldoConversationPage(props: {
             ))}
         </>
       ) : null,
-    [home, now, computers],
+    [home, now, computers, told],
   );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // What finished and hasn't landed stays in view after its lines have left the feed.
@@ -414,7 +431,12 @@ export function AldoConversationPage(props: {
   }, []);
 
   const conversation = (
-    <AldoConversation feed={feed} decisions={placed} renderDecisions={renderDecisions} />
+    <AldoConversation
+      feed={feed}
+      decisions={placed}
+      decisionThreads={decisionThreads}
+      renderDecisions={renderDecisions}
+    />
   );
   const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6 xl:max-w-[720px] 2xl:max-w-[780px]";
   // The empty page's few things to say (the first run's starters say them instead);

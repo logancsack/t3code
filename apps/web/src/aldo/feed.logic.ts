@@ -188,7 +188,7 @@ export function feedEvents(
       ];
     });
   const threads: AldoFeedEvent[] = home.conversations.flatMap((c) => {
-    const start = isFinished(c) ? null : startOf(c);
+    const start = isFinished(c) || told(c, c.stateAt ?? c.at) ? null : startOf(c);
     return start ? [{ kind: "thread", key: `thread:${c.ref}`, at: start, conversation: c }] : [];
   });
   const shipped: AldoFeedEvent[] = merged

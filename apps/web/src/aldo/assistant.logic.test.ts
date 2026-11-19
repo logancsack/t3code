@@ -574,9 +574,9 @@ describe("linkRuns", () => {
       ),
     ).toEqual([
       { text: "Your cartoon is ready.\n\nShared link: ", at: 0 },
-      { text: "https://aldo.computer/s/abc", at: 37, href: "https://aldo.computer/s/abc" },
+      { text: "aldo.computer", at: 37, href: "https://aldo.computer/s/abc" },
       { text: ".\nThread: ", at: 64 },
-      { text: "https://aldo.computer/aldo-x/t", at: 74, href: "https://aldo.computer/aldo-x/t" },
+      { text: "aldo.computer", at: 74, href: "https://aldo.computer/aldo-x/t" },
     ]);
   });
 
@@ -607,8 +607,8 @@ describe("linkRuns", () => {
 
   it("leaves words without links, and other schemes, as they are", () => {
     expect(linkRuns("Nothing to open here.")).toEqual([{ text: "Nothing to open here.", at: 0 }]);
-    expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
-      { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
+    expect(linkRuns("Not javascript:alert(1) or file:///tmp/test")).toEqual([
+      { text: "Not javascript:alert(1) or file:///tmp/test", at: 0 },
     ]);
   });
 });

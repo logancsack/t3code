@@ -1,3 +1,5 @@
+import { AldoUpdateCard } from "./AldoUpdateCard";
+import { legacyHomeUpdate, technicalUpdateLink, type AldoHomeUpdate } from "./homeUpdate.logic";
 // Talking to Aldo: the mark to talk, the composer to type (with a few things to
 // say when it's empty), and the conversation: what was said, and what Aldo
 // did, the newest action about each thread as a live card (AldoLiveCard.tsx).
@@ -12,7 +14,6 @@ import {
   ArrowUpIcon,
   ArrowUpRightIcon,
   AudioLinesIcon,
-  ChevronRightIcon,
   ImageIcon,
   MicIcon,
   MicOffIcon,
@@ -42,7 +43,7 @@ import {
 import { useIsMobile, useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
 import { AldoBriefEntry } from "./AldoBrief";
-import { OpenThread, threadLink, WorkstreamGlyph } from "./AldoWorkstream";
+import { threadLink } from "./AldoWorkstream";
 import { AldoFeedRun } from "./AldoFeed";
 import { showAldoCall } from "./callView";
 import { AldoThreadCard } from "./AldoLiveCard";
@@ -50,7 +51,6 @@ import { AldoFrame } from "./AldoFrame";
 import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
   ACTION_LABELS,
-  closingThread,
   linkRuns,
   liveCardIndexes,
   onCall,
@@ -78,12 +78,9 @@ import { AldoAttachMenu, AldoFileChip } from "./AldoAttach";
 import { aldoAttachmentId } from "./held.logic";
 import { uploadAldoHomeFile } from "./threadApi";
 import { randomUUID } from "~/lib/utils";
-import { useAldoArrive, useAldoArrived } from "./arrive";
-import { beatDelay, splitBeats } from "./beats.logic";
+import { useAldoArrive } from "./arrive";
 import { sameTarget } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
-import type { AldoHomeConversation } from "./homeApi";
-import { WORKSTREAM_WORDS, workstreamMeta, workstreamState } from "./workstream.logic";
 import { voicePresenceState } from "./presence.logic";
 import { acknowledgeAldo, setAldoReading } from "./presenceReactions";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
@@ -668,6 +665,7 @@ export function AldoConversation(
     readonly feed?: ReadonlyArray<AldoFeedEvent>;
     readonly decisions?: ReadonlyArray<AldoPlaceable>;
     /** Cards in the timeline, or null for the conversation's walkthrough control. */
+    readonly decisionThreads?: ReadonlyArray<AldoOpenTarget>;
     readonly renderDecisions?: (
       keys: ReadonlyArray<string> | null,
       placedAt: ReadonlyMap<string, string>,
@@ -680,7 +678,16 @@ export function AldoConversation(
   const replying = useAldoAssistant((s) => s.replying);
   const planPick = useAldoAssistant((s) => s.planPick);
   const since = props.since ?? 0;
-  const live = useMemo(() => liveCardIndexes(all), [all]);
+  const live = useMemo(() => {
+    const indexes = new Set(liveCardIndexes(all));
+    for (const index of indexes) {
+      const entry = all[index];
+      const target = entry?.kind === "action" ? entry.open : undefined;
+      if (target && props.decisionThreads?.some((other) => sameTarget(other, target)))
+        indexes.delete(index);
+    }
+    return indexes;
+  }, [all, props.decisionThreads]);
   const entries = since > 0 ? all.slice(since) : all;
   const items = useMemo(() => {
     const shown = entries.flatMap((entry, index) =>
@@ -688,14 +695,14 @@ export function AldoConversation(
         ? [entry.open]
         : [],
     );
-    const feed = dedupeLiveCards(props.feed ?? [], shown);
+    const feed = dedupeLiveCards(props.feed ?? [], [...shown, ...(props.decisionThreads ?? [])]);
     return interleave(
       entries,
       feed,
       (entry) => (onCall(entry) ? null : entry.kind === "action" ? null : entry.at),
       props.decisions,
     ).filter((item) => item.kind !== "entry" || !onCall(item.entry));
-  }, [entries, props.feed, props.decisions, live, since]);
+  }, [entries, props.feed, props.decisions, props.decisionThreads, live, since]);
   const shownCount = items.length;
   const placedAt = useMemo(
     () => new Map((props.decisions ?? []).map((card) => [card.key, card.at])),
@@ -764,7 +771,6 @@ export function AldoConversation(
             }
             entry={entry}
             live={live.has(since + index)}
-            beats={props.feed !== undefined}
           />,
           // A request kept until a plan's chosen: the plan picker under it.
           planPick?.entry === entry ? (
@@ -797,12 +803,9 @@ function dayLabel(iso: string): string {
 function ConversationEntry({
   entry,
   live,
-  beats,
 }: {
   readonly entry: AldoConversationEntry;
   readonly live: boolean;
-  /** Replies that arrive come in beats: on the home screen's page, not the bar, which shows the end at once. */
-  readonly beats?: boolean;
 }) {
   if (entry.kind === "action") {
     const label = (
@@ -848,142 +851,87 @@ function ConversationEntry({
   if (entry.kind === "call") return <AldoCallCard call={entry} />;
   if (entry.role === "user") return <UserMessage entry={entry} />;
   if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
-  return <AldoReply text={entry.text} beats={beats === true} artifacts={entry.artifacts} />;
+  return (
+    <AldoReply text={entry.text} at={entry.at} update={entry.update} artifacts={entry.artifacts} />
+  );
 }
 
 /** What a reply shows under its words: loaded once one does, off the first screen. */
 const AldoArtifacts = lazy(() => import("./AldoArtifacts"));
 
-/**
- * What Aldo said, in bubbles: a paragraph each, a beat apart with the dots
- * between when it's just arrived on the page (`beats`; beats.logic.ts), all at
- * once from history, in the bar and under reduced motion. A result about a
- * thread carries that thread's name and where it stands over its words, a tap
- * into it, rather than its address. What it shows (`artifacts`) follows its
- * words, the width of the conversation, without the lines that only link to it;
- * the other links a result ends with are listed with it.
- */
+/** One logical reply, with task evidence and deliverables kept together. */
 function AldoReply(props: {
   readonly text: string;
-  readonly beats?: boolean;
+  readonly at?: string | undefined;
+  readonly update?: AldoHomeUpdate | undefined;
   readonly artifacts?: ReadonlyArray<AldoArtifact> | undefined;
 }) {
-  const arrived = useAldoArrived();
-  const still = useMediaQuery("(prefers-reduced-motion: reduce)");
   const artifacts = props.artifacts ?? [];
-  const closing = closingThread(props.text);
-  // The thread it's about, as the home screen reads it: none for an older Aldo or a thread since deleted.
+  const update = props.update ?? legacyHomeUpdate(props.text);
+  const target = update?.thread;
   const about = useAldoHomeFeed((s) =>
-    closing ? s.home?.conversations.find((c) => sameTarget(c.thread, closing.thread)) : undefined,
+    target ? s.home?.conversations.find((c) => sameTarget(c.thread, target)) : undefined,
   );
-  const kept = withoutShownLinks(closing?.text ?? props.text, artifacts);
-  const { text, links } = closing ? linkRows(kept) : { text: kept, links: [] };
-  const said = useMemo(() => splitBeats(text), [text]);
-  // Nothing but the thread's link, and nothing known about it: the link alone.
-  const linkOnly = said.length === 0 && closing !== null && !about;
-  const beats = useMemo(() => (linkOnly ? [""] : said), [linkOnly, said]);
-  const [shown, setShown] = useState(() =>
-    props.beats && arrived && !still ? 1 : Number.POSITIVE_INFINITY,
+  const following = useAldoHomeFeed((s) =>
+    target &&
+    s.home?.pullRequests.some(
+      (pr) => sameTarget(pr.thread, target) && ["checks-running", "deploying"].includes(pr.stage),
+    )
+      ? "I’m checking the update before it goes live."
+      : undefined,
   );
-  useEffect(() => {
-    if (shown >= beats.length) return;
-    const timer = window.setTimeout(() => setShown((n) => n + 1), beatDelay(beats[shown]!));
-    return () => window.clearTimeout(timer);
-  }, [shown, beats]);
-  const visible = beats.slice(0, shown);
-  const words = (
-    <div className="flex max-w-[88%] flex-col items-start gap-1 self-start sm:max-w-[80%]">
-      {about ? <WorkstreamLabel conversation={about} /> : null}
-      {visible.map((beat, index) => {
-        const last = index === beats.length - 1;
-        return (
-          <p
-            // oxlint-disable-next-line react/no-array-index-key -- A reply's beats only ever add on, and two may read the same.
-            key={index}
-            {...(arrived ? { "data-aldo-reply": "" } : {})}
-            className={cn(
-              "whitespace-pre-wrap wrap-anywhere rounded-[20px] border border-foreground/[0.07] bg-card px-4 py-2 text-[16px] leading-6 sm:text-[15px] dark:border-white/[0.08] dark:bg-white/[0.045]",
-              last && "rounded-bl-[8px]",
-            )}
-          >
-            {linkRuns(beat).map((run) =>
-              run.href ? (
-                <a
-                  key={run.at}
-                  href={run.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline decoration-foreground/25 underline-offset-4 transition-colors hover:decoration-foreground"
-                >
-                  {run.text}
-                </a>
-              ) : (
-                run.text
-              ),
-            )}
-            {last && closing && !about ? (
-              <>
-                {beat ? "\n" : null}
-                {threadLink(
-                  closing.thread,
-                  "Open the thread",
-                  "text-[14px] text-muted-foreground underline decoration-foreground/20 underline-offset-4 hover:text-foreground",
-                )}
-              </>
-            ) : null}
-          </p>
-        );
-      })}
-      {shown < beats.length ? <TypingDots quiet /> : null}
-    </div>
-  );
-  if (artifacts.length === 0 && links.length === 0) return words;
+  const kept = withoutShownLinks(update?.summary ?? props.text, artifacts);
+  const { text } = update ? linkRows(kept) : { text: kept };
+  const links = update?.thread
+    ? linkRows(
+        withoutShownLinks(
+          update.links
+            .filter((l) => !technicalUpdateLink(l.url))
+            .map((l) => `${l.label}: ${l.url}`)
+            .join("\n"),
+          artifacts,
+        ),
+      ).links
+    : [];
+  // Home owns outstanding questions and their answer receipts. A task summary must not repeat them,
+  // or revive an old “Needs you” label after the work has moved on.
+  const hasAsk = update?.state === "needs-you" && about !== undefined;
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">
-      {words}
-      {shown >= beats.length ? (
+      {update ? (
+        hasAsk ? null : (
+          <AldoUpdateCard
+            update={update}
+            at={props.at}
+            following={following}
+            title={update.title === "Work update" ? about?.title : undefined}
+          />
+        )
+      ) : text ? (
+        <p className="max-w-[88%] self-start whitespace-pre-wrap wrap-anywhere rounded-[20px] border border-foreground/[0.07] bg-card px-4 py-2 text-[16px] leading-6 sm:max-w-[80%] sm:text-[15px] dark:border-white/[0.08] dark:bg-white/[0.045]">
+          {linkRuns(text).map((run) =>
+            run.href ? (
+              <a
+                key={run.at}
+                href={run.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-foreground/25 underline-offset-4 hover:decoration-foreground"
+              >
+                {run.text}
+              </a>
+            ) : (
+              run.text
+            ),
+          )}
+        </p>
+      ) : null}
+      {artifacts.length || links.length ? (
         <Suspense fallback={null}>
           <AldoArtifacts artifacts={artifacts} links={links} />
         </Suspense>
       ) : null}
     </div>
-  );
-}
-
-/**
- * The thread a reply is about, over it: its glyph (a hand when it needs the
- * user, a spinner while it works, a check once it's done, a clock while it's
- * put off), its name and how long, from the home screen's read. A tap opens
- * it. When the read doesn't have it, the reply ends with a link to it instead.
- */
-function WorkstreamLabel(props: { readonly conversation: AldoHomeConversation }) {
-  const { conversation } = props;
-  const now = Date.now();
-  const state = workstreamState(conversation, now);
-  const body = (
-    <>
-      {state ? (
-        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
-          <WorkstreamGlyph state={state} />
-        </span>
-      ) : null}
-      {state ? <span className="sr-only">{WORKSTREAM_WORDS[state]}: </span> : null}
-      <span className="min-w-0 truncate font-medium text-foreground">{conversation.title}</span>
-      {state ? (
-        <span className="shrink-0 whitespace-nowrap">
-          {"· "}
-          {workstreamMeta(conversation, state, now)}
-        </span>
-      ) : null}
-      <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" strokeWidth={2} />
-    </>
-  );
-  const className =
-    "-ms-1.5 mt-1 inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full px-1.5 text-[13px] text-muted-foreground leading-4 transition-colors hover:bg-foreground/[0.05] focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11";
-  return (
-    <OpenThread target={conversation.thread} className={className}>
-      {body}
-    </OpenThread>
   );
 }
 

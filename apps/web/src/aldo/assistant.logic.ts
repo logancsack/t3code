@@ -4,6 +4,7 @@
 // user hears of a thread Aldo started that couldn't start at once, and when a
 // call brings up what came back of work it handed over.
 
+import type { AldoHomeUpdate } from "./homeUpdate.logic";
 import type { AldoArtifact } from "./artifacts.logic";
 import { type AldoFileUpload, type AldoFollowupNews } from "./assistantApi";
 import { type AldoStartState, type AldoThreadAttention } from "./directory";
@@ -28,6 +29,7 @@ export interface AldoAssistantMessage {
   readonly files?: ReadonlyArray<AldoFileUpload>;
   /** What said it, when it wasn't the conversation itself: Aldo's brief for the day (AldoBrief.tsx shows it as one). */
   readonly source?: "brief";
+  readonly update?: AldoHomeUpdate;
   /** What an Aldo's message shows under its words (AldoArtifacts.tsx). */
   readonly artifacts?: ReadonlyArray<AldoArtifact>;
   /** The id the page gave a written message of the user's, which Aldo keeps with it (an older Aldo doesn't). */
@@ -172,17 +174,29 @@ export function closingThread(
  * make them links: what a thread made (a shared file, a pull request) and the
  * thread itself, which Aldo passes on when work it handed over comes back.
  */
+function linkLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || "Open link";
+  } catch {
+    return "Open link";
+  }
+}
+
 export function linkRuns(
   text: string,
 ): ReadonlyArray<{ readonly text: string; readonly at: number; readonly href?: string }> {
   const runs: { text: string; at: number; href?: string }[] = [];
   let last = 0;
-  for (const match of text.matchAll(/https:\/\/[^\s<>()[\]"'`]+/g)) {
+  const pattern =
+    /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|\/(?!\/)[^\s)]+)\)|(https?:\/\/[^\s<>()[\]"'`]+)/g;
+  for (const match of text.matchAll(pattern)) {
     const at = match.index ?? 0;
-    const url = linkEnd(match[0], text.slice(0, at));
+    const raw = match[2] ?? match[3]!;
+    const url = linkEnd(raw, text.slice(0, at));
     if (at > last) runs.push({ text: text.slice(last, at), at: last });
-    runs.push({ text: url, at, href: url });
-    last = at + url.length;
+    const label = match[1] ?? linkLabel(url);
+    runs.push({ text: label, at, href: url });
+    last = at + (match[2] ? match[0].length : url.length);
   }
   if (last < text.length) runs.push({ text: text.slice(last), at: last });
   return runs;

@@ -136,21 +136,21 @@ async function openRow(n: number) {
 
 it("lists what finished with where it honestly stands, what failed first, checks still running as a line", async () => {
   await act(async () => root.render(<AldoFinished home={busyDay(false)} now={NOW} />));
-  expect(container.querySelector("h3")?.textContent).toBe("Release updates · 3");
+  expect(container.querySelector("summary")?.textContent).toBe("Following 3 updates");
+  expect(container.querySelector("details")?.open).toBe(false);
+  await act(async () => container.querySelector("summary")!.click());
+  expect(container.querySelector("details")?.open).toBe(true);
   expect(rowTexts()).toEqual([
-    "Handle 429s2 checks failing",
-    "Add CSV exportMerges in 9 min",
-    "Waiting on checks: Fix flaky e2eChecks 9 of 12",
+    "Handle 429sI found a problem with this update.",
+    "Add CSV exportI’m preparing the update.",
+    "Fix flaky e2eI’m checking the update before it goes live.",
   ]);
   // Only what shipped gets a green check: nothing here is.
   expect(container.querySelector(".text-success-foreground")).toBeNull();
   // What failed is amber, its glyph and its words.
   expect(
     [...container.querySelectorAll(".text-warning-foreground")].map((e) => e.tagName.toLowerCase()),
-  ).toEqual(["svg", "span"]);
-  expect(container.querySelector("span.text-warning-foreground")?.textContent).toBe(
-    "2 checks failing",
-  );
+  ).toEqual(["svg"]);
 });
 
 it("opens a result into its receipt, and Hold stops Aldo's merge, with Undo", async () => {

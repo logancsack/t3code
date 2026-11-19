@@ -1,13 +1,13 @@
 // Home's pending list doesn't depend on which cards are visible or loaded.
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { LoaderCircleIcon, XIcon } from "lucide-react";
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { DialogPopup, DialogTitle } from "../components/ui/dialog";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import { refreshAldoHome } from "./homeFeed";
-import { needsYouWords, type NeedsYouItem } from "./needsYou.logic";
+import { type NeedsYouItem } from "./needsYou.logic";
 import { revealAldoCard, showAldoDecisionKey } from "./show";
 import { FOCUS } from "./surface";
 import { COMPOSER_ACTION } from "./HomeComposerActions";
@@ -17,7 +17,46 @@ export function NeedsYouPill(props: {
   readonly items: ReadonlyArray<NeedsYouItem>;
   readonly className?: string;
 }) {
-  const { scroller, items } = props;
+  const { scroller } = props;
+  const [visible, setVisible] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setVisible((previous) => {
+          const next = new Set(previous);
+          for (const entry of entries) {
+            const key = entry.target.getAttribute("data-aldo-needs-target");
+            if (!key) continue;
+            if (entry.intersectionRatio >= 0.5) next.add(key);
+            else next.delete(key);
+          }
+          return next;
+        });
+      },
+      { root, threshold: [0, 0.5] },
+    );
+    const observed = new Set<Element>();
+    const watch = () => {
+      for (const item of props.items) {
+        const node = root.querySelector(item.selector);
+        if (node && !observed.has(node)) {
+          node.setAttribute("data-aldo-needs-target", item.key);
+          observed.add(node);
+          observer.observe(node);
+        }
+      }
+    };
+    watch();
+    const changes = new MutationObserver(watch);
+    changes.observe(root, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      changes.disconnect();
+    };
+  }, [scroller, props.items]);
+  const items = props.items.filter((item) => !visible.has(item.key));
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const selected = useRef<NeedsYouItem | null>(null);
@@ -65,7 +104,9 @@ export function NeedsYouPill(props: {
       setBusy(false);
     }
   };
-  const words = needsYouWords(items.length);
+  const words = items.length
+    ? `Review ${items.length} ${items.length === 1 ? "request" : "requests"}`
+    : null;
   if (!words) return null;
   return (
     <SheetPrimitive.Root
