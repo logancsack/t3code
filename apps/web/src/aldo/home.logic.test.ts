@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { type AldoHomeConversation } from "./homeApi";
 import {
+  waitingQuestion,
   boardFor,
   capacityLines,
   planRunning,
@@ -213,4 +214,49 @@ it("retains capacity and computer queues in a separate waiting board section", (
     done: [],
     waiting: [capacity, computer],
   });
+});
+
+it("an older server's bare report still names an unmet need without a payment decline", () => {
+  const c = conversation({
+    state: "waiting",
+    title: "Run Grok study",
+    summary: "I need your decision before I can finish.",
+    result: {
+      state: "blocked_on_user",
+      doneWhen: [
+        { criterion: "Run study", met: false, evidence: "Grok Bot needs Premium access." },
+      ],
+      checked: [],
+      notChecked: [],
+      decided: [],
+    },
+  });
+  expect(waitingQuestion(c).questions[0]?.question).toContain("Grok Bot needs Premium access");
+  expect(waitingQuestion(c).questions[0]?.question).not.toContain("haven't recorded");
+});
+
+it("keeps account verification distinct from choosing an account on older servers", () => {
+  const c = conversation({
+    state: "waiting",
+    title: "Publish the listing",
+    summary: "I need your decision before I can finish.",
+    result: {
+      state: "blocked_on_user",
+      doneWhen: [
+        {
+          criterion: "Publish",
+          met: false,
+          evidence:
+            "Publishing requires account verification. The selected account's email must be verified.",
+        },
+      ],
+      checked: [],
+      notChecked: [],
+      decided: [],
+    },
+  });
+  const ask = waitingQuestion(c).questions[0]!;
+  expect(ask.question).toContain("account verification");
+  expect(ask.question).not.toContain("Which account");
+  expect(ask.options.map((o) => o.label).join(" ")).not.toContain("provide an account");
 });

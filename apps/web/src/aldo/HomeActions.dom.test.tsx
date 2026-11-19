@@ -161,19 +161,19 @@ const JARGON = /holdout|provenance|unadmitted|coverage|dedicated account/i;
 it("a thread that only waits asks in plain words with choices to tap, never its notes or a bare text box", async () => {
   const d = await mount("waiting");
   expect(d.kind === "waiting" && d.conversation.summary).toBe(BLOCKED_NOTE);
-  expect(el.querySelector("h4")?.textContent).toBe("I need your decision before I can finish.");
+  expect(el.querySelector("h4")?.textContent).toContain("choose an account");
   expect(el.textContent).not.toMatch(JARGON);
   // Choices first, the recommended one marked; typing only once asked for.
   expect(el.querySelector("input")).toBeNull();
-  expect(button("Decide for me and carry onRecommended")).toBeDefined();
+  expect(button("I'll provide an account to useRecommended")).toBeDefined();
   expect(button("Something else…")).toBeDefined();
   expect(el.textContent).toContain("View result");
   expect(el.textContent).toContain("Ask Aldo about it");
-  await act(async () => button("Stop here").click());
+  await act(async () => button("Finish without the work that needs that account").click());
   expect(backend.fetch.mock.calls[0]![0]).toBe("/api/environments/waiting/messages");
   expect(sent()).toEqual({
     t3ThreadId: "c-waiting",
-    text: "Stop here, and don't carry on with this task.",
+    text: "Finish without the work that needs that account",
   });
   expect(useAldoReceipts.getState().receipts).toHaveLength(1);
 });
@@ -219,11 +219,11 @@ it("the board's form for a thread that only waits answers with a tap, as a reply
   await act(async () =>
     root.render(<PendingForm conversation={d.conversation} onActed={() => {}} />),
   );
-  expect(el.textContent).toContain("I need your decision before I can finish.");
+  expect(el.textContent).toContain("choose an account");
   expect(el.textContent).not.toMatch(JARGON);
-  await act(async () => button("Skip that part").click());
+  await act(async () => button("Finish without the work that needs that account").click());
   expect(backend.fetch.mock.calls[0]![0]).toBe("/api/environments/waiting/messages");
-  expect(sent().text).toBe("Skip the part you needed me for and finish the rest.");
+  expect(sent().text).toBe("Finish without the work that needs that account");
 });
 
 it("no thread waiting on Home is left with only a text box", async () => {
@@ -502,3 +502,83 @@ it.each(["272 deterministic reliability checks passed.", "I’ve prepared the dr
     );
   },
 );
+
+it("a bare blocked Grok report names Premium and declined payment, with matching choices", async () => {
+  const base = home.conversations.find((c) => c.ref === "waiting")!;
+  const c = {
+    ...base,
+    title: "Learn from Grok Bot",
+    summary: "I need your decision before I can finish.",
+    result: {
+      state: "blocked_on_user" as const,
+      doneWhen: [
+        {
+          criterion: "Run Grok tasks",
+          met: false,
+          evidence: "Grok needs Premium; payment was declined and the account shows Free.",
+        },
+      ],
+      checked: [],
+      notChecked: [],
+      decided: [],
+    },
+  };
+  const d = aldoDecisions({ ...home, conversations: [c] }, Date.now()).find(
+    (d) => d.kind === "waiting",
+  )!;
+  await act(async () =>
+    root.render(<DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />),
+  );
+  expect(el.querySelector("h4")?.textContent).toMatch(/Premium.*Grok Bot.*declined/);
+  expect(el.textContent).not.toContain("Decide for me and carry on");
+  expect(button("I'll provide an existing paid login")).toBeDefined();
+  expect(button("Skip the paid tasks and finish with what you have")).toBeDefined();
+  expect(backend.fetch).not.toHaveBeenCalled();
+});
+
+it("repairs an old server's generic synthetic question without changing its response identity", async () => {
+  const base = home.conversations.find((c) => c.ref === "turn-ask")!;
+  const c = {
+    ...base,
+    title: "Learn from Grok Bot",
+    summary: "I need your decision before I can finish.",
+    result: {
+      state: "blocked_on_user" as const,
+      doneWhen: [
+        {
+          criterion: "Run Grok tasks",
+          met: false,
+          evidence: "Premium is needed; payments were declined.",
+        },
+      ],
+      checked: [],
+      notChecked: [],
+      decided: [],
+    },
+    pending: {
+      ...base.pending,
+      kind: "question" as const,
+      requestId: "ask:old",
+      questions: [
+        {
+          id: "ask",
+          header: "",
+          question: "I need your decision before I can finish.",
+          options: [{ label: "Decide for me and carry on (Recommended)", description: "" }],
+          multiSelect: false,
+        },
+      ],
+    },
+  };
+  const d = aldoDecisions({ ...home, conversations: [c] }, Date.now()).find(
+    (d) => d.kind === "question",
+  )!;
+  await act(async () =>
+    root.render(<DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />),
+  );
+  expect(el.querySelector("h4")?.textContent).toMatch(/Premium.*declined/);
+  expect(el.textContent).not.toContain("Decide for me");
+  await act(async () => button("I'll provide an existing paid login").click());
+  expect(sent().requestId).toBe("ask:old");
+  expect(sent().answers.ask).toBe("I'll provide an existing paid login");
+});

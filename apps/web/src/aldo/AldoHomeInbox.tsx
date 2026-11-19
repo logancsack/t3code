@@ -35,6 +35,7 @@ import {
   NEEDS_YOU_LABEL,
   needsYouKind,
   repoName,
+  concreteWaitingQuestion,
   waitingQuestion,
   waitingReply,
 } from "./home.logic";
@@ -186,7 +187,7 @@ export function PendingForm(props: {
       <QuestionForm
         key={c.pending.requestId}
         conversation={c}
-        pending={c.pending}
+        pending={concreteWaitingQuestion(c, c.pending)}
         onActed={props.onActed}
         onSending={props.onSending}
       />
