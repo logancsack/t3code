@@ -85,6 +85,29 @@ describe("aldoComputerStoppable", () => {
 });
 
 describe("aldoComputerAskDescription", () => {
+  it("makes complimentary billing explicit", () => {
+    expect(
+      aldoComputerAskDescription({
+        why: null,
+        creditsPerHour: 38.4,
+        extraHourlyUsd: 0,
+        disposable: true,
+      }),
+    ).toContain("Your complimentary account isn't billed");
+  });
+  it("explains disposable files and the actual extra-usage cash price", () => {
+    expect(
+      aldoComputerAskDescription({
+        why: "Build the deck",
+        creditsPerHour: 38.4,
+        extraHourlyUsd: 0.48,
+        disposable: true,
+        concurrentLimit: 5,
+      }),
+    ).toBe(
+      "Build the deck. $0.48 an hour while it runs (38.4 credits/hour). Billed separately within your extra usage limit. This thread gets a fresh computer. Its computer and files are deleted when the thread is done. No kept-disk charge.",
+    );
+  });
   it("gives the agent's reason, then what it costs", () => {
     expect(
       aldoComputerAskDescription({ why: "To run the macros in Q3.xlsm", creditsPerHour: 3 }),
@@ -107,6 +130,19 @@ describe("aldoComputerAskDescription", () => {
 });
 
 describe("aldoComputerAskDescription for a yes that's the account's", () => {
+  it("keeps the cash price and disposable-file terms on an account-wide approval", () => {
+    expect(
+      aldoComputerAskDescription({
+        why: "Build the deck",
+        creditsPerHour: 38.4,
+        extraHourlyUsd: 0.48,
+        disposable: true,
+        forAccount: true,
+      }),
+    ).toBe(
+      "Build the deck. $0.48 an hour while it runs (38.4 credits/hour). Billed separately within your extra usage limit. This thread gets a fresh computer. Its computer and files are deleted when the thread is done. No kept-disk charge. A yes covers your other threads too.",
+    );
+  });
   it("says a yes covers the other threads, only when Aldo says so", () => {
     expect(
       aldoComputerAskDescription({
@@ -202,8 +238,18 @@ describe("aldoComputerName", () => {
 });
 
 it("queued computers show a cancellable normal wait, with position optional for older servers", () => {
+  expect(aldoComputerQueueLabel("windows", 1, 5)).toBe("Waiting for a Windows slot · position 1");
   expect(aldoComputerNotice(computer("queued", { position: 3 }), undefined)).toBe("queued");
   expect(aldoComputerStoppable(computer("queued"))).toBe(true);
   expect(aldoComputerQueueLabel("windows", 3)).toBe("Waiting for Windows · position 3");
   expect(aldoComputerQueueLabel("windows")).toBe("Waiting for Windows");
+});
+
+it("keeps Windows desktop connections scoped to the selected conversation", () => {
+  expect(
+    aldoDesktopScreenUrl("wss://agent.example/desktop?token=fixture", "windows", "second"),
+  ).toBe("wss://agent.example/desktop?token=fixture&screen=windows&conversation=second");
+  expect(
+    aldoDesktopScreenUrl("wss://agent.example/desktop?token=fixture", "machine", "second"),
+  ).toBe("wss://agent.example/desktop?token=fixture");
 });

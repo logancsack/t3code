@@ -3,7 +3,7 @@ vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 
 import { act, createContext, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { AldoConversationPage } from "./AldoConversationPage";
 import { useAldoAssistant } from "./assistantSession";
@@ -157,12 +157,15 @@ function before(first: Element, second: Element) {
   expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 }
 async function remount(read: AldoHome) {
-  await act(async () => root.unmount());
+  await act(async () => root?.unmount());
   root = createRoot(container);
   await act(async () => root.render(<Page home={read} />));
 }
-beforeEach(async () => {
+// Cold Markdown transforms are fixture setup, not a user interaction budget.
+beforeAll(async () => {
   await import("../components/ChatMarkdown");
+}, 60_000);
+beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -189,8 +192,8 @@ beforeEach(async () => {
   root = createRoot(container);
 });
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await act(async () => root?.unmount());
+  container?.remove();
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -626,9 +629,18 @@ it("uses smooth navigation when reduced motion is off", async () => {
   });
 });
 
-it.each(["Start · 310 credits/hour", "Decline"])(
-  "shows a computer request once and removes it after %s while Home catches up",
-  async (label) => {
+it.each(
+  [
+    { kind: "gpu", rate: 310, disposable: false },
+    { kind: "windows", rate: 38.4, disposable: true },
+  ].flatMap((computer) => [
+    { ...computer, approve: true },
+    { ...computer, approve: false },
+  ]),
+)(
+  "shows one $kind request and removes it after approve=$approve while Home catches up",
+  async ({ kind, rate, disposable, approve }) => {
+    const label = approve ? `Start · ${rate} credits/hour` : "Decline";
     const read = home({
       conversations: [
         {
@@ -642,9 +654,10 @@ it.each(["Start · 310 credits/hour", "Decline"])(
           at: at(2),
           computers: [
             {
-              computer: "gpu",
+              computer: kind,
               status: "asked",
-              creditsPerHour: 310,
+              creditsPerHour: rate,
+              ...(disposable ? { disposable: true, concurrentLimit: 5 } : {}),
               askedAt: at(2),
               why: "Render the video",
             },
@@ -657,14 +670,10 @@ it.each(["Start · 310 credits/hour", "Decline"])(
     expect(pill().textContent).toBe("Review 1 request");
     const card = container.querySelector<HTMLElement>("[data-aldo-computer-request]")!;
     before(card, textElement("Please keep the captions readable"));
-    expect(card.textContent).toContain("310 credits an hour");
+    expect(card.textContent).toContain(`${rate} credits an hour`);
     expect(container.querySelector('[data-aldo-decision^="waiting:"]')).toBeNull();
     await click([...card.querySelectorAll("button")].find((b) => b.textContent === label)!);
-    expect(backend.computer).toHaveBeenCalledWith(
-      "aldo-render",
-      label === "Start · 310 credits/hour",
-      "gpu",
-    );
+    expect(backend.computer).toHaveBeenCalledWith("aldo-render", approve, kind, "render");
     expect(pill()).toBeNull();
     expect(container.querySelector("[data-aldo-computer-request]")).toBeNull();
   },

@@ -1,4 +1,4 @@
-// The user's computers, one of each kind per user, that agents ask for: a
+// The computers each thread asks for: a
 // Windows computer (desktop Office) and a GPU computer (rendering, CUDA).
 // Aldo's directory reports each on the thread asking for it (status "asked",
 // with the agent's reason) and on the thread using it (its status), the one
@@ -22,6 +22,10 @@ export type AldoComputerStatus =
 export type AldoComputerKind = "windows" | "gpu";
 
 export interface AldoComputer {
+  readonly id?: string;
+  readonly disposable?: boolean | undefined;
+  readonly concurrentLimit?: number | undefined;
+  readonly extraHourlyUsd?: number | undefined;
   readonly kind: AldoComputerKind | (string & {});
   readonly status: AldoComputerStatus;
   readonly position?: number;
@@ -53,8 +57,15 @@ export function aldoComputerName(computer: Pick<AldoComputer, "kind"> | null | u
 }
 
 /** Plain status shared by the thread and Home. Older servers omit the position. */
-export function aldoComputerQueueLabel(kind: string, position?: number): string {
+export function aldoComputerQueueLabel(
+  kind: string,
+  position?: number,
+  concurrentLimit?: number,
+): string {
   const name = kind === "windows" ? "Windows" : kind === "gpu" ? "GPU" : kind;
+  if (kind === "windows" && concurrentLimit) {
+    return `Waiting for a Windows slot${position === undefined ? "" : ` · position ${position}`}`;
+  }
   return `Waiting for ${name}${position === undefined ? "" : ` · position ${position}`}`;
 }
 
@@ -115,11 +126,24 @@ function credits(perHour: number): string {
 
 /** The ask's body: the agent's reason, what it costs, and what a yes covers when Aldo says it's the account's. */
 export function aldoComputerAskDescription(
-  computer: Pick<AldoComputer, "why" | "creditsPerHour" | "forAccount">,
+  computer: Pick<
+    AldoComputer,
+    "why" | "creditsPerHour" | "disposable" | "concurrentLimit" | "extraHourlyUsd" | "forAccount"
+  >,
 ): string {
   const why = computer.why?.trim() ?? "";
   const reason = why && !/[.!?…]$/.test(why) ? `${why}.` : why;
-  const cost = `${credits(computer.creditsPerHour)} an hour while it runs. It stops when the thread is done.`;
+  const price =
+    computer.extraHourlyUsd === undefined
+      ? `${credits(computer.creditsPerHour)} an hour while it runs. `
+      : computer.extraHourlyUsd === 0
+        ? `Your complimentary account isn't billed for this computer (${credits(computer.creditsPerHour)}/hour of usage). `
+        : `$${computer.extraHourlyUsd.toFixed(2)} an hour while it runs (${credits(computer.creditsPerHour)}/hour). Billed separately within your extra usage limit. `;
+  const cost =
+    price +
+    (computer.disposable
+      ? "This thread gets a fresh computer. Its computer and files are deleted when the thread is done. No kept-disk charge."
+      : "It stops when the thread is done.");
   const covers = computer.forAccount ? " A yes covers your other threads too." : "";
   return `${reason ? `${reason} ${cost}` : cost}${covers}`;
 }
@@ -138,9 +162,13 @@ export function aldoDesktopScreen(
 }
 
 /** The desktop stream's URL for a screen: the Windows computer's is the same one with `screen=windows`. */
-export function aldoDesktopScreenUrl(desktopUrl: string, screen: AldoDesktopScreen): string {
+export function aldoDesktopScreenUrl(
+  desktopUrl: string,
+  screen: AldoDesktopScreen,
+  conversation?: string | null,
+): string {
   if (screen === "machine") return desktopUrl;
-  return `${desktopUrl}${desktopUrl.includes("?") ? "&" : "?"}screen=windows`;
+  return `${desktopUrl}${desktopUrl.includes("?") ? "&" : "?"}screen=windows${conversation ? `&conversation=${encodeURIComponent(conversation)}` : ""}`;
 }
 
 /**

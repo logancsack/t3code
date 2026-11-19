@@ -39,8 +39,8 @@ const answers = new Map<string, boolean>();
 const stopping = new Map<string, true>();
 const listeners = new Set<() => void>();
 
-function key(environmentId: string, kind: string): string {
-  return `${environmentId}:${kind}`;
+function key(environmentId: string, kind: string, conversation?: string | null): string {
+  return `${environmentId}:${kind}${conversation ? `:${conversation}` : ""}`;
 }
 
 function set<T>(entries: Map<string, T>, entry: string, value: T | undefined): void {
@@ -73,13 +73,18 @@ const shown = new Map<
   }
 >();
 
-async function answer(environmentId: string, kind: string, approve: boolean): Promise<void> {
-  const entry = key(environmentId, kind);
+async function answer(
+  environmentId: string,
+  kind: string,
+  approve: boolean,
+  conversation?: string | null,
+): Promise<void> {
+  const entry = key(environmentId, kind, conversation);
   // Once per ask: a second click before the toast goes doesn't answer again.
   if (answers.has(entry)) return;
   set(answers, entry, approve);
   try {
-    await answerAldoComputer(environmentId, approve, kind);
+    await answerAldoComputer(environmentId, approve, kind, conversation);
   } catch (cause) {
     // Asked again, unless it isn't asking anymore (answered elsewhere): the directory settles that.
     const gone = cause instanceof AldoApiError && cause.status === 404;
@@ -103,13 +108,14 @@ async function answer(environmentId: string, kind: string, approve: boolean): Pr
 export async function stopAldoThreadComputer(
   environmentId: string,
   kind: string,
+  conversation?: string | null,
 ): Promise<boolean> {
-  const entry = key(environmentId, kind);
+  const entry = key(environmentId, kind, conversation);
   const name = aldoComputerName({ kind });
   if (stopping.has(entry)) return false;
   set(stopping, entry, true);
   try {
-    const message = await stopAldoComputer(environmentId, kind);
+    const message = await stopAldoComputer(environmentId, kind, conversation);
     toastManager.add({
       type: "info",
       title: `Your ${name}`,
@@ -147,6 +153,7 @@ export async function stopAldoThreadComputer(
 export function useAldoComputer(
   environmentId: string,
   kind?: string,
+  conversation?: string | null,
 ): {
   readonly computer: AldoComputer | null;
   readonly answer: boolean | undefined;
@@ -159,8 +166,19 @@ export function useAldoComputer(
     () => null,
   );
   const computers = useMemo(() => (environment ? aldoComputers(environment) : []), [environment]);
-  const computer = (kind ? computers.find((c) => c.kind === kind) : computers[0]) ?? null;
-  const entry = computer ? key(environmentId, computer.kind) : "";
+  const eligible = computers.filter(
+    (c) => !c.disposable || !conversation || c.t3ThreadId === conversation,
+  );
+  const ambiguous =
+    !conversation &&
+    (!kind || kind === "windows") &&
+    eligible.filter((c) => c.disposable && c.kind === "windows").length > 1;
+  const computer = ambiguous
+    ? null
+    : ((kind ? eligible.find((c) => c.kind === kind) : eligible[0]) ?? null);
+  const entry = computer
+    ? key(environmentId, computer.kind, computer.disposable ? computer.t3ThreadId : undefined)
+    : "";
   const answered = useSyncExternalStore(
     subscribe,
     () => (entry ? answers.get(entry) : undefined),
@@ -177,7 +195,9 @@ export function useAldoComputer(
     const prefix = `${environmentId}:`;
     for (const [stored, value] of answers) {
       if (!stored.startsWith(prefix)) continue;
-      const asking = computers.find((c) => c.kind === stored.slice(prefix.length));
+      const asking = computers.find(
+        (c) => key(environmentId, c.kind, c.disposable ? c.t3ThreadId : undefined) === stored,
+      );
       set(answers, stored, aldoComputerKeptAnswer(asking, value));
     }
   }, [answered, computers, environmentId]);
@@ -242,7 +262,7 @@ export function AldoGpuComputerControl(props: { environmentId: string }) {
  * next time the thread opens.
  */
 export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): void {
-  const { computer, answer: answered } = useAldoComputer(environmentId);
+  const { computer, answer: answered } = useAldoComputer(environmentId, undefined, threadId);
 
   // A toast the user closed is offered again once they've left the thread.
   useEffect(
@@ -260,7 +280,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       notice === "ask" && computer
         ? aldoComputerAskDescription(computer)
         : notice === "queued"
-          ? `${aldoComputerQueueLabel(kind, computer?.position)}. It carries on automatically when the computer is ready.`
+          ? `${aldoComputerQueueLabel(kind, computer?.position, computer?.concurrentLimit)}. ${computer?.concurrentLimit ? `Up to ${computer.concurrentLimit} Windows computers can run at once. ` : ""}It carries on automatically when a computer is ready.`
           : "Your agent hears when it's ready.";
     // Stopping is offered once Aldo is starting it, not while the answer is on its way.
     const stoppable =
@@ -270,7 +290,11 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
     const stopAction = (toastId: () => ToastId) => ({
       children: notice === "queued" ? "Cancel request" : "Stop",
       onClick: () => {
-        void stopAldoThreadComputer(environmentId, kind).then((stopped) => {
+        void stopAldoThreadComputer(
+          environmentId,
+          kind,
+          computer?.disposable ? computer.t3ThreadId : undefined,
+        ).then((stopped) => {
           if (stopped) toastManager.close(toastId());
         });
       },
@@ -294,7 +318,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       ) {
         toastManager.update(currentId, {
           ...(notice === "queued"
-            ? { title: aldoComputerQueueLabel(kind, computer?.position) }
+            ? { title: aldoComputerQueueLabel(kind, computer?.position, computer?.concurrentLimit) }
             : {}),
           description,
           ...(notice === "starting" || notice === "queued"
@@ -370,14 +394,26 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
             timeout: 0,
             actionProps: {
               children: "Start it",
-              onClick: () => void answer(environmentId, kind, true),
+              onClick: () =>
+                void answer(
+                  environmentId,
+                  kind,
+                  true,
+                  computer?.disposable ? computer.t3ThreadId : undefined,
+                ),
             },
             data: {
               threadRef,
               leadingIcon,
               secondaryActionProps: {
                 children: "Not now",
-                onClick: () => void answer(environmentId, kind, false),
+                onClick: () =>
+                  void answer(
+                    environmentId,
+                    kind,
+                    false,
+                    computer?.disposable ? computer.t3ThreadId : undefined,
+                  ),
               },
             },
           })
@@ -385,7 +421,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
             type: "info",
             title:
               notice === "queued"
-                ? aldoComputerQueueLabel(kind, computer?.position)
+                ? aldoComputerQueueLabel(kind, computer?.position, computer?.concurrentLimit)
                 : `Starting your ${name}…`,
             description,
             timeout: 0,

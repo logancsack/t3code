@@ -24,6 +24,7 @@ vi.mock("./workspaceApi", () => ({
 }));
 
 import { ToastProvider } from "../components/ui/toast";
+import { stopAldoComputer } from "./workspaceApi";
 import { useAldoComputerAsk } from "./AldoComputer";
 
 let root: Root;
@@ -32,9 +33,12 @@ function Notice() {
   useAldoComputerAsk("aldo-notice", ThreadId.make("notice"));
   return null;
 }
-async function poll(computer: AldoComputer | null) {
+async function poll(computer: AldoComputer | AldoComputer[] | null) {
   directory.environments = [
-    { environmentId: "aldo-notice", computers: computer ? [computer] : [] },
+    {
+      environmentId: "aldo-notice",
+      computers: Array.isArray(computer) ? computer : computer ? [computer] : [],
+    },
   ];
   await act(() =>
     root.render(
@@ -101,4 +105,28 @@ it.each(["windows", "gpu"])("shows %s failure after a queued poll skips starting
   expect(document.body.textContent).toContain("Provider capacity is unavailable.");
   expect(document.body.textContent).not.toContain("Waiting for");
   expect(document.body.textContent).not.toContain("Cancel request");
+});
+
+it("cancels only the selected conversation when a workspace has two Windows requests", async () => {
+  const base: AldoComputer = {
+    kind: "windows",
+    disposable: true,
+    status: "queued",
+    why: null,
+    error: null,
+    creditsPerHour: 38.4,
+    concurrentLimit: 5,
+  };
+  await poll([
+    { ...base, id: "other", t3ThreadId: "other", position: 1 },
+    { ...base, id: "own", t3ThreadId: "notice", position: 2 },
+  ]);
+  const button = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Cancel request",
+  );
+  expect(button).toBeDefined();
+  await act(async () => {
+    button!.click();
+  });
+  expect(stopAldoComputer).toHaveBeenCalledWith("aldo-notice", "windows", "notice");
 });

@@ -8,6 +8,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import { getAldoEnvironments } from "./directory";
 import { api, threadIdForEnvironment } from "./api";
 import type { AldoHomeTarget } from "./homeApi";
 import type { AldoLiveRender, AldoLiveSurface } from "./liveWork.logic";
@@ -139,7 +140,18 @@ function stillFrames(surface: "browser" | "windows", target: AldoHomeTarget): Al
         const link = await stillLink(target.environmentId);
         if (!link) return;
         const at = Date.now();
-        onFrame({ url: await decoded(`${link}&surface=${surface}&w=${width}&at=${at}`), at });
+        const scoped =
+          surface === "windows" &&
+          getAldoEnvironments()
+            ?.find((e) => e.environmentId === target.environmentId)
+            ?.computers?.some(
+              (c) => c.kind === "windows" && c.disposable && c.t3ThreadId === target.threadId,
+            );
+        const conversation = scoped ? `&conversation=${encodeURIComponent(target.threadId)}` : "";
+        onFrame({
+          url: await decoded(`${link}&surface=${surface}&w=${width}&at=${at}${conversation}`),
+          at,
+        });
       }),
   };
 }

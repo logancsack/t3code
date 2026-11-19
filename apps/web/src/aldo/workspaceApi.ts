@@ -249,10 +249,11 @@ export async function answerAldoComputer(
   environmentId: string,
   approve: boolean,
   kind: string,
+  t3ThreadId?: string | null,
 ): Promise<void> {
   await api(`/api/environments/${threadIdForEnvironment(environmentId)}/computer`, {
     method: "POST",
-    body: JSON.stringify({ approve, kind }),
+    body: JSON.stringify({ approve, kind, ...(t3ThreadId ? { t3ThreadId } : {}) }),
   });
   requestAldoDirectoryRefresh();
 }
@@ -262,9 +263,13 @@ export async function answerAldoComputer(
  * what Aldo says came of it; an older Aldo, without it, refuses with a 405
  * (and one from before GPU computers stops the thread's Windows computer).
  */
-export async function stopAldoComputer(environmentId: string, kind: string): Promise<string> {
+export async function stopAldoComputer(
+  environmentId: string,
+  kind: string,
+  t3ThreadId?: string | null,
+): Promise<string> {
   const { message } = await api<{ message?: unknown }>(
-    `/api/environments/${threadIdForEnvironment(environmentId)}/computer?kind=${encodeURIComponent(kind)}`,
+    `/api/environments/${threadIdForEnvironment(environmentId)}/computer?kind=${encodeURIComponent(kind)}${t3ThreadId ? `&t3ThreadId=${encodeURIComponent(t3ThreadId)}` : ""}`,
     { method: "DELETE" },
   );
   requestAldoDirectoryRefresh();

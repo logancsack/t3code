@@ -23,6 +23,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
         request.conversation.thread.environmentId,
         approve,
         request.computer.computer,
+        request.conversation.thread.threadId,
       );
       addAldoReceipt({
         key: request.key,
@@ -54,6 +55,9 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
         {aldoComputerAskDescription({
           why: request.computer.why ?? null,
           creditsPerHour: request.computer.creditsPerHour,
+          disposable: request.computer.disposable,
+          concurrentLimit: request.computer.concurrentLimit,
+          extraHourlyUsd: request.computer.extraHourlyUsd,
           ...(request.computer.forAccount ? { forAccount: true } : {}),
         })}
       </p>

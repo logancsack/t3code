@@ -682,7 +682,11 @@ export function AldoBrowserPanel({
   );
   const environment = environments?.find((e) => e.environmentId === environmentId);
   // The Desktop view offers the Windows computer's screen while it runs.
-  const { computer, stopping: stoppingComputer } = useAldoComputer(environmentId, "windows");
+  const { computer, stopping: stoppingComputer } = useAldoComputer(
+    environmentId,
+    "windows",
+    teachThread,
+  );
   const windowsRunning = computer?.kind === "windows" && computer.status === "running";
   const screen = aldoDesktopScreen(chosenScreen, computer);
   useEffect(() => {
@@ -831,10 +835,15 @@ export function AldoBrowserPanel({
           {windowsRunning ? (
             <AldoDesktopScreenSwitch
               screen={screen}
+              disposable={computer?.disposable}
               onChange={setChosenScreen}
               stopping={stoppingComputer}
               onStop={() =>
-                void stopAldoThreadComputer(environmentId, "windows").then((stopped) => {
+                void stopAldoThreadComputer(
+                  environmentId,
+                  "windows",
+                  computer?.disposable ? computer.t3ThreadId : undefined,
+                ).then((stopped) => {
                   if (stopped) setChosenScreen("machine");
                 })
               }
@@ -842,7 +851,9 @@ export function AldoBrowserPanel({
           ) : null}
           <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground">
             {screen === "windows"
-              ? "Your Windows computer, with desktop Office. Sign in to Office here once."
+              ? computer?.disposable
+                ? "This thread's Windows computer. Copy results back before stopping; its files will be deleted."
+                : "Your Windows computer, with desktop Office. Sign in to Office here once."
               : "The agent's whole desktop: Chrome, desktop apps and the taskbar."}
           </span>
           <AldoBrowserViewSwitch view={view} onChange={setView} />
@@ -977,6 +988,7 @@ export function AldoBrowserPanel({
 
       {view === "desktop" ? (
         <AldoDesktopView
+          conversation={computer?.disposable ? computer.t3ThreadId : undefined}
           environmentId={environmentId}
           screen={screen}
           onUse={screen === "machine" ? noteUse : undefined}
