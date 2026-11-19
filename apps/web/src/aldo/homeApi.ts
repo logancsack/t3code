@@ -59,6 +59,21 @@ export interface AldoChatDecision {
 }
 
 export interface AldoHomeConversation {
+  /** New servers accept failed-thread retries through Continue. */
+  readonly canRetry?: true;
+  readonly progress?: {
+    readonly execution: "working" | "replied" | "failed" | "stopped" | "unknown";
+    readonly verdict: "finished" | "unfinished" | "blocked" | "unknown";
+    readonly next: {
+      readonly owner: "aldo" | "you" | "none";
+      readonly kind: string;
+      readonly at?: string;
+    };
+    readonly label: string;
+    readonly detail: string;
+  };
+  readonly result?: import("./taskResult.logic").TaskResult;
+  readonly resultState?: "unfinished";
   readonly chatDecision?: AldoChatDecision;
   readonly ref: string;
   readonly thread: AldoHomeTarget;
@@ -500,6 +515,8 @@ export interface AldoPayment {
   readonly approvalUrl: string | null;
   /** When Link stops waiting for them, while it does. */
   readonly expiresAt: string | null;
+  /** A newer server can request fresh Link approval of the saved terms after expiry. */
+  readonly retryFrom?: string;
   readonly cardLast4: string | null;
   readonly test: boolean;
   readonly thread: AldoHomeTarget | null;
@@ -621,7 +638,29 @@ export async function fetchAldoHome(
     ...(options.active ? { headers: { "x-aldo-active": "1" } } : {}),
     answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
   });
-  return Array.isArray(body.conversations) ? (body as AldoHome) : null;
+  if (!Array.isArray(body.conversations)) return null;
+  return {
+    ...body,
+    conversations: body.conversations.map(adaptTaskProgress),
+  } as AldoHome;
+}
+
+/** The additive server status never requires a simultaneous client release. */
+export function adaptTaskProgress(c: AldoHomeConversation): AldoHomeConversation {
+  if (c.state === "stopped" || c.progress?.execution === "stopped")
+    return { ...c, state: "stopped" };
+  if (c.progress?.next.owner === "you") return { ...c, state: "waiting" };
+  // Actual questions and approvals stay visible before any automatic continuation.
+  if (
+    !c.pending &&
+    !c.plan &&
+    !c.computers?.some((one) => one.status === "asked") &&
+    c.progress?.next.owner === "aldo" &&
+    !["working", "release"].includes(c.progress.next.kind) &&
+    !["working", "starting", "queued"].includes(c.state)
+  )
+    return { ...c, state: "scheduled" };
+  return c.resultState === "unfinished" ? { ...c, state: "unfinished" } : c;
 }
 
 /**
@@ -674,7 +713,7 @@ export async function approveAldoPlan(
 }
 
 /**
- * Carries on a thread that paused or stalled: its computer wakes and its agent
+ * Carries on a thread that paused or stalled (or failed, when `canRetry`): its computer wakes and its agent
  * picks up where it stopped (or gets the message of the user's it was holding).
  * Refused (409) if the thread isn't paused, as Aldo reads it now.
  */
@@ -684,6 +723,15 @@ export async function continueAldoThread(target: AldoHomeTarget): Promise<string
     postedKept({ action: "continue", t3ThreadId: target.threadId }),
   );
   return status;
+}
+
+/** A direct reply to a request made in prose, through the thread view's message route.
+ * Accepted means kept for delivery, not that the agent has acted on it. */
+export async function replyAldoThread(target: AldoHomeTarget, text: string): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(target.environmentId)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ t3ThreadId: target.threadId, text }),
+  });
 }
 
 /** A thread's latest turns as Aldo keeps them (its last three: the messages, and what it waits on). */
@@ -719,6 +767,15 @@ export async function fetchAldoConversationCopy(
 /** Sends a waiting delivery (a reminder, a message) now rather than when it's due. */
 export async function sendAldoDeliveryNow(id: string): Promise<void> {
   await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "POST" });
+}
+
+/** Requests fresh approval of the saved payment; only the user approves it in Link. */
+export async function retryAldoPayment(id: string): Promise<AldoPayment> {
+  const { payment } = await api<{ payment: Omit<AldoPayment, "threadTitle"> }>(
+    `/api/payments/${encodeURIComponent(id)}/retry`,
+    { method: "POST" },
+  );
+  return { ...payment, threadTitle: null };
 }
 
 /** Cancels a waiting delivery: it's never sent. */

@@ -35,6 +35,7 @@ import { refreshAldoHome } from "./homeFeed";
 import { setAldoMergeHold } from "./mergeHold";
 import { completeAldo } from "./presenceReactions";
 import { FOCUS, ICON_BUTTON, PRIMARY, SECONDARY, SURFACE } from "./surface";
+import AldoTaskResult from "./AldoTaskResult";
 
 /** A pull request's page on its host, at its checks or its changes (GitHub's tabs; elsewhere, the page). */
 function pullRequestPage(url: string, tab: "checks" | "files"): string {
@@ -242,6 +243,7 @@ export default function ResultCard(props: {
           {c.summary}
         </p>
       ) : null}
+      {c.result ? <AldoTaskResult result={c.result} compact /> : null}
       <ul className="flex flex-col gap-2 text-[13px] leading-5">
         {evidence.map((item) => (
           <li key={item.key} className="flex items-start gap-2.5">
@@ -368,7 +370,14 @@ function Actions(props: {
   return (
     <div className="grid grid-cols-2 gap-2">
       {tone === "failing" ? look("checks", "View checks") : look("files", "View changes")}
-      <button type="button" className={PRIMARY} onClick={() => askAldoAbout(title)}>
+      <ThreadLink target={props.result.conversation.thread} className={PRIMARY}>
+        Open
+      </ThreadLink>
+      <button
+        type="button"
+        className={cn(FOCUS, "col-span-2 min-h-11 rounded-full text-sm text-muted-foreground")}
+        onClick={() => askAldoAbout(title)}
+      >
         Ask Aldo about it
       </button>
     </div>

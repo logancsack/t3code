@@ -1,3 +1,5 @@
+import AldoTaskResult from "./AldoTaskResult";
+
 // The board's sections besides what needs the user (AldoHomeInbox.tsx): what's
 // wrong with the setup, what's working now, pull requests on their way out,
 // what's coming up, what finished since the user last looked, what Aldo did
@@ -118,6 +120,8 @@ export function HealthStrip(props: { readonly issues: ReadonlyArray<HealthIssue>
 }
 
 const STATE_LABEL: Record<string, string> = {
+  scheduled: "Next step scheduled",
+  unfinished: "Unfinished",
   starting: "Starting",
   queued: "Waiting for room",
   retrying: "Trying again",
@@ -151,7 +155,7 @@ export function ConversationRow(props: {
         aria-hidden
         className={cn(
           "mt-1.5 size-2 shrink-0 rounded-full",
-          !queue && c.state === "done"
+          !queue && c.state === "done" && c.result?.state === "finished"
             ? "bg-success"
             : stuck
               ? "bg-warning"
@@ -172,11 +176,11 @@ export function ConversationRow(props: {
             <Badge variant="warning" size="sm">
               stuck
             </Badge>
-          ) : queue || STATE_LABEL[c.state] ? (
+          ) : queue || c.progress || STATE_LABEL[c.state] ? (
             <Badge variant="outline" size="sm">
               {queue
                 ? aldoComputerQueueLabel(queue.computer, queue.position, queue.concurrentLimit)
-                : STATE_LABEL[c.state]}
+                : (c.progress?.label ?? STATE_LABEL[c.state])}
             </Badge>
           ) : null}
           {c.approvedPlan ? (
@@ -192,7 +196,7 @@ export function ConversationRow(props: {
           <span>
             ·{" "}
             {!queue && c.state === "done"
-              ? `finished ${relativeTime(c.at, props.now)}`
+              ? `updated ${relativeTime(c.at, props.now)}`
               : `for ${elapsed(c.at, props.now)}`}
           </span>
           {c.pullRequests?.map((pr) => (
@@ -209,6 +213,19 @@ export function ConversationRow(props: {
         </div>
         {c.summary ? (
           <p className="mt-1 line-clamp-2 text-muted-foreground text-xs">{c.summary}</p>
+        ) : null}
+        {c.state === "done" &&
+        !c.result &&
+        !c.summary?.includes("Task completion has not been verified.") ? (
+          <p className="mt-1 text-muted-foreground text-xs">
+            Task completion has not been verified.
+          </p>
+        ) : null}
+        {c.result ? (
+          <details>
+            <summary className="min-h-10 cursor-pointer py-2 text-sm">Result</summary>
+            <AldoTaskResult result={c.result} compact />
+          </details>
         ) : null}
         {c.pressure && working ? (
           // Information only. Only a computer Aldo sizes itself gets more on its own.

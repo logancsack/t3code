@@ -32,6 +32,7 @@ import {
 import { elapsed, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
 import { useAldoModelName } from "./modelNames";
 import { sendAldoAnswer, useAldoHomeFeed } from "./homeFeed";
+import { PRIMARY, SECONDARY } from "./surface";
 import { aldoCanMorph, aldoMorphSource, morphIntoThread } from "./morph";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -113,7 +114,9 @@ export function NeedsYouCard(props: {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Badge variant={kind === "failed" ? "error" : "warning"} size="sm">
-              {NEEDS_YOU_LABEL[kind]}
+              {kind === "waiting"
+                ? (c.progress?.label ?? NEEDS_YOU_LABEL[kind])
+                : NEEDS_YOU_LABEL[kind]}
             </Badge>
             <ThreadLink
               target={c.thread}
@@ -252,19 +255,23 @@ async function sendAnswer<T>(
   kept: Omit<Parameters<typeof returned.set>[1], "error">,
   send: () => Promise<T>,
 ): Promise<T> {
-  return sendAldoAnswer(conversation, async () => {
-    try {
-      return await send();
-    } catch (cause) {
-      returned.set(key, { ...kept, error: messageOf(cause) });
-      toastManager.add({
-        type: "error",
-        title: movedOn(cause) ? "It had already moved on" : "Couldn't send that",
-        description: messageOf(cause),
-      });
-      throw cause;
-    }
-  });
+  return sendAldoAnswer(
+    conversation,
+    async () => {
+      try {
+        return await send();
+      } catch (cause) {
+        returned.set(key, { ...kept, error: messageOf(cause) });
+        toastManager.add({
+          type: "error",
+          title: movedOn(cause) ? "It had already moved on" : "Couldn't send that",
+          description: messageOf(cause),
+        });
+        throw cause;
+      }
+    },
+    { afterAccepted: true },
+  );
 }
 
 function QuestionForm(props: {
@@ -359,10 +366,8 @@ function QuestionForm(props: {
                     type="button"
                     aria-pressed={on}
                     className={cn(
-                      "rounded-md border px-2.5 py-1 text-xs transition-colors",
-                      on
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border/70 bg-card/40 text-muted-foreground hover:bg-accent hover:text-foreground",
+                      on ? PRIMARY : SECONDARY,
+                      "h-auto min-h-11 whitespace-normal py-2.5 text-left",
                     )}
                     onClick={choose}
                   >

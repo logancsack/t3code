@@ -133,5 +133,6 @@ it("keeps a done conversation's queued card expandable until its request clears"
   expect(host.textContent).toContain("Waiting for GPU · position 1");
   home();
   await showCard();
-  expect(host.textContent).toContain("Finished");
+  expect(host.textContent).toContain("Reply received");
+  expect(host.textContent).toContain("unverified");
 });

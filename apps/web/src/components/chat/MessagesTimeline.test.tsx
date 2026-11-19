@@ -5,6 +5,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+vi.mock("../../aldo/api", async (original) => ({
+  ...(await original<typeof import("../../aldo/api")>()),
+  isAldoCloud: true,
+}));
+vi.mock("../../aldo/AldoTaskResult", () => ({
+  default: () => <span data-test-report="">Reported evidence</span>,
+}));
+
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
 
@@ -242,6 +250,34 @@ function buildAssistantTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
+  it("keeps the task report inside the citation source so its evidence can be commented on", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const report = {
+      state: "finished",
+      doneWhen: [{ criterion: "Ready", met: true, evidence: "Checked" }],
+      checked: [],
+      notChecked: [],
+      decided: [],
+    };
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          buildAssistantTimelineEntry(
+            "Ready.\n```aldo-result\n" + JSON.stringify(report) + "\n```",
+          ),
+        ]}
+      />,
+    );
+    // @ts-expect-error jsdom ships with the test environment; its types are not a project dependency.
+    const { JSDOM } = await import("jsdom");
+    const host = new JSDOM(markup).window.document;
+    expect(
+      host.querySelector("[data-test-report]")?.closest("[data-assistant-citation-source]"),
+    ).not.toBeNull();
+    expect(markup).not.toContain("```aldo-result");
+  });
+
   // Expanding history uses this suite's existing test renderer, deprecated in
   // React 19. Migrate these interaction tests together when a DOM test setup is added.
   it.each([{}, { text: "Text-only answer", file: "Answer with a file" }])(

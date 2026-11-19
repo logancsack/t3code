@@ -60,6 +60,7 @@ export function queuedComputer(c: AldoHomeConversation) {
  */
 export function isPausedMidTurn(c: AldoHomeConversation): boolean {
   return (
+    c.progress?.next.owner !== "aldo" &&
     !queuedComputer(c) &&
     (c.state === "paused" ||
       (c.state === "working" && (c.machine === "asleep" || c.machine === "failed")))
@@ -69,6 +70,13 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   if (queuedComputer(c)) return null;
+  if (
+    c.progress?.next.owner === "aldo" &&
+    !c.pending &&
+    !c.plan &&
+    !c.computers?.some((one) => one.status === "asked")
+  )
+    return null;
   if (c.state === "failed") return "failed";
   if (isPausedMidTurn(c)) return "paused";
   if (c.state !== "waiting") return null;
@@ -79,7 +87,7 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   return "waiting";
 }
 
-export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying"]);
+export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying", "scheduled"]);
 
 /**
  * Working, with no activity for an hour: `at` follows the thread's latest event
@@ -100,6 +108,7 @@ export interface HomeBoard {
   readonly needsYou: ReadonlyArray<AldoHomeConversation>;
   /** Newest first. */
   readonly working: ReadonlyArray<AldoHomeConversation>;
+  readonly unfinished: ReadonlyArray<AldoHomeConversation>;
   /** Finished in the last two days, newest first. */
   readonly done: ReadonlyArray<AldoHomeConversation>;
 }
@@ -121,6 +130,9 @@ export function boardFor(
       .sort((a, b) => a.at.localeCompare(b.at)),
     working: conversations
       .filter((c) => (WORKING_STATES.has(c.state) || queuedComputer(c)) && !isPausedMidTurn(c))
+      .sort(byAt),
+    unfinished: conversations
+      .filter((c) => c.state === "unfinished" && !queuedComputer(c))
       .sort(byAt),
     done: conversations
       .filter(
@@ -563,7 +575,8 @@ export function composerChips(
   const board = home ? boardFor(home.conversations, Date.now()) : null;
   if (board && board.needsYou.length > 0) chips.push("What needs me?");
   if (options.lastSeen && home && home.conversations.length > 0) chips.push("Catch me up");
-  if (board && (board.done.length > 0 || board.working.length > 0))
+  if (board?.unfinished.length) chips.push("What’s unfinished?");
+  else if (board && (board.done.length > 0 || board.working.length > 0))
     chips.push("What shipped today?");
   const repo = repoChips(home ?? { conversations: [] })[0];
   if (repo) chips.push(`Start something in ${repo.split("/").at(-1) ?? repo}`);

@@ -506,3 +506,45 @@ it("a read that never reached Aldo goes again at the next look; one Aldo refused
   expect(fetchHome).toHaveBeenCalledTimes(3);
   expect(feed.useAldoHomeFeed.getState()).toMatchObject({ home: home(), error: null });
 });
+
+it("Home keeps the question actionable until the server accepts it", async () => {
+  const feed = await import("./homeFeed");
+  fetchHome.mockImplementation(async () => asking());
+  await feed.refreshAldoHome();
+  let take!: () => void;
+  const sent = feed.sendAldoAnswer(
+    shownConversation(feed),
+    () =>
+      new Promise<string>((r) => {
+        take = () => r("sent");
+      }),
+    { afterAccepted: true },
+  );
+  expect(shownConversation(feed).pending?.kind).toBe("question");
+  take();
+  await sent;
+  expect(shownConversation(feed).pending).toBeUndefined();
+});
+it("Home does not show a send or discard as complete before approval acceptance", async () => {
+  const feed = await import("./homeFeed");
+  fetchHome.mockImplementation(async () => ({ ...home(), approvals: [approvalOf("pending")] }));
+  await feed.refreshAldoHome();
+  let refuse!: (e: Error) => void;
+  decide.mockImplementationOnce(
+    () =>
+      new Promise((_r, reject) => {
+        refuse = reject;
+      }),
+  );
+  const sent = feed.sendAldoApproval(
+    { id: "ap_1", kind: "email" },
+    "discard",
+    undefined,
+    undefined,
+    { afterAccepted: true },
+  );
+  expect(feed.useAldoHomeFeed.getState().home?.approvals?.[0]?.status).toBe("pending");
+  refuse(new Error("Draft changed"));
+  await expect(sent).rejects.toThrow("Draft changed");
+  expect(feed.useAldoHomeFeed.getState().home?.approvals?.[0]?.status).toBe("pending");
+});

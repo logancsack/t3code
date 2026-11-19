@@ -494,10 +494,12 @@ export function releaseAldoAnswer(c: AldoHomeConversation, ask: string): void {
 export async function sendAldoAnswer<T>(
   c: AldoHomeConversation,
   send: () => Promise<T>,
+  options: { readonly afterAccepted?: boolean } = {},
 ): Promise<T> {
-  const ask = holdAldoAnswer(c);
+  let ask = options.afterAccepted ? null : holdAldoAnswer(c);
   try {
     const sent = await send();
+    if (options.afterAccepted) ask = holdAldoAnswer(c);
     if (ask !== null) keepAldoAnswer(c, ask);
     return sent;
   } catch (cause) {
@@ -518,13 +520,16 @@ export async function sendAldoApproval(
   decision: "approve" | "discard" | "always",
   reason?: string,
   spendLimit?: number,
+  options: { readonly afterAccepted?: boolean } = {},
 ): ReturnType<typeof decideAldoApproval> {
   const at = new Date().toISOString();
-  approvalHolds = {
-    ...approvalHolds,
-    [approval.id]: { status: heldStatus(approval, decision), result: null, at },
-  };
-  publish();
+  if (!options.afterAccepted) {
+    approvalHolds = {
+      ...approvalHolds,
+      [approval.id]: { status: heldStatus(approval, decision), result: null, at },
+    };
+    publish();
+  }
   try {
     const sent = await decideAldoApproval(approval.id, decision, reason, spendLimit);
     // As Aldo says it stands (decided elsewhere first, say), until a read has it too.

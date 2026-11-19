@@ -12,11 +12,46 @@ import {
   decisionTitle,
 } from "./decisions.logic";
 import { feedEvents, interleave } from "./feed.logic";
-import { paymentWaits, paymentWords, settledPayments, waitingPayments } from "./payments.logic";
+import {
+  paymentCanAskAgain,
+  paymentWaits,
+  paymentWords,
+  settledPayments,
+  waitingPayments,
+} from "./payments.logic";
 import { simpleNeedsYou } from "./simpleMode.logic";
 
 const NOW = Date.parse("2026-10-22T15:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
+
+describe("missed payment approvals", () => {
+  it("keeps a 31-minute-old approval in Needs you with Ask me again, without changing older-server behavior", () => {
+    const missed = payment("missed", {
+      retryFrom: "missed",
+      expiresAt: ago(1),
+      status: "pending_approval",
+    });
+    expect(paymentCanAskAgain(missed, NOW)).toBe(true);
+    expect(waitingPayments(home([missed]), NOW)).toEqual([missed]);
+    expect(aldoWaitingCount(home([missed]), NOW)).toBe(1);
+    expect(paymentWords(missed, NOW).line).toContain("You still approve it in Link");
+    expect(paymentWaits(payment("older", { expiresAt: ago(1) }), NOW)).toBe(false);
+    expect(paymentCanAskAgain({ ...missed, expiresAt: ago(-5) }, NOW)).toBe(false);
+  });
+  it("resumes an incomplete replacement but never retries a declined, charged or canceled payment", () => {
+    expect(
+      paymentCanAskAgain(
+        payment("new", { retryFrom: "old", approvalUrl: null, status: "created" }),
+        NOW,
+      ),
+    ).toBe(true);
+    for (const status of ["denied", "approved", "submitted", "succeeded", "failed", "canceled"]) {
+      expect(
+        paymentCanAskAgain(payment("p", { retryFrom: "p", status, expiresAt: ago(1) }), NOW),
+      ).toBe(false);
+    }
+  });
+});
 
 function payment(id: string, over: Partial<AldoPayment> = {}): AldoPayment {
   return {

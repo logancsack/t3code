@@ -104,7 +104,13 @@ it("declines with a reason in a tap, from the reasons Aldo offers", async () => 
   expect(container.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe("Why not?");
   expect(document.activeElement?.textContent).toBe("Too expensive");
   await tap("Bad timing");
-  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", "Bad timing");
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(
+    approval,
+    "discard",
+    "Bad timing",
+    undefined,
+    { afterAccepted: true },
+  );
 });
 
 it("requires an explicit first spending limit and can choose to ask every time", async () => {
@@ -130,7 +136,9 @@ it("requires an explicit first spending limit and can choose to ask every time",
   expect(approve.disabled).toBe(false);
   expect(backend.send).not.toHaveBeenCalled();
   await tap("Book and save limit");
-  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "approve", undefined, 0);
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "approve", undefined, 0, {
+    afterAccepted: true,
+  });
 });
 
 it("keeps custom limits invalid until fixed and can decline without saving one", async () => {
@@ -160,7 +168,9 @@ it("keeps custom limits invalid until fixed and can decline without saving one",
       ?.disabled,
   ).toBe(false);
   await tap("Don't");
-  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", undefined);
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", undefined, undefined, {
+    afterAccepted: true,
+  });
 });
 
 it("keeps the custom amount when an optimistic removal is followed by a failed save", async () => {
@@ -236,7 +246,9 @@ it("still declines in one tap, with no reason", async () => {
   const approval = booking();
   await show(approval);
   await tap("Don't");
-  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", undefined);
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", undefined, undefined, {
+    afterAccepted: true,
+  });
 });
 
 it("offers no reasons where Aldo gives none", async () => {
