@@ -682,7 +682,11 @@ export function AldoBrowserPanel({
   );
   const environment = environments?.find((e) => e.environmentId === environmentId);
   // The Desktop view offers the Windows computer's screen while it runs.
-  const { computer, stopping: stoppingComputer } = useAldoComputer(environmentId, "windows");
+  const { computer, stopping: stoppingComputer } = useAldoComputer(
+    environmentId,
+    "windows",
+    teachThread,
+  );
   const windowsRunning = computer?.kind === "windows" && computer.status === "running";
   const screen = aldoDesktopScreen(chosenScreen, computer);
   useEffect(() => {
@@ -835,7 +839,11 @@ export function AldoBrowserPanel({
               onChange={setChosenScreen}
               stopping={stoppingComputer}
               onStop={() =>
-                void stopAldoThreadComputer(environmentId, "windows").then((stopped) => {
+                void stopAldoThreadComputer(
+                  environmentId,
+                  "windows",
+                  computer?.disposable ? computer.t3ThreadId : undefined,
+                ).then((stopped) => {
                   if (stopped) setChosenScreen("machine");
                 })
               }
@@ -980,6 +988,7 @@ export function AldoBrowserPanel({
 
       {view === "desktop" ? (
         <AldoDesktopView
+          conversation={computer?.disposable ? computer.t3ThreadId : undefined}
           environmentId={environmentId}
           screen={screen}
           onUse={screen === "machine" ? noteUse : undefined}

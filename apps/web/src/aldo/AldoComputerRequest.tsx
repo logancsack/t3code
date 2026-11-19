@@ -23,6 +23,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
         request.conversation.thread.environmentId,
         approve,
         request.computer.computer,
+        request.conversation.thread.threadId,
       );
       addAldoReceipt({
         key: request.key,

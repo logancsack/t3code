@@ -244,3 +244,12 @@ it("queued computers show a cancellable normal wait, with position optional for 
   expect(aldoComputerQueueLabel("windows", 3)).toBe("Waiting for Windows · position 3");
   expect(aldoComputerQueueLabel("windows")).toBe("Waiting for Windows");
 });
+
+it("keeps Windows desktop connections scoped to the selected conversation", () => {
+  expect(
+    aldoDesktopScreenUrl("wss://agent.example/desktop?token=fixture", "windows", "second"),
+  ).toBe("wss://agent.example/desktop?token=fixture&screen=windows&conversation=second");
+  expect(
+    aldoDesktopScreenUrl("wss://agent.example/desktop?token=fixture", "machine", "second"),
+  ).toBe("wss://agent.example/desktop?token=fixture");
+});

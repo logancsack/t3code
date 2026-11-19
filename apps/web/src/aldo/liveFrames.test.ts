@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
+const environments = vi.hoisted(() => ({
+  value: [] as {
+    environmentId: string;
+    computers: { kind: string; disposable: boolean; t3ThreadId: string }[];
+  }[],
+}));
+vi.mock("./directory", () => ({ getAldoEnvironments: () => environments.value }));
+
 const connection = vi.fn();
 const api = vi.fn();
 vi.mock("./workspaceApi", () => ({ aldoBrowserConnection: (id: string) => connection(id) }));
@@ -28,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  environments.value = [];
   connection.mockReset();
   api.mockReset();
 });
@@ -84,4 +93,32 @@ it("shows the GPU computer's newest frame, read every few seconds whatever the v
   expect(api).toHaveBeenCalledTimes(3);
   expect(api).toHaveBeenCalledWith("/api/environments/t-env/gpu");
   expect(frames).toEqual(["data:image/jpeg;base64,AA"]);
+});
+
+it("gets each disposable Windows still from its own conversation", async () => {
+  environments.value = [
+    {
+      environmentId: "parallel",
+      computers: [
+        { kind: "windows", disposable: true, t3ThreadId: "first" },
+        { kind: "windows", disposable: true, t3ThreadId: "second" },
+      ],
+    },
+  ];
+  connection.mockResolvedValue({ stillUrl: "https://m/still?token=fixture" });
+  const first: string[] = [],
+    second: string[] = [];
+  const stopA = aldoLiveFrames("windows", { environmentId: "parallel", threadId: "first" }).watch(
+    { width: 192, everyMs: 3000 },
+    (frame) => first.push(frame.url),
+  );
+  const stopB = aldoLiveFrames("windows", { environmentId: "parallel", threadId: "second" }).watch(
+    { width: 192, everyMs: 3000 },
+    (frame) => second.push(frame.url),
+  );
+  await vi.advanceTimersByTimeAsync(1);
+  stopA();
+  stopB();
+  expect(first[0]).toContain("&conversation=first");
+  expect(second[0]).toContain("&conversation=second");
 });

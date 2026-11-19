@@ -33,10 +33,12 @@ type Status = "connecting" | "live" | "asleep" | "error";
 export function AldoDesktopView({
   environmentId,
   screen = "machine",
+  conversation,
   onUse,
 }: {
   environmentId: string;
   screen?: AldoDesktopScreen;
+  conversation?: string | null | undefined;
   /** The user clicked, typed or scrolled on the screen: agents wait a moment after. */
   onUse?: (() => void) | undefined;
 }) {
@@ -149,7 +151,7 @@ export function AldoDesktopView({
       try {
         const { desktopUrl } = await aldoBrowserConnection(environmentId);
         if (disposed) return;
-        let vncUrl = aldoDesktopScreenUrl(desktopUrl, screen);
+        let vncUrl = aldoDesktopScreenUrl(desktopUrl, screen, conversation);
         if (!vncOnly && (await aldoCanDecodeH264())) {
           const root = rootRef.current;
           const urls = aldoDesktopVideoUrls(
@@ -224,7 +226,7 @@ export function AldoDesktopView({
       stopWaiting?.();
       hangUp();
     };
-  }, [environmentId, screen, pageVisible]);
+  }, [environmentId, conversation, screen, pageVisible]);
 
   // The video at the view's size, once a resize settles.
   useEffect(() => {

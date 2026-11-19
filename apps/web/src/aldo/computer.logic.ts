@@ -162,9 +162,13 @@ export function aldoDesktopScreen(
 }
 
 /** The desktop stream's URL for a screen: the Windows computer's is the same one with `screen=windows`. */
-export function aldoDesktopScreenUrl(desktopUrl: string, screen: AldoDesktopScreen): string {
+export function aldoDesktopScreenUrl(
+  desktopUrl: string,
+  screen: AldoDesktopScreen,
+  conversation?: string | null,
+): string {
   if (screen === "machine") return desktopUrl;
-  return `${desktopUrl}${desktopUrl.includes("?") ? "&" : "?"}screen=windows`;
+  return `${desktopUrl}${desktopUrl.includes("?") ? "&" : "?"}screen=windows${conversation ? `&conversation=${encodeURIComponent(conversation)}` : ""}`;
 }
 
 /**
