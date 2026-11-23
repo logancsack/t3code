@@ -17,6 +17,7 @@ import {
   LibraryBigIcon,
   LogOutIcon,
   RepeatIcon,
+  MessagesSquareIcon,
   SettingsIcon,
   TargetIcon,
 } from "lucide-react";
@@ -196,6 +197,9 @@ function AccountMenu(props: {
           <MenuItem icon={TargetIcon} label="Goals" onClick={() => go("/goals")} />
         ) : null}
         <MenuItem icon={LibraryBigIcon} label="Library" onClick={() => go("/library")} />
+        {profile?.boards ? (
+          <MenuItem icon={MessagesSquareIcon} label="Boards" onClick={() => go("/boards")} />
+        ) : null}
         <MenuItem icon={RepeatIcon} label="Routines" onClick={() => go("/routines")} />
         <MenuItem icon={SettingsIcon} label="Settings" onClick={() => go("/settings")} />
         <MenuItem icon={InboxIcon} label="Your agents' mail" onClick={() => go("/mail")} />

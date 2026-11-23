@@ -18,6 +18,7 @@ import { Route as MailRouteImport } from './routes/mail'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as ConnectRouteImport } from './routes/connect'
+import { Route as BoardsRouteImport } from './routes/boards'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
@@ -104,6 +105,11 @@ const GoalsRoute = GoalsRouteImport.update({
 const ConnectRoute = ConnectRouteImport.update({
   id: '/connect',
   path: '/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BoardsRoute = BoardsRouteImport.update({
+  id: '/boards',
+  path: '/boards',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -320,6 +326,7 @@ const ChatEnvironmentIdThreadIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
+  '/boards': typeof BoardsRoute
   '/connect': typeof ConnectRoute
   '/goals': typeof GoalsRoute
   '/library': typeof LibraryRoute
@@ -371,6 +378,7 @@ export interface FileRoutesByFullPath {
   '/settings/teams/$teamId': typeof SettingsTeamsTeamIdRoute
 }
 export interface FileRoutesByTo {
+  '/boards': typeof BoardsRoute
   '/connect': typeof ConnectRoute
   '/goals': typeof GoalsRoute
   '/library': typeof LibraryRoute
@@ -424,6 +432,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
+  '/boards': typeof BoardsRoute
   '/connect': typeof ConnectRoute
   '/goals': typeof GoalsRoute
   '/library': typeof LibraryRoute
@@ -479,6 +488,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/boards'
     | '/connect'
     | '/goals'
     | '/library'
@@ -530,6 +540,7 @@ export interface FileRouteTypes {
     | '/settings/teams/$teamId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/boards'
     | '/connect'
     | '/goals'
     | '/library'
@@ -582,6 +593,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_chat'
+    | '/boards'
     | '/connect'
     | '/goals'
     | '/library'
@@ -636,6 +648,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
+  BoardsRoute: typeof BoardsRoute
   ConnectRoute: typeof ConnectRoute
   GoalsRoute: typeof GoalsRoute
   LibraryRoute: typeof LibraryRoute
@@ -713,6 +726,13 @@ declare module '@tanstack/react-router' {
       path: '/connect'
       fullPath: '/connect'
       preLoaderRoute: typeof ConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/boards': {
+      id: '/boards'
+      path: '/boards'
+      fullPath: '/boards'
+      preLoaderRoute: typeof BoardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_chat': {
@@ -1108,6 +1128,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
+  BoardsRoute: BoardsRoute,
   ConnectRoute: ConnectRoute,
   GoalsRoute: GoalsRoute,
   LibraryRoute: LibraryRoute,

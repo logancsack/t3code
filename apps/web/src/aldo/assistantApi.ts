@@ -582,6 +582,7 @@ export function aldoBriefAudioUrl(day: string): string {
 
 /** The signed-in user, for the sidebar and the account dialog. */
 export interface AldoProfile {
+  readonly boards?: boolean;
   readonly id: string;
   readonly email: string;
   readonly name: string | null;
@@ -604,6 +605,7 @@ export async function fetchAldoProfile(): Promise<AldoProfile | null> {
   );
   return body && typeof body.email === "string" && typeof body.id === "string"
     ? {
+        ...(body.boards === true ? { boards: true } : {}),
         id: body.id,
         email: body.email,
         name: typeof body.name === "string" && body.name.trim() ? body.name : null,
