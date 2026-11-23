@@ -68,7 +68,7 @@ The accounts you connect for GitHub and Claude work like injected secrets. The c
 
 ## Logins
 
-A saved login is typed into the in-app browser for the agent, only on the exact site you saved it for. The agent never sees the password. For two-factor codes, the agent asks you in the conversation, or you can take over the browser.
+A saved login is typed into the in-app browser for the agent, on the site you saved it for or another subdomain of the same registrable domain. Separate sites on shared hosts such as github.io and vercel.app stay isolated. Successful sign-ins remember the new host on the vault entry. The agent never sees the password. When a saved login exists, the agent tries the actual form, the site’s main sign-in URL, and the saved host’s login page before asking you to sign in. If those fail, it explains why. A password reset through your connected email requires your approval. For two-factor codes, the agent asks you in the conversation, or you can take over the browser.
 
 ### Saving a login when you sign in
 
