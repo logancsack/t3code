@@ -765,6 +765,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [isWorkspaceFileDragActive]);
   const prefersPlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
+  const isPhoneHeaderViewport = useMediaQuery("max-md");
   // Focusing the composer without a tap raises the on-screen keyboard on touch devices.
   const isCoarsePointer = useMediaQuery({ pointer: "coarse" });
   const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
@@ -3593,7 +3594,16 @@ export default function ChatView(props: ChatViewProps) {
                 className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
               />
             ) : null}
-            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+            {/* Aldo: a cloud thread's phone header opens the panels from its own menu. */}
+            {!rightPanelControlsAtRoot &&
+            !rightPanelControlsInPanel &&
+            !(
+              isPhoneHeaderViewport &&
+              isAldoCloud &&
+              isAldoEnvironmentId(activeThread.environmentId)
+            )
+              ? panelLayoutControls
+              : null}
             {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
             <ChatHeader
               draftId={draftId ?? undefined}
