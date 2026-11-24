@@ -4677,7 +4677,7 @@ function terminalStatusFromResult(
     return isOverloadedResult(message) ||
       message.api_error_status === 429 ||
       terminalResultError(message.terminal_reason, failureHint) !== undefined ||
-      (message.is_error && failureHint !== undefined)
+      message.is_error
       ? "failed"
       : "completed";
   }
@@ -5675,6 +5675,8 @@ export interface ClaudeAdapterV2Options {
    * SessionStart hooks have run, so cwd-keyed workspace scans can be refreshed.
    */
   readonly onSessionInit?: (cwd: string) => Effect.Effect<void>;
+  /** False when Claude rejects the login mid-turn, true once a model answers again. */
+  readonly onAuthenticationStateChanged?: (authenticated: boolean) => Effect.Effect<void>;
   /**
    * Applies Claude Code's reported model ids for a turn's cwd, so turns send ids its backend
    * accepts. Defaults to the catalog unchanged.
@@ -11071,6 +11073,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (message.parent_tool_use_id === null) {
               // CLI notices and API errors arrive as assistant messages from "<synthetic>".
               if (message.message.model && message.message.model !== "<synthetic>") {
+                if (message.error === undefined) {
+                  yield* adapterOptions.onAuthenticationStateChanged?.(true) ?? Effect.void;
+                }
                 context.rootModels.add(message.message.model);
                 context.executedModel = resolveClaudeReportedModelSlug(
                   modelCatalog,
@@ -11100,6 +11105,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   configDir: adapterOptions.environment.CLAUDE_CONFIG_DIR,
                   cwd: path.resolve(context.input.runtimePolicy.cwd ?? "."),
                 });
+                yield* adapterOptions.onAuthenticationStateChanged?.(false) ?? Effect.void;
               }
             }
           }
@@ -14860,7 +14866,12 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
     hooks: Pick<
       ClaudeAdapterV2Options,
-      "scopedLimitNames" | "onUsageLimits" | "onSessionInit" | "modelCatalog" | "routeModelCatalog"
+      | "scopedLimitNames"
+      | "onUsageLimits"
+      | "onSessionInit"
+      | "onAuthenticationStateChanged"
+      | "modelCatalog"
+      | "routeModelCatalog"
     > = {},
   ) {
     const { instanceId, environment, enabled, config } = input;

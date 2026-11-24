@@ -1,14 +1,21 @@
-import { RunId, ThreadId, type OrchestrationV2ThreadShell } from "@t3tools/contracts";
+import {
+  RunId,
+  ThreadId,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadShell,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  legacyThreadDetail,
   legacyThreadShell,
   legacyTurnPage,
   managedActivity,
   managedThreadNeedsTerminalization,
   QUEUED_TURN_START_FUTURE_SKEW_MS,
 } from "./legacyProjection.ts";
+import { stallMessage } from "./turnStall.ts";
 
 const NOW_MS = Date.parse("2026-08-09T12:00:00.000Z");
 const at = (offsetMs: number) => DateTime.makeUnsafe(NOW_MS + offsetMs);
@@ -77,6 +84,102 @@ describe("legacyThreadShell", () => {
     expect(running({ pendingRuntimeRequest: { kind: "command_approval" } as never })).toMatchObject(
       { hasPendingApprovals: true, hasPendingUserInput: false },
     );
+  });
+});
+
+describe("legacyThreadDetail", () => {
+  const item = (id: string, fields: object) => ({
+    id,
+    runId: run,
+    status: "completed",
+    startedAt: at(-4_000),
+    updatedAt: at(-3_000),
+    ...fields,
+  });
+  const detail = legacyThreadDetail({
+    shell: {
+      id: ThreadId.make("thread-1"),
+      status: "interrupted",
+      activeRunId: null,
+      latestRunId: run,
+      pendingRuntimeRequest: null,
+      createdAt: at(-60_000),
+      updatedAt: at(-1_000),
+    } as OrchestrationV2ThreadShell,
+    instructions: new Map([[run, { contract: "aldo-result", version: 7 }]]),
+    projection: {
+      runs: [
+        {
+          id: run,
+          status: "interrupted",
+          userMessageId: "msg-1",
+          modelSelection: { instanceId: "codex", model: "gpt" },
+          requestedAt: at(-5_000),
+          startedAt: at(-4_500),
+        },
+      ],
+      attempts: [{ id: "attempt-1", runId: run }],
+      runtimeRequests: [],
+      messages: [],
+      plans: [],
+      checkpoints: [],
+      providerTurns: [
+        {
+          id: "provider-turn-1",
+          runAttemptId: "attempt-1",
+          tokenUsage: {
+            usedTokens: 1_200,
+            maxTokens: 200_000,
+            inputTokens: 900,
+            outputTokens: 300,
+            updatedAt: "2026-08-09T11:59:58.000Z",
+          },
+        },
+      ],
+      turnItems: [
+        item("tool", { type: "command_execution", input: "ls", status: "failed" }),
+        item("error", {
+          type: "error",
+          failure: { message: "Overloaded", class: "provider", code: "529", retryable: true },
+        }),
+        item("notice", { type: "system_notice", message: "Context was compacted" }),
+        item("stall", {
+          type: "run_interrupt_request",
+          message: stallMessage("suspend-silence", 90_000),
+        }),
+        item("stop", { type: "run_interrupt_request", message: "Stopped by user" }),
+      ],
+    } as unknown as OrchestrationV2ThreadProjection,
+  });
+  const activity = (kind: string) =>
+    detail.activities.filter((candidate) => candidate.kind === kind);
+
+  // One row per fact Aldo's coordinator reads from a turn (sandbox-agent/turns.ts, attention.ts).
+  it.each([
+    [
+      "provider.turn.dispatched",
+      {
+        turnId: null,
+        payload: {
+          requestId: "msg-1",
+          modelSelection: { instanceId: "codex", model: "gpt" },
+          instructions: { contract: "aldo-result", version: 7 },
+        },
+      },
+    ],
+    ["tool.completed", { turnId: run, payload: { toolCallId: "tool", status: "failed" } }],
+    [
+      "runtime.error",
+      { turnId: run, payload: { message: "Overloaded", class: "provider", code: "529" } },
+    ],
+    ["runtime.warning", { turnId: run, payload: { message: "Context was compacted" } }],
+    // Only the watchdog's stop is a stall; the user's Stop beside it is not.
+    ["turn.stalled", { turnId: run, payload: { turnId: run, reason: "suspend-silence" } }],
+    ["context-window.updated", { turnId: run, payload: { usedTokens: 1_200, maxTokens: 200_000 } }],
+  ])("reports %s", (kind, expected) => {
+    const found = activity(kind);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject(expected);
   });
 });
 

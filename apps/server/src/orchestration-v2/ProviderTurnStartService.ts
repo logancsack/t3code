@@ -1997,12 +1997,12 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          // Aldo's per-turn context rides with a prompt; a native resume or command sends none.
+          // Aldo's per-turn context follows the user's words; a native resume or command sends none.
           const managedInstructions =
             turnInstructions === undefined || compact || goalCommand || turnInput.resume
               ? ""
               : yield* turnInstructions.supply({ runId: run.id, userText: providerMessage.text });
-          const context = [delivery.context, sideChatContext, restartNote, managedInstructions]
+          const context = [delivery.context, sideChatContext, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -2021,7 +2021,9 @@ export const layer: Layer.Layer<
           // A resume that must be prompted still needs a request, or the agent has nothing to do.
           const requestText =
             turnInput.resume && prompted && userText === "" ? RESUME_PROMPT : userText;
-          const text = goalCommand ? userText : withInlineContext(context, requestText);
+          const prefixed = goalCommand ? userText : withInlineContext(context, requestText);
+          const text =
+            managedInstructions === "" ? prefixed : `${prefixed}\n\n${managedInstructions}`;
           const operation =
             turnInput.resume && !prompted && session.resumeTurn !== undefined
               ? session.resumeTurn({ ...resumeInput, messageId: resumeMessage.messageId })
@@ -2034,9 +2036,9 @@ export const layer: Layer.Layer<
                       ? {}
                       : { attachments: [...missedAttachments, ...turnInput.message.attachments] }),
                   },
-                  ...(text === userText
+                  ...(prefixed === userText
                     ? {}
-                    : { inlineContextLength: text.length - userText.length }),
+                    : { inlineContextLength: prefixed.length - userText.length }),
                 });
           yield* operation.pipe(
             // Clear pending handoff markers for refused prompts so the next turn retains the native session.

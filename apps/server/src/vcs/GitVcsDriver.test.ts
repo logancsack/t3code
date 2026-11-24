@@ -294,7 +294,7 @@ it.effect.each(["interrupt", "timeout", "success"] as const)(
       assert.isDefined(packName);
       const sharedPackBytes = yield* fs.readFile(path.join(cwd, ".git/objects/pack", packName!));
       if (stop === "interrupt") yield* Fiber.interrupt(fiber);
-      else if (stop === "timeout") yield* TestClock.adjust("30 seconds");
+      else if (stop === "timeout") yield* TestClock.adjust("5 minutes");
       released = true;
       socket.end();
       const result = yield* Fiber.await(fiber);
@@ -1124,16 +1124,19 @@ it.effect.each([
           },
         }),
       );
+      const stageTimeouts = new Set<number | undefined>();
       const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
         Effect.provideService(VcsProcess.VcsProcess, {
-          run: (input) =>
-            captureProcess.run(input).pipe(
+          run: (input) => {
+            if (input.args.includes("add")) stageTimeouts.add(input.timeoutMs);
+            return captureProcess.run(input).pipe(
               Effect.tapError((error) => {
                 if (input.args.includes("add") && error._tag === "VcsProcessExitError")
                   stageError = error;
                 return Effect.void;
               }),
-            ),
+            );
+          },
         }),
       );
       const captureStore = yield* makeCaptureStore(captureDriver, cwd);
@@ -1164,6 +1167,8 @@ it.effect.each([
       } else assert.isTrue(Exit.isSuccess(result));
       assert.strictEqual(racedAttempts, expireRecovery ? 1 : 2);
       assert.strictEqual(discoveries, nestedRecovery ? 1 : 0);
+      // Gigabytes of new media take minutes to hash, not the default 30 seconds.
+      assert.deepStrictEqual([...stageTimeouts], [5 * 60_000]);
       assert.strictEqual(privateIndexes.size, 1);
       assert.strictEqual(
         yield* driver.checkpoints.hasCheckpointRef({ cwd, checkpointRef }),

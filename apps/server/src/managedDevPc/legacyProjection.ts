@@ -14,6 +14,8 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
+import { stallReasonOf } from "./turnStall.ts";
+
 type Utc = OrchestrationV2ThreadShell["createdAt"];
 
 const iso = (value: Utc) => DateTime.formatIso(value);
@@ -290,6 +292,23 @@ function itemActivities(
         createdAt: itemAt(item),
       },
     ];
+  }
+  if (item.type === "run_interrupt_request") {
+    // Only the watchdog's stop is a stall; a person's Stop is an ordinary interrupted turn.
+    const reason = stallReasonOf(item.message);
+    return reason === null
+      ? []
+      : [
+          {
+            id: item.id,
+            tone: "error",
+            kind: "turn.stalled",
+            summary: item.message,
+            payload: { turnId: item.runId, reason },
+            turnId: item.runId,
+            createdAt: itemAt(item),
+          },
+        ];
   }
   if (item.type === "system_notice") {
     const message = item.message.trim();

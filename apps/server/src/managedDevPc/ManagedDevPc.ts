@@ -484,7 +484,9 @@ export const make = Effect.gen(function* () {
       ...(command.continuation === undefined
         ? {}
         : { manualContinuationOfRunId: command.continuation.turnId }),
-      // A message sent under a running turn waits its turn, as the first model queued it.
+      // As the first model did, a running turn takes the message in where its provider steers
+      // (under that turn's id); where it cannot, the message waits for the turn to end.
+      ...(shell.activeRunId === null ? {} : { deliveryIntent: "auto" as const }),
       dispatchMode: { type: busy ? "queue_after_active" : "start_immediately" },
       createdBy: "user",
       creationSource: "web",
@@ -590,9 +592,16 @@ export const make = Effect.gen(function* () {
   };
 
   const dispatch = Effect.fn("ManagedDevPc.dispatch")(function* (command: LegacyCommand) {
-    const result = yield* translate(command).pipe(
-      Effect.mapError(toDispatchError(command.commandId)),
-    );
+    const result = yield* Effect.gen(function* () {
+      // A thread that is gone takes nothing, ever: said as a refusal, so the caller drops it.
+      if (
+        command.type !== "thread.turn.start" &&
+        (yield* threads.getThreadShell(command.threadId)) === null
+      ) {
+        return yield* refuse(`Thread ${command.threadId} does not exist.`);
+      }
+      return yield* translate(command);
+    }).pipe(Effect.mapError(toDispatchError(command.commandId)));
     return { sequence: result.sequence };
   });
 

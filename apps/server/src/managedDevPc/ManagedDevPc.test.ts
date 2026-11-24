@@ -111,37 +111,41 @@ it.effect("starts work on an approved plan with one command: leaves plan mode, t
   }).pipe(Effect.provide(layerWith({ captured })));
 });
 
-it.effect("queues a message behind a running turn and continues a settled one by its id", () => {
-  const captured: OrchestrationV2ServerCommand[] = [];
-  return Effect.gen(function* () {
-    yield* dispatch({
-      type: "thread.turn.start",
-      commandId: "cmd-2",
-      threadId,
-      message: { messageId: "msg-2", role: "user", text: "Carry on", attachments: [] },
-      continuation: { turnId: "run-0" },
-    });
-    expect(captured).toMatchObject([
-      {
-        type: "message.dispatch",
-        manualContinuationOfRunId: RunId.make("run-0"),
-        dispatchMode: { type: "queue_after_active" },
-      },
-    ]);
-  }).pipe(
-    Effect.provide(
-      layerWith({
-        captured,
-        shell: {
-          ...existingThread,
-          status: "running",
-          activeRunId: RunId.make("run-1"),
-          interactionMode: "default",
+it.effect(
+  "hands a running turn the message to steer or queue, and continues a settled one by id",
+  () => {
+    const captured: OrchestrationV2ServerCommand[] = [];
+    return Effect.gen(function* () {
+      yield* dispatch({
+        type: "thread.turn.start",
+        commandId: "cmd-2",
+        threadId,
+        message: { messageId: "msg-2", role: "user", text: "Carry on", attachments: [] },
+        continuation: { turnId: "run-0" },
+      });
+      expect(captured).toMatchObject([
+        {
+          type: "message.dispatch",
+          manualContinuationOfRunId: RunId.make("run-0"),
+          deliveryIntent: "auto",
+          dispatchMode: { type: "queue_after_active" },
         },
-      }),
-    ),
-  );
-});
+      ]);
+    }).pipe(
+      Effect.provide(
+        layerWith({
+          captured,
+          shell: {
+            ...existingThread,
+            status: "running",
+            activeRunId: RunId.make("run-1"),
+            interactionMode: "default",
+          },
+        }),
+      ),
+    );
+  },
+);
 
 it.effect("stores an inline image as an upload the message then carries by id", () => {
   const captured: OrchestrationV2ServerCommand[] = [];
@@ -268,7 +272,7 @@ it.effect("keeps a command for another try when the server could not take it", (
   );
 });
 
-it.effect("refuses a turn for a thread that does not exist and names none to create", () => {
+it.effect("refuses a turn or a command for a thread that does not exist", () => {
   const captured: OrchestrationV2ServerCommand[] = [];
   return Effect.gen(function* () {
     const error = yield* dispatch({
@@ -278,6 +282,11 @@ it.effect("refuses a turn for a thread that does not exist and names none to cre
       message: { messageId: "msg-5", role: "user", text: "Hello", attachments: [] },
     }).pipe(Effect.flip);
     expect(error.refused).toBe(true);
+    // A kept command for a thread since deleted must not hold up the ones behind it.
+    const pin = yield* dispatch({ type: "thread.pin", commandId: "cmd-gone", threadId }).pipe(
+      Effect.flip,
+    );
+    expect(pin.refused).toBe(true);
     expect(captured).toEqual([]);
   }).pipe(Effect.provide(layerWith({ captured, shell: null })));
 });

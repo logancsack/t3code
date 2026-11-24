@@ -482,6 +482,9 @@ const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const FLAGGED_INDEX_ENTRIES_MAX_BYTES = 1024 * 1024;
 const CHECKPOINT_RECOVERY_MAX_CANDIDATES = 64;
 const CHECKPOINT_RECOVERY_TIMEOUT = "5 seconds";
+// Staging hashes every new or changed file (through Git LFS's clean filter for media), so
+// gigabytes of fresh renders outlast the default 30 seconds.
+const CHECKPOINT_STAGE_TIMEOUT_MS = 5 * 60_000;
 const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 // Reflog subjects that only point a ref at an existing commit. Anything else counts as creating
 // one, so an unknown subject keeps its commit attributed.
@@ -1430,6 +1433,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               ...exclusions,
             ],
             env: commitEnv,
+            timeoutMs: CHECKPOINT_STAGE_TIMEOUT_MS,
           }).pipe(
             // With --ignore-errors, exit 1 only reports the files it skipped.
             Effect.catchIf(

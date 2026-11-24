@@ -3580,6 +3580,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       Partial<Pick<ClaudeAdapterV2.ClaudeAgentSdkQuerySession, "listPermissionRules">>;
     readonly environment?: NodeJS.ProcessEnv;
     readonly onSessionInit?: (cwd: string) => Effect.Effect<void>;
+    readonly onAuthenticationStateChanged?: ClaudeAdapterV2.ClaudeAdapterV2Options["onAuthenticationStateChanged"];
     readonly subagentLaunchToolUseId?: string;
     readonly subagentModel?: string;
     readonly nativeSessionId?: string;
@@ -3656,6 +3657,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         random: yield* SecureRandom.SecureRandom,
         idAllocator,
         ...(options?.onSessionInit ? { onSessionInit: options.onSessionInit } : {}),
+        ...(options?.onAuthenticationStateChanged
+          ? { onAuthenticationStateChanged: options.onAuthenticationStateChanged }
+          : {}),
         ...(options?.routeModelCatalog ? { routeModelCatalog: options.routeModelCatalog } : {}),
         continuationRequests: {
           offer: (request) =>
@@ -8783,13 +8787,62 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect(
+    "fails a turn whose success result is marked is_error, with its text as the error",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions();
+        const now = yield* DateTime.now;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-success-is-error"),
+            text: "Continue.",
+            attachments: [],
+          }),
+        );
+        const limit =
+          "You've hit your org's monthly spend limit · ask your admin to raise it · your session limit resets 11:50pm (UTC)";
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000697",
+            result: limit,
+            terminalReason: null,
+            isError: true,
+          }),
+        );
+
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "failed");
+        if (terminal.status !== "failed") return;
+        assert.equal(terminal.failure.message, limit);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
   it.effect("names an expired Claude login instead of the terminal API error", () =>
     Effect.gen(function* () {
       const configDir = "/synthetic/Claude config";
       // The adapter resolves the cwd on the host, which adds a drive letter on Windows.
       const cwd = NodePath.resolve("/synthetic/project");
+      const authenticationStates: Array<boolean> = [];
       const harness = yield* makeWakeHarnessWithOptions({
         environment: { CLAUDE_CONFIG_DIR: configDir },
+        onAuthenticationStateChanged: (authenticated) =>
+          Effect.sync(() => {
+            authenticationStates.push(authenticated);
+          }),
       });
       const now = yield* DateTime.now;
       yield* harness.runtime.startTurn(
@@ -8822,6 +8875,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "failed");
       if (terminal.status !== "failed") return;
+      assert.deepEqual(authenticationStates, [false]);
       assert.include(terminal.failure.message, "run `claude auth login`");
       assert.include(terminal.failure.message, configDir);
       assert.include(terminal.failure.message, JSON.stringify(cwd));
