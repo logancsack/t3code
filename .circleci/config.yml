@@ -123,6 +123,8 @@ jobs:
   # the tests whose imports reach a changed file.
   test:
     executor: node
+    # Two workers on the web's chat view tests pass medium's 4 GB.
+    resource_class: medium+
     steps:
       - in-scope:
           flags: SCOPE_TEST
