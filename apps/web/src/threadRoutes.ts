@@ -1,6 +1,8 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import type { DraftId } from "./composerDraftStore";
 
 export type ThreadRouteTarget =
@@ -21,29 +23,36 @@ type DraftThreadRouteState = {
 
 export type ThreadRouteRenderState = "loading" | "ready" | "missing";
 
+export function isThreadRouteSnapshotAuthoritative(
+  status: EnvironmentShellStatus | null | undefined,
+): boolean {
+  return status === "live";
+}
+
 export function resolveThreadRouteRenderState(input: {
   bootstrapComplete: boolean;
-  shellStatus: EnvironmentShellStatus | undefined;
-  serverThreadShellExists: boolean;
-  serverThreadDetailExists: boolean;
-  serverThreadDetailDeleted: boolean;
+  serverThreadExists: boolean;
+  serverThreadDeleted: boolean;
+  unlistedThreadDetail: EnvironmentThreadState;
   draftThreadExists: boolean;
 }): ThreadRouteRenderState {
+  if (input.draftThreadExists || (input.serverThreadExists && !input.serverThreadDeleted)) {
+    return "ready";
+  }
   if (!input.bootstrapComplete) {
     return "loading";
   }
-  if (input.serverThreadDetailExists || input.draftThreadExists) {
-    return "ready";
-  }
-  if (input.serverThreadDetailDeleted) {
+  if (input.serverThreadExists || input.unlistedThreadDetail.status === "deleted") {
     return "missing";
   }
-  // A cached list can predate work started by another client or a cloud agent.
-  // Only a live snapshot can establish that a deep-linked thread is missing.
-  if (input.shellStatus !== "live") {
+  // Shell membership can lag a new thread; its detail decides.
+  const projection = Option.getOrNull(input.unlistedThreadDetail.data);
+  if (projection === null) {
     return "loading";
   }
-  return input.serverThreadShellExists ? "loading" : "missing";
+  return projection.thread.deletedAt !== null || projection.thread.archivedAt !== null
+    ? "missing"
+    : "ready";
 }
 
 export function buildThreadRouteParams(ref: ScopedThreadRef): {
@@ -54,6 +63,20 @@ export function buildThreadRouteParams(ref: ScopedThreadRef): {
     environmentId: ref.environmentId,
     threadId: ref.threadId,
   };
+}
+
+/** The router keeps reserved characters encoded in location.pathname. */
+export function isThreadRoutePathname(pathname: string, ref: ScopedThreadRef): boolean {
+  const parts = pathname.replace(/\/$/, "").split("/");
+  if (parts.length !== 3 || parts[0] !== "") return false;
+  try {
+    return (
+      decodeURIComponent(parts[1]!) === ref.environmentId &&
+      decodeURIComponent(parts[2]!) === ref.threadId
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function buildDraftThreadRouteParams(draftId: DraftId): {
@@ -92,44 +115,16 @@ export function resolveThreadRouteTarget(
   };
 }
 
-/**
- * Resolves the thread represented by either a canonical thread route or a
- * draft route whose promotion to a server thread has been recorded.
- */
 export function resolveActiveThreadRouteRef(
   target: ThreadRouteTarget | null,
   draftThread: DraftThreadRouteState | null,
+  promotedDraftRedirect: ScopedThreadRef | null = null,
 ): ScopedThreadRef | null {
   if (target?.kind === "server") {
     return target.threadRef;
   }
-  if (target?.kind !== "draft" || !draftThread?.promotedTo) {
+  if (target?.kind !== "draft") {
     return null;
   }
-  return draftThread.promotedTo;
-}
-
-type ThreadRouteViewComponent = typeof import("./components/ThreadRouteView").ThreadRouteView;
-
-let threadRouteView: ThreadRouteViewComponent | null = null;
-let threadRouteViewLoad: Promise<ThreadRouteViewComponent> | null = null;
-
-/**
- * Loads the thread view (ChatView and everything it renders), which the home
- * screen doesn't need. Both thread routes wait for it in their loader, so by
- * the time one matches, `loadedThreadRouteView` has it and the view renders
- * with the route, without suspending. A failed load is tried again next time.
- */
-export function loadThreadRouteView(): Promise<ThreadRouteViewComponent> {
-  threadRouteViewLoad ??= import("./components/ThreadRouteView")
-    .then((module) => (threadRouteView = module.ThreadRouteView))
-    .catch((error: unknown) => {
-      threadRouteViewLoad = null;
-      throw error;
-    });
-  return threadRouteViewLoad;
-}
-
-export function loadedThreadRouteView(): ThreadRouteViewComponent | null {
-  return threadRouteView;
+  return draftThread?.promotedTo ?? promotedDraftRedirect;
 }

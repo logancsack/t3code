@@ -1,16 +1,11 @@
-import { mediaKindFromPath } from "@t3tools/shared/filePreview";
+import { mediaKindFromPath } from "@t3tools/shared/mediaPreview";
 import { mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
 import { resolveProtocolRelativeMediaUrl } from "../media/mediaContent";
 
-// Weak keys retain resolved media actions only while the rendered image is reachable.
 export const markdownImageItems = new WeakMap<Element, ExpandedImageItem>();
 
-/**
- * Collect in document order only when opened, including PR sections separated by videos. A
- * video tile of a grid (aldo/AldoMediaGrid.tsx) registers itself to join them.
- */
 export function markdownImageGallery(
   element: Element,
   selected: ExpandedImageItem,
@@ -18,7 +13,7 @@ export function markdownImageGallery(
   const scope = element.closest("[data-image-gallery]") ?? element.closest(".chat-markdown");
   const images: ExpandedImageItem[] = [];
   let index = -1;
-  for (const image of scope?.querySelectorAll("img, [data-markdown-gallery-video]") ?? []) {
+  for (const image of scope?.querySelectorAll("img") ?? []) {
     const registered = markdownImageItems.get(image);
     if (!registered) continue;
     const link = image.closest("a");
@@ -51,4 +46,28 @@ export function markdownImageGallery(
     }
   }
   return index < 0 ? { images: [selected], index: 0 } : { images, index };
+}
+
+/**
+ * Widens the single-image preview of an image in an expanded tool row to the images its group
+ * viewed. Built from the group's entries: its thumbnail strip can be virtualized out of the DOM.
+ */
+export function workGroupImageGallery(
+  viewedImages: ReadonlyArray<{ readonly path: string; readonly item: ExpandedImageItem | null }>,
+  clickedPath: string | null,
+  preview: ExpandedImagePreview,
+): ExpandedImagePreview {
+  const selected = preview.images[preview.index];
+  if (preview.images.length !== 1 || !selected) return preview;
+  const images: ExpandedImageItem[] = [];
+  let index = -1;
+  for (const viewed of viewedImages) {
+    if (viewed.path === clickedPath) {
+      index = images.length;
+      images.push(selected);
+    } else if (viewed.item) {
+      images.push(viewed.item);
+    }
+  }
+  return index < 0 ? preview : { images, index };
 }

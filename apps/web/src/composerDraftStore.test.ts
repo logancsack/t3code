@@ -1,37 +1,50 @@
+import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
+import { createEnvironmentThreadShellAtoms } from "@t3tools/client-runtime/state/threads";
+import {
+  applyShellStreamEvent,
+  createEnvironmentSnapshotAtom,
+  EMPTY_SHELL_STATE,
+  type EnvironmentShellState,
+  type EnvironmentShellStatus,
+} from "@t3tools/client-runtime/state/shell";
+import { makeThreadProjectionFixture } from "./test-fixtures";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import {
   scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import * as Schema from "effect/Schema";
+import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import {
   defaultInstanceIdForDriver,
+  DEFAULT_MODEL,
+  DEFAULT_MODEL_BY_PROVIDER,
   EnvironmentId,
-  MessageId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  RunId,
   ThreadId,
+  type OrchestrationV2ThreadShell,
+  type OrchestrationV2ShellSnapshot,
   type ModelSelection,
   type PreviewAnnotationPayload,
   type ProviderOptionSelection,
+  type ScopedThreadRef,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import {
-  collectAssistantCitations,
-  serializeAssistantCitation,
-} from "@t3tools/shared/assistantCitations";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-// The composer draft's `modelSelectionByProvider` and
-// `stickyModelSelectionByProvider` maps are keyed by `ProviderInstanceId`
-// in production; these aliases keep the legacy-key migration tests concise.
 const CODEX_INSTANCE = ProviderInstanceId.make("codex");
+const CODEX_SECONDARY_INSTANCE = ProviderInstanceId.make("codex_secondary");
 const CLAUDE_AGENT_INSTANCE = ProviderInstanceId.make("claudeAgent");
+const CURSOR_INSTANCE = ProviderInstanceId.make("cursor");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
+const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
 
 type ProviderOptionSelectionBag = ReadonlyArray<ProviderOptionSelection>;
 type ProviderOptionSelectionsByProvider = Partial<Record<string, ProviderOptionSelectionBag>>;
@@ -60,23 +73,45 @@ function selectionsByProvider(
   }
   return result;
 }
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
+import { createMemoryStorage } from "./lib/storage";
 
 import {
   COMPOSER_DRAFT_STORAGE_KEY,
+  subscribeComposerDraftModelReconciliation,
+  deriveEffectiveComposerModelState,
+  checkoutPullRequestUrlToLink,
   clearComposerDraftsEnvironment,
+  beginBackgroundDraftSubmissionByRef,
+  clearBackgroundDraftSubmissionByRef,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
-  restoreFailedBackgroundDraftThread,
+  resolveDraftPromotionNavigationTarget,
+  restoreFailedDraftThread,
+  subscribeDraftThreadPromotion,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   composerFileNeedsReattach,
+  hydrateImagesFromPersisted,
   partializeComposerDraftStoreState,
   useComposerDraftStore,
   DraftId,
 } from "./composerDraftStore";
-import { removeLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
+import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
+import { insertInlineContextReference } from "./lib/composerContextReferences";
+import {
+  buildMessageContext,
+  environmentContextRecord,
+  terminalContextReference,
+} from "./lib/composerContextRecords";
+import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
+import {
+  copiedComposerAttachmentFile,
+  rememberCopiedComposerAttachments,
+} from "./lib/copiedComposerAttachments";
 import { formatTerminalContextReference, type TerminalContextDraft } from "./lib/terminalContext";
 import { createDeferredStorage } from "./lib/storage";
+import { applyPreviewServerSnapshot, resetPreviewStateForTests } from "./previewStateStore";
 
 function makeImage(input: {
   id: string;
@@ -143,7 +178,10 @@ function resetComposerDraftStore() {
     draftsByThreadKey: {},
     draftThreadsByThreadKey: {},
     logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+    backgroundSubmissionThreadKeys: {},
+    promotedDraftRedirects: {},
     stickyModelSelectionByProvider: {},
+    stickyOptionsByModelByProvider: {},
     stickyActiveProvider: null,
   });
 }
@@ -185,49 +223,6 @@ function draftByKey(key: string) {
   return useComposerDraftStore.getState().draftsByThreadKey[key] ?? undefined;
 }
 
-describe("composerDraftStore assistant citations", () => {
-  beforeEach(resetComposerDraftStore);
-  afterEach(resetComposerDraftStore);
-
-  it("keeps quotes, comments, and remote source IDs through persistence and removes them on clear", async () => {
-    await useComposerDraftStore.persist.clearStorage();
-    vi.useFakeTimers();
-    try {
-      const threadId = ThreadId.make("citation-draft");
-      const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-      const citation = {
-        version: 1 as const,
-        environmentId: EnvironmentId.make("remote-source"),
-        threadId: ThreadId.make("source-thread"),
-        messageId: MessageId.make("source-message"),
-        text: "Preserve the selected text after reload.",
-        comment: "Why is this important?\nPlease show an example.",
-        start: 12,
-        end: 52,
-        prefix: "Before. ",
-        suffix: " After.",
-      };
-      const prompt = `Explain ${serializeAssistantCitation(citation)} further.`;
-      useComposerDraftStore.getState().setPrompt(threadRef, prompt);
-      await vi.advanceTimersByTimeAsync(300);
-      resetComposerDraftStore();
-      await useComposerDraftStore.persist.rehydrate();
-      const restored = draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt ?? "";
-      expect(restored).toBe(prompt);
-      expect(collectAssistantCitations(restored).map((entry) => entry.citation)).toEqual([
-        citation,
-      ]);
-      useComposerDraftStore.getState().clearComposerContent(threadRef);
-      expect(
-        collectAssistantCitations(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt ?? ""),
-      ).toEqual([]);
-    } finally {
-      await useComposerDraftStore.persist.clearStorage();
-      vi.useRealTimers();
-    }
-  });
-});
-
 describe("composerDraftStore addImages", () => {
   const threadId = ThreadId.make("thread-dedupe");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
@@ -267,21 +262,104 @@ describe("composerDraftStore addImages", () => {
     expect(revokeSpy).not.toHaveBeenCalled();
   });
 
-  it("does not revoke blob URLs that are still used by an accepted duplicate image", () => {
-    const first = makeImage({
-      id: "img-shared",
-      previewUrl: "blob:shared",
+  it("deduplicates byte-identical images across calls and keeps distinct bytes", () => {
+    // Hydrated copies get fresh lastModified values, like a restored stash or draft.
+    const persisted = (id: string, fill: number) => ({
+      id,
+      name: "same.png",
+      mimeType: "image/png",
+      sizeBytes: 9,
+      dataUrl: `data:image/png;base64,${btoa(String.fromCharCode(...new Uint8Array(9).fill(fill)))}`,
     });
-    const duplicateSameUrl = makeImage({
-      id: "img-shared",
-      previewUrl: "blob:shared",
-    });
+    const [first, repeat, different] = hydrateImagesFromPersisted([
+      persisted("img-a", 1),
+      persisted("img-b", 1),
+      persisted("img-c", 2),
+    ]);
+    const store = useComposerDraftStore.getState();
 
-    useComposerDraftStore.getState().addImages(threadRef, [first, duplicateSameUrl]);
+    expect(store.addImage(threadRef, first!)).toBe(true);
+    expect(store.addImage(threadRef, { ...repeat!, previewUrl: "blob:b" })).toBe(false);
+    expect(store.addImage(threadRef, different!)).toBe(true);
 
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.images.map((image) => image.id)).toEqual(["img-shared"]);
-    expect(revokeSpy).not.toHaveBeenCalledWith("blob:shared");
+    expect(draft?.images.map((image) => image.id)).toEqual(["img-a", "img-c"]);
+    expect(revokeSpy).toHaveBeenCalledWith("blob:b");
+  });
+});
+
+describe("composerDraftStore copied attachments", () => {
+  beforeEach(resetComposerDraftStore);
+  afterEach(() => {
+    rememberCopiedComposerAttachments(TEST_ENVIRONMENT_ID, new Map());
+    resetComposerDraftStore();
+    vi.restoreAllMocks();
+  });
+
+  it("keeps unsent image and file bytes usable in another draft after source removal", async () => {
+    const source = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("copy-source"));
+    const target = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("copy-target"));
+    const image = makeImage({ id: "uploading-image", previewUrl: "blob:source" });
+    const file = makeFile("uploading-file");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const store = useComposerDraftStore.getState();
+    store.addImages(source, [image]);
+    store.addFiles(source, [file]);
+    rememberCopiedComposerAttachments(
+      TEST_ENVIRONMENT_ID,
+      new Map([
+        [image.id, image.file],
+        [file.id, file.file!],
+      ]),
+    );
+
+    store.removeImage(source, image.id);
+    store.clearComposerContent(source);
+    expect(store.getComposerDraft(source)).toBeNull();
+    expect(revoke).toHaveBeenCalledWith(image.previewUrl);
+
+    const copiedImage = copiedComposerAttachmentFile(TEST_ENVIRONMENT_ID, image.id);
+    const copiedFile = copiedComposerAttachmentFile(TEST_ENVIRONMENT_ID, file.id);
+    expect(copiedImage).toBe(image.file);
+    expect(copiedFile).toBe(file.file);
+    store.addImages(target, [{ ...image, file: copiedImage!, previewUrl: "blob:target" }]);
+    store.addFiles(target, [{ ...file, file: copiedFile! }]);
+    const draft = store.getComposerDraft(target)!;
+    expect([...new Uint8Array(await draft.images[0]!.file.arrayBuffer())]).toEqual([1, 1, 1, 1]);
+    expect(await draft.files[0]!.file!.text()).toBe("report");
+  });
+
+  it("does not reuse bytes from another environment or a superseded clipboard copy", () => {
+    const first = makeImage({ id: "first", previewUrl: "blob:first" });
+    const second = makeFile("second");
+    rememberCopiedComposerAttachments(TEST_ENVIRONMENT_ID, new Map([[first.id, first.file]]));
+    expect(copiedComposerAttachmentFile(OTHER_TEST_ENVIRONMENT_ID, first.id)).toBeUndefined();
+
+    rememberCopiedComposerAttachments(TEST_ENVIRONMENT_ID, new Map([[second.id, second.file!]]));
+    expect(copiedComposerAttachmentFile(TEST_ENVIRONMENT_ID, first.id)).toBeUndefined();
+    expect(copiedComposerAttachmentFile(TEST_ENVIRONMENT_ID, second.id)).toBe(second.file);
+
+    rememberCopiedComposerAttachments(TEST_ENVIRONMENT_ID, new Map());
+    expect(copiedComposerAttachmentFile(TEST_ENVIRONMENT_ID, second.id)).toBeUndefined();
+  });
+});
+
+describe("composerDraftStore unsent draft marker", () => {
+  const threadId = ThreadId.make("thread-unsent-marker");
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  // regression: #11338 rewind locks are session-only and must not survive a reload
+  it("does not persist active rewind locks", () => {
+    const threadKey = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    useComposerDraftStore.setState({ rewindingThreadKeys: new Set([threadKey]) });
+
+    expect(useComposerDraftStore.getState().rewindingThreadKeys.has(threadKey)).toBe(true);
+    expect(partializeComposerDraftStoreState(useComposerDraftStore.getState())).not.toHaveProperty(
+      "rewindingThreadKeys",
+    );
   });
 });
 
@@ -343,8 +421,6 @@ describe("composerDraftStore file attachments", () => {
 
   it("persists a pending file as a needs-reattach marker instead of dropping it", () => {
     const store = useComposerDraftStore.getState();
-    // No setFileUpload: the upload never finished, so there is no attachment
-    // id and the File handle cannot serialize.
     store.addFiles(threadRef, [makeFile("file-pending")]);
 
     const persistApi = useComposerDraftStore.persist as unknown as {
@@ -385,6 +461,56 @@ describe("composerDraftStore file attachments", () => {
     expect(hydratedFiles?.every(composerFileNeedsReattach)).toBe(true);
   });
 
+  it("marks only the matching byte-less upload as missing", () => {
+    const store = useComposerDraftStore.getState();
+    const hydrated: ComposerFileAttachment = {
+      ...makeFile("file-hydrated"),
+      file: null,
+      uploadedAttachmentId: "pending-old",
+      uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+    };
+    const local: ComposerFileAttachment = {
+      ...makeFile("file-local"),
+      name: "local.txt",
+      mimeType: "text/plain",
+    };
+    store.addFiles(threadRef, [hydrated, local]);
+    store.setFileUpload(threadRef, hydrated.id, TEST_ENVIRONMENT_ID, "pending-new");
+    store.setFileUpload(threadRef, local.id, TEST_ENVIRONMENT_ID, "pending-local");
+
+    expect(
+      store.markFileUploadMissing(threadRef, hydrated.id, OTHER_TEST_ENVIRONMENT_ID, "pending-new"),
+    ).toBe(false);
+    expect(
+      store.markFileUploadMissing(threadRef, hydrated.id, TEST_ENVIRONMENT_ID, "pending-old"),
+    ).toBe(false);
+    expect(
+      store.markFileUploadMissing(threadRef, local.id, TEST_ENVIRONMENT_ID, "pending-local"),
+    ).toBe(false);
+
+    expect(store.getComposerDraft(threadRef)?.files).toMatchObject([
+      {
+        id: hydrated.id,
+        uploadedAttachmentId: "pending-new",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+      },
+      {
+        id: local.id,
+        file: local.file,
+        uploadedAttachmentId: "pending-local",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+      },
+    ]);
+
+    expect(
+      store.markFileUploadMissing(threadRef, hydrated.id, TEST_ENVIRONMENT_ID, "pending-new"),
+    ).toBe(true);
+    const marker = store.getComposerDraft(threadRef)?.files[0];
+    expect(marker && composerFileNeedsReattach(marker)).toBe(true);
+    expect(marker?.uploadedAttachmentId).toBeUndefined();
+    expect(marker?.uploadEnvironmentId).toBeUndefined();
+  });
+
   it("enforces the combined file and image limit across separate updates", () => {
     const store = useComposerDraftStore.getState();
     const images = Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) =>
@@ -411,16 +537,48 @@ describe("composerDraftStore file attachments", () => {
     expect(draft?.files.map((file) => file.id)).toEqual(["file-accepted"]);
   });
 
+  it("reattaches a DNG with an older generic-MIME marker at attachment capacity", () => {
+    const store = useComposerDraftStore.getState();
+    const file = new File(["raw"], "photo.DNG", { type: "image/x-adobe-dng" });
+    const marker: ComposerFileAttachment = {
+      type: "file",
+      id: "dng-marker",
+      name: file.name,
+      mimeType: "application/octet-stream",
+      sizeBytes: file.size,
+      file: null,
+    };
+    store.addFiles(threadRef, [marker]);
+    store.addImages(
+      threadRef,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) =>
+        makeImage({
+          id: `image-${index}`,
+          name: `image-${index}.png`,
+          previewUrl: `blob:image-${index}`,
+        }),
+      ),
+    );
+
+    const repicked: ComposerFileAttachment = {
+      ...marker,
+      id: "dng-repicked",
+      mimeType: file.type,
+      file,
+    };
+    store.addFiles(threadRef, [repicked]);
+
+    const files = store.getComposerDraft(threadRef)?.files;
+    expect(files).toEqual([repicked]);
+    expect(files?.some(composerFileNeedsReattach)).toBe(false);
+  });
+
   it("replaces a needs-reattach marker when the same file is picked again", () => {
     const store = useComposerDraftStore.getState();
-    // A hydrated marker: same metadata as the original pick, no bytes and no
-    // server-side upload.
     const marker: ComposerFileAttachment = { ...makeFile("file-marker"), file: null };
     store.addFiles(threadRef, [marker]);
     expect(store.getComposerDraft(threadRef)?.files.every(composerFileNeedsReattach)).toBe(true);
 
-    // Following the "Attach again" instruction produces a fresh id with the
-    // exact metadata the dedup key hashes.
     const repicked = makeFile("file-repicked");
     store.addFiles(threadRef, [repicked]);
 
@@ -428,116 +586,6 @@ describe("composerDraftStore file attachments", () => {
     expect(files?.map((file) => file.id)).toEqual(["file-repicked"]);
     expect(files?.[0]?.file).not.toBeNull();
     expect(files?.some(composerFileNeedsReattach)).toBe(false);
-  });
-
-  it("restores files with matching metadata without replacing unsent bytes", () => {
-    const store = useComposerDraftStore.getState();
-    const unsent = makeFile("unsent");
-    const restored = {
-      ...unsent,
-      id: "restored",
-      file: new File(["edited"], unsent.name, { type: unsent.mimeType }),
-    };
-    store.addFiles(threadRef, [unsent]);
-    store.addFiles(threadRef, [restored, restored], { allowDuplicates: true });
-
-    const files = store.getComposerDraft(threadRef)?.files;
-    expect(files?.map((file) => file.id)).toEqual(["unsent", "restored"]);
-    expect(files?.[0]?.file).toBe(unsent.file);
-    expect(files?.[1]?.file).toBe(restored.file);
-  });
-});
-
-describe("composerDraftStore syncPersistedAttachments", () => {
-  const threadId = ThreadId.make("thread-sync-persisted");
-  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-
-  beforeEach(() => {
-    removeLocalStorageItem(COMPOSER_DRAFT_STORAGE_KEY);
-    useComposerDraftStore.setState({
-      draftsByThreadKey: {},
-      draftThreadsByThreadKey: {},
-      logicalProjectDraftThreadKeyByLogicalProjectKey: {},
-      stickyModelSelectionByProvider: {},
-      stickyActiveProvider: null,
-    });
-  });
-
-  afterEach(() => {
-    removeLocalStorageItem(COMPOSER_DRAFT_STORAGE_KEY);
-  });
-
-  it("treats malformed persisted draft storage as empty", async () => {
-    const image = makeImage({
-      id: "img-persisted",
-      previewUrl: "blob:persisted",
-    });
-    useComposerDraftStore.getState().addImage(threadRef, image);
-    setLocalStorageItem(
-      COMPOSER_DRAFT_STORAGE_KEY,
-      {
-        version: 2,
-        state: {
-          draftsByThreadId: {
-            [threadId]: {
-              attachments: "not-an-array",
-            },
-          },
-        },
-      },
-      Schema.Unknown,
-    );
-
-    useComposerDraftStore.getState().syncPersistedAttachments(threadRef, [
-      {
-        id: image.id,
-        name: image.name,
-        mimeType: image.mimeType,
-        sizeBytes: image.sizeBytes,
-        dataUrl: image.previewUrl,
-      },
-    ]);
-    await Promise.resolve();
-
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([]);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.nonPersistedImageIds).toEqual([image.id]);
-  });
-  it("leaves a draft whose attachments are staged already as it is", async () => {
-    const image = makeImage({ id: "img-staged", previewUrl: "data:image/png;base64,AAAA" });
-    useComposerDraftStore.getState().addImage(threadRef, image);
-    const attachment = {
-      id: image.id,
-      name: image.name,
-      mimeType: image.mimeType,
-      sizeBytes: image.sizeBytes,
-      dataUrl: image.previewUrl,
-    };
-    const threadKey = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
-    useComposerDraftStore.setState((state) => ({
-      draftsByThreadKey: {
-        ...state.draftsByThreadKey,
-        [threadKey]: {
-          ...state.draftsByThreadKey[threadKey]!,
-          persistedAttachments: [attachment],
-          nonPersistedImageIds: [],
-        },
-      },
-    }));
-    const staged = draftFor(threadId, TEST_ENVIRONMENT_ID);
-
-    await useComposerDraftStore.getState().syncPersistedAttachments(threadRef, [attachment]);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBe(staged);
-
-    await useComposerDraftStore.getState().syncPersistedAttachments(threadRef, []);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([]);
-  });
-  it("leaves a draft with no attachments as it is when they're cleared", () => {
-    useComposerDraftStore.getState().setPrompt(threadRef, "hello");
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft).toBeDefined();
-
-    useComposerDraftStore.getState().clearPersistedAttachments(threadRef);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBe(draft);
   });
 });
 
@@ -555,32 +603,51 @@ describe("composerDraftStore terminal contexts", () => {
     });
   });
 
-  it("persists terminal context snapshot text", () => {
-    useComposerDraftStore
-      .getState()
-      .addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-persist" }));
+  it("deduplicates identical terminal contexts by selection signature", () => {
+    const first = makeTerminalContext({ id: "ctx-1" });
+    const duplicate = makeTerminalContext({ id: "ctx-2" });
 
-    const persistedState = partializeComposerDraftStoreState(
-      useComposerDraftStore.getState(),
-    ) as unknown as {
-      draftsByThreadKey?: Record<string, { terminalContexts?: Array<Record<string, unknown>> }>;
-    };
+    useComposerDraftStore.getState().addTerminalContexts(threadRef, [first, duplicate]);
 
-    expect(
-      persistedState.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
-        ?.terminalContexts?.[0],
-      "Expected terminal context metadata to be persisted.",
-    ).toMatchObject({
-      id: "ctx-persist",
-      terminalId: "default",
-      terminalLabel: "Terminal 1",
-      lineStart: 4,
-      lineEnd: 5,
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.terminalContexts.map((context) => context.id)).toEqual(["ctx-1"]);
+  });
+
+  it("inserts terminal contexts at the requested inline prompt position", () => {
+    const first = makeTerminalContext({ id: "ctx-1" });
+    const second = makeTerminalContext({
+      id: "ctx-2",
+      terminalLabel: "Terminal 2",
+      lineStart: 9,
+      lineEnd: 10,
     });
+    const firstInsertion = insertInlineContextReference(
+      "alpha beta",
+      6,
+      terminalContextReference(first),
+    );
+    const secondInsertion = insertInlineContextReference(
+      firstInsertion.prompt,
+      0,
+      terminalContextReference(second),
+    );
+
     expect(
-      persistedState.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
-        ?.terminalContexts?.[0]?.text,
-    ).toBe(makeTerminalContext({ id: "ctx-persist" }).text);
+      useComposerDraftStore
+        .getState()
+        .insertTerminalContext(threadRef, firstInsertion.prompt, first, 0),
+    ).toBe(true);
+    expect(
+      useComposerDraftStore
+        .getState()
+        .insertTerminalContext(threadRef, secondInsertion.prompt, second, 0),
+    ).toBe(true);
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.prompt).toBe(
+      `${formatTerminalContextReference(second)} alpha ${formatTerminalContextReference(first)} beta`,
+    );
+    expect(draft?.terminalContexts.map((context) => context.id)).toEqual(["ctx-2", "ctx-1"]);
   });
 
   it("sanitizes malformed persisted drafts during merge", () => {
@@ -638,7 +705,7 @@ describe("composerDraftStore context persistence", () => {
       threadId: threadRef.threadId,
     };
     const store = useComposerDraftStore.getState();
-    store.addTerminalContext(threadRef, terminal);
+    store.addTerminalContexts(threadRef, [terminal]);
     store.addPreviewAnnotation(threadRef, annotation);
     const terminalLink = formatTerminalContextReference(terminal);
     const prompt = `Inspect ${terminalLink}. Apply [Retry note](t3-context://v1/preview-annotation/preview-annotation_retry-note). Compare ${terminalLink} again.`;
@@ -658,25 +725,130 @@ describe("composerDraftStore context persistence", () => {
     }
   });
 
-  it("retains annotation-only drafts and filters malformed annotations", () => {
+  // regression: #35010 typing a draft in one tab erased drafts another tab saved after it loaded
+  it("keeps a draft another tab saved after this tab loaded", async () => {
+    const sharedStorage = createMemoryStorage();
+    vi.stubGlobal("localStorage", sharedStorage);
+    vi.stubGlobal("window", new EventTarget());
+    vi.useFakeTimers();
+    vi.resetModules();
+    try {
+      const thisTab = await import("./composerDraftStore");
+      vi.resetModules();
+      const otherTab = await import("./composerDraftStore");
+      const betaRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("beta-new-thread"));
+      const alphaRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("alpha-new-thread"));
+
+      otherTab.useComposerDraftStore.getState().setPrompt(betaRef, "beta draft");
+      await vi.advanceTimersByTimeAsync(300);
+      window.dispatchEvent(
+        Object.assign(new Event("storage"), { key: COMPOSER_DRAFT_STORAGE_KEY }),
+      );
+      thisTab.useComposerDraftStore.getState().setPrompt(alphaRef, "alpha draft");
+      await vi.advanceTimersByTimeAsync(300);
+
+      const saved = JSON.parse(sharedStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY) as string);
+      expect(saved.state.draftsByThreadKey[scopedThreadKey(betaRef)]?.prompt).toBe("beta draft");
+      expect(saved.state.draftsByThreadKey[scopedThreadKey(alphaRef)]?.prompt).toBe("alpha draft");
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+});
+
+describe("composerDraftStore thread contexts", () => {
+  const threadId = ThreadId.make("thread-with-context");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const attached = threadContextRecord(
+    scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("attached-thread")),
+    "Fix [login] flow",
+  );
+
+  beforeEach(resetComposerDraftStore);
+
+  it("attaches once per thread, appends one chip, and survives persistence", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Compare with");
+    store.addThreadContexts(threadRef, [attached]);
+    store.addThreadContexts(threadRef, [attached, { ...attached, title: "renamed" }]);
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.threadContexts).toEqual([attached]);
+    expect(attached.label).toBe("Fix login flow");
+    expect(draft?.prompt).toBe(
+      `Compare with [${attached.label}](t3-context://v1/thread/${attached.contextId}) `,
+    );
+
     const merge = useComposerDraftStore.persist.getOptions().merge!;
-    const state = merge(
-      {
-        draftsByThreadKey: {
-          [scopedThreadKey(threadRef)]: {
-            prompt: "",
-            attachments: [],
-            previewAnnotations: [annotation, { id: "invalid" }, null],
-          },
-        },
-      },
+    const hydrated = merge(
+      JSON.parse(
+        JSON.stringify(partializeComposerDraftStoreState(useComposerDraftStore.getState())),
+      ),
       useComposerDraftStore.getInitialState(),
     );
-    const draft = state.draftsByThreadKey[scopedThreadKey(threadRef)];
-    expect(draft?.previewAnnotations).toEqual([annotation]);
-    expect(draft?.prompt).toContain(
-      "t3-context://v1/preview-annotation/preview-annotation_retry-note",
+    expect(hydrated.draftsByThreadKey[scopedThreadKey(threadRef)]?.threadContexts).toEqual([
+      attached,
+    ]);
+    expect(hydrated.draftsByThreadKey[scopedThreadKey(threadRef)]?.prompt).toBe(draft?.prompt);
+  });
+});
+
+describe("composerDraftStore environment contexts", () => {
+  const threadId = ThreadId.make("thread-with-machine");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const vps = environmentContextRecord(EnvironmentId.make("environment-vps"), "Hetzner [vps]");
+
+  beforeEach(resetComposerDraftStore);
+
+  it("mentions a machine once, survives persistence, and sends only its identity", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Run it on");
+    store.addEnvironmentContexts(threadRef, [vps]);
+    store.addEnvironmentContexts(threadRef, [{ ...vps, label: "renamed" }]);
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.environmentContexts).toEqual([vps]);
+    expect(vps.label).toBe("Hetzner vps");
+    expect(draft?.prompt).toBe(
+      `Run it on [${vps.label}](t3-context://v1/environment/${vps.contextId}) `,
     );
+
+    const merge = useComposerDraftStore.persist.getOptions().merge!;
+    const hydrated = merge(
+      JSON.parse(
+        JSON.stringify(partializeComposerDraftStoreState(useComposerDraftStore.getState())),
+      ),
+      useComposerDraftStore.getInitialState(),
+    );
+    const restored = hydrated.draftsByThreadKey[scopedThreadKey(threadRef)];
+    expect(restored?.environmentContexts).toEqual([vps]);
+    expect(restored?.prompt).toBe(draft?.prompt);
+
+    expect(
+      buildMessageContext({
+        terminalContexts: [],
+        reviewComments: [],
+        previewAnnotations: [],
+        environmentContexts: restored?.environmentContexts ?? [],
+      })?.records,
+    ).toEqual([
+      {
+        version: 1,
+        kind: "environment",
+        contextId: vps.contextId,
+        label: "Hetzner vps",
+        environmentId: "environment-vps",
+      },
+    ]);
+  });
+
+  it("drops the chip with the record and removes an otherwise empty draft", () => {
+    const store = useComposerDraftStore.getState();
+    store.addEnvironmentContexts(threadRef, [vps]);
+    store.setEnvironmentContexts(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 });
 
@@ -741,6 +913,18 @@ describe("composerDraftStore project draft thread mapping", () => {
     }
   });
 
+  it("removes a draft's previous project mapping when retargeted in place", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "keep this prompt");
+
+    store.setProjectDraftThreadId(otherProjectRef, draftId, { threadId });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(otherProjectRef)?.draftId).toBe(draftId);
+    expect(store.getComposerDraft(draftId)?.prompt).toBe("keep this prompt");
+  });
+
   it("rotates a failed bootstrap thread id without losing its draft", () => {
     const store = useComposerDraftStore.getState();
     const retryThreadId = ThreadId.make("thread-retry");
@@ -778,44 +962,77 @@ describe("composerDraftStore project draft thread mapping", () => {
     );
   });
 
-  it.each([false, true])(
-    "restores a failed background draft without replacing the next draft (finalized: %s)",
-    (finalized) => {
-      const store = useComposerDraftStore.getState();
-      const nextDraftId = DraftId.make("next-draft");
-      const retryThreadId = ThreadId.make("retry-thread");
-      const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-      store.setProjectDraftThreadId(projectRef, draftId, {
-        threadId,
-        branch: "main",
-        envMode: "worktree",
-        startFromOrigin: true,
-      });
-      const sentDraft = store.getDraftSession(draftId)!;
-      markPromotedDraftThreadByRef(threadRef);
-      store.setProjectDraftThreadId(projectRef, nextDraftId, {
-        threadId: ThreadId.make("next-thread"),
-      });
-      store.setPrompt(nextDraftId, "My next task");
-      const nextDraft = store.getDraftSession(nextDraftId);
-      if (finalized) finalizePromotedDraftThreadByRef(threadRef);
+  it("clears only matching project draft mapping entries", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "hello");
 
-      restoreFailedBackgroundDraftThread(draftId, sentDraft, retryThreadId);
-      store.setPrompt(draftId, "Retry the first task");
+    store.clearProjectDraftThreadById(projectRef, otherDraftId);
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)?.threadId).toBe(
+      threadId,
+    );
 
-      expect(store.getDraftThreadByProjectRef(projectRef)?.draftId).toBe(nextDraftId);
-      expect(store.getDraftSession(nextDraftId)).toBe(nextDraft);
-      expect(store.getComposerDraft(nextDraftId)?.prompt).toBe("My next task");
-      expect(store.getDraftSession(draftId)).toMatchObject({
-        threadId: retryThreadId,
-        promotedTo: null,
-        branch: "main",
-        envMode: "worktree",
-        startFromOrigin: true,
-      });
-      expect(store.getComposerDraft(draftId)?.prompt).toBe("Retry the first task");
-    },
-  );
+    store.clearProjectDraftThreadById(projectRef, draftId);
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
+    expect(draftByKey(draftId)).toBeUndefined();
+  });
+
+  // regression: #1264 deleting a project must release its draft thread's image blob URLs
+  it("revokes draft image blob URLs when clearing a project's draft thread", () => {
+    const store = useComposerDraftStore.getState();
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    const revokeSpy = vi.fn<(url: string) => void>();
+    URL.revokeObjectURL = revokeSpy;
+
+    try {
+      store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+      store.addImage(draftId, makeImage({ id: "img-project-clear", previewUrl: "blob:clear" }));
+
+      store.clearProjectDraftThreadId(projectRef);
+
+      expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
+      expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
+      expect(revokeSpy).toHaveBeenCalledWith("blob:clear");
+    } finally {
+      URL.revokeObjectURL = originalRevokeObjectUrl;
+    }
+  });
+
+  it("clears empty composer drafts when remapping a project to a new draft thread", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+
+    store.setProjectDraftThreadId(projectRef, otherDraftId, { threadId: otherThreadId });
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)?.threadId).toBe(
+      otherThreadId,
+    );
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
+    expect(draftByKey(draftId)).toBeUndefined();
+  });
+
+  it("keeps a draft with an open page when remapping a project to a new draft thread", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    applyPreviewServerSnapshot(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId), {
+      threadId,
+      tabId: "tab-link",
+      navStatus: { _tag: "Success", url: "https://example.com/", title: "Example" },
+      canGoBack: false,
+      canGoForward: false,
+      updatedAt: "2026-10-09T00:00:00.000Z",
+    });
+    try {
+      store.setProjectDraftThreadId(projectRef, otherDraftId, { threadId: otherThreadId });
+
+      expect(useComposerDraftStore.getState().getDraftThread(draftId)?.threadId).toBe(threadId);
+      const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+      expect(persisted.draftThreadsByThreadKey[draftId]?.threadId).toBe(threadId);
+    } finally {
+      resetPreviewStateForTests();
+    }
+  });
 
   it("keeps invested composer drafts alive unmapped when remapping a project to a new draft thread", () => {
     const store = useComposerDraftStore.getState();
@@ -824,14 +1041,25 @@ describe("composerDraftStore project draft thread mapping", () => {
 
     store.setProjectDraftThreadId(projectRef, otherDraftId, { threadId: otherThreadId });
 
-    // The mapping moved to the fresh draft...
     expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)?.threadId).toBe(
       otherThreadId,
     );
-    // ...but the invested draft survives with its content for the sidebar
-    // draft rows to surface.
     expect(useComposerDraftStore.getState().getDraftThread(draftId)?.threadId).toBe(threadId);
     expect(draftByKey(draftId)?.prompt).toBe("keep me around");
+  });
+
+  it("clears every session for a project, including unmapped invested drafts", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "invested");
+    store.setProjectDraftThreadId(projectRef, otherDraftId, { threadId: otherThreadId });
+
+    store.clearProjectDraftThreadId(projectRef);
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
+    expect(useComposerDraftStore.getState().getDraftThread(otherDraftId)).toBeNull();
+    expect(draftByKey(draftId)).toBeUndefined();
   });
 
   it("keeps composer drafts when the thread is still mapped by another project", () => {
@@ -889,6 +1117,42 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(remoteDraftId)?.prompt).toBe("remote draft");
   });
 
+  it("keeps background submission pending until navigation or failure releases it", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    const ref = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    const key = scopedThreadKey(ref);
+    beginBackgroundDraftSubmissionByRef(ref);
+    expect(useComposerDraftStore.getState().backgroundSubmissionThreadKeys[key]).toBe(true);
+    clearBackgroundDraftSubmissionByRef(ref);
+    expect(useComposerDraftStore.getState().backgroundSubmissionThreadKeys[key]).toBeUndefined();
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)).not.toBeNull();
+    beginBackgroundDraftSubmissionByRef(ref);
+    finalizePromotedDraftThreadByRef(ref);
+    expect(useComposerDraftStore.getState().backgroundSubmissionThreadKeys[key]).toBeUndefined();
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)).toBeNull();
+  });
+
+  it("restores a failed draft without changing the fresh draft", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    const sentDraft = useComposerDraftStore.getState().getDraftSession(draftId)!;
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+    const freshId = DraftId.make("fresh-background-draft");
+    store.setProjectDraftThreadId(projectRef, freshId, { threadId: ThreadId.make("fresh-thread") });
+    store.setPrompt(freshId, "new work");
+    store.setDraftThreadContext(draftId, { branch: "retry-base" });
+    restoreFailedDraftThread(draftId, sentDraft, ThreadId.make("retry-thread"));
+    store.setPrompt(draftId, "retry work");
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)?.promotedTo).toBeNull();
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)?.threadId).toBe(
+      "retry-thread",
+    );
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)?.branch).toBe("retry-base");
+    expect(draftByKey(freshId)?.prompt).toBe("new work");
+    expect(draftByKey(draftId)?.prompt).toBe("retry work");
+  });
+
   it("moves composer edits made during promotion to the canonical thread", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
@@ -901,6 +1165,68 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
     expect(draftByKey(draftId)).toBeUndefined();
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("typed during setup");
+  });
+
+  it("finalizes a matching materialized draft even when promotion was not pre-marked", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "promote me");
+
+    finalizePromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
+    expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("promote me");
+  });
+
+  it("preserves existing branch and worktree when setProjectDraftThreadId receives undefined", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      branch: "main",
+      worktreePath: "/tmp/main-worktree",
+    });
+    const runtimeUndefinedOptions = {
+      branch: undefined,
+      worktreePath: undefined,
+    } as unknown as {
+      branch?: string | null;
+      worktreePath?: string | null;
+    };
+    store.setProjectDraftThreadId(projectRef, draftId, runtimeUndefinedOptions);
+
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
+      environmentId: TEST_ENVIRONMENT_ID,
+      projectId,
+      branch: "main",
+      worktreePath: "/tmp/main-worktree",
+      envMode: "worktree",
+    });
+  });
+
+  it("clears branch and worktree but keeps env mode when remapping a draft to another environment", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      branch: "feature/local-only",
+      worktreePath: "/tmp/local-worktree",
+      envMode: "worktree",
+      startFromOrigin: true,
+    });
+
+    store.setLogicalProjectDraftThreadId(scopedProjectKey(projectRef), remoteProjectRef, draftId, {
+      threadId,
+    });
+
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
+      environmentId: OTHER_TEST_ENVIRONMENT_ID,
+      projectId,
+      branch: null,
+      worktreePath: null,
+      envMode: "worktree",
+      startFromOrigin: true,
+    });
   });
 
   it("clears stale upload metadata when retargeting a draft to another environment", () => {
@@ -925,6 +1251,26 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(file?.uploadedAttachmentId).toBeUndefined();
     expect(file?.uploadEnvironmentId).toBeUndefined();
     expect(file && composerFileNeedsReattach(file)).toBe(true);
+  });
+
+  it("rechecks balancing when an empty draft is remapped to another project member", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: TEST_ENVIRONMENT_ID,
+    });
+    store.setProjectDraftThreadId(remoteProjectRef, draftId, { threadId });
+    expect(store.getDraftThread(draftId)).toMatchObject({
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: null,
+    });
+    store.setDraftThreadContext(draftId, { loadBalancedEnvironmentId: OTHER_TEST_ENVIRONMENT_ID });
+    store.setDraftThreadContext(draftId, { projectRef });
+    expect(store.getDraftThread(draftId)).toMatchObject({
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: null,
+    });
   });
 
   it("pins manual workspace choices and can return to automatic routing without losing the prompt", () => {
@@ -957,6 +1303,292 @@ describe("composerDraftStore project draft thread mapping", () => {
   });
 });
 
+function modelReconciliationHarness(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  initialStatus: EnvironmentShellStatus = "live",
+) {
+  const tasks: Array<() => void> = [];
+  const registry = AtomRegistry.make({
+    scheduleTask: (task) => {
+      tasks.push(task);
+      return () => {};
+    },
+  });
+  onTestFinished(() => registry.dispose());
+  const flush = () => {
+    for (let task = tasks.shift(); task !== undefined; task = tasks.shift()) task();
+  };
+  const selectedThreadId = ThreadId.make("another-selected-thread");
+  const thread: OrchestrationV2ThreadShell = {
+    ...makeThreadProjectionFixture().thread,
+    latestRunId: null,
+    activeRunId: null,
+    status: "idle",
+    pendingRuntimeRequest: null,
+    latestVisibleMessage: null,
+    latestUserMessageAt: null,
+    hasActionableProposedPlan: false,
+    itemCount: 0,
+    visibleItemCount: 0,
+  };
+  const initialSnapshot: OrchestrationV2ShellSnapshot = {
+    schemaVersion: 1,
+    snapshotSequence: 0,
+    projects: [],
+    archivedThreads: [],
+    threads: [
+      { ...thread, id: threadId },
+      { ...thread, id: selectedThreadId },
+    ],
+  };
+  const shellStateAtom = Atom.make<EnvironmentShellState>({
+    ...EMPTY_SHELL_STATE,
+    snapshot: Option.some(initialSnapshot),
+    status: initialStatus,
+  });
+  const shellResultAtom = Atom.map(shellStateAtom, AsyncResult.success);
+  const snapshotAtom = createEnvironmentSnapshotAtom(() => shellResultAtom)(environmentId);
+  const catalogValueAtom = Atom.make({
+    isReady: true,
+    entries: new Map([
+      [
+        environmentId,
+        {
+          target: new PrimaryConnectionTarget({
+            environmentId,
+            label: "Environment",
+            httpBaseUrl: "https://example.test",
+            wsBaseUrl: "wss://example.test",
+          }),
+          profile: Option.none(),
+          enabled: true,
+        },
+      ],
+    ]),
+  });
+  // A pick sent to the thread: shown over the durable snapshot until it settles.
+  const inFlightPickAtom = Atom.make<ModelSelection | null>(null);
+  const visibleSnapshotAtom = Atom.make((get) => {
+    const snapshot = get(snapshotAtom);
+    const pick = get(inFlightPickAtom);
+    if (!snapshot || !pick) return snapshot;
+    return {
+      ...snapshot,
+      threads: snapshot.threads.map((candidate) =>
+        candidate.id === threadId ? { ...candidate, modelSelection: pick } : candidate,
+      ),
+    };
+  });
+  const pendingThreadIdsAtom = Atom.map(
+    inFlightPickAtom,
+    (pick): ReadonlySet<ThreadId> => new Set(pick ? [threadId] : []),
+  );
+  const shells = createEnvironmentThreadShellAtoms({
+    catalogValueAtom,
+    snapshotAtom: () => visibleSnapshotAtom,
+    hiddenThreadTagsAtom: () => Atom.make(null),
+  });
+  const selectedShell = shells.threadShellAtom({ environmentId, threadId: selectedThreadId });
+  onTestFinished(registry.mount(selectedShell));
+  onTestFinished(
+    subscribeComposerDraftModelReconciliation({
+      registry,
+      threadShellAtom: shells.threadShellAtom,
+      threadRefsAtom: shells.threadRefsAtom,
+      shellStateAtom: () => shellResultAtom,
+      pendingThreadIdsAtom: () => pendingThreadIdsAtom,
+    }),
+  );
+  flush();
+  return {
+    flush,
+    showInFlightPick(pick: ModelSelection | null) {
+      registry.set(inFlightPickAtom, pick);
+      flush();
+    },
+    setStatus(status: EnvironmentShellStatus) {
+      registry.set(shellStateAtom, { ...registry.get(shellStateAtom), status });
+      flush();
+    },
+    update(changes: Partial<OrchestrationV2ThreadShell>, status?: EnvironmentShellStatus) {
+      const state = registry.get(shellStateAtom);
+      const snapshot = Option.getOrThrow(state.snapshot);
+      registry.set(shellStateAtom, {
+        ...state,
+        status: status ?? state.status,
+        snapshot: Option.some(
+          applyShellStreamEvent(snapshot, {
+            kind: "thread.updated",
+            location: "active",
+            sequence: snapshot.snapshotSequence + 1,
+            thread: { ...snapshot.threads[0]!, ...changes },
+          }),
+        ),
+      });
+      flush();
+      expect(registry.get(selectedShell)?.id).toBe(selectedThreadId);
+    },
+    model: () => registry.get(shells.threadShellAtom({ environmentId, threadId }))!.modelSelection,
+  };
+}
+
+type PromotionShell = NonNullable<
+  Parameters<typeof resolveDraftPromotionNavigationTarget>[0]["serverThread"]
+>;
+
+function draftPromotionHarness() {
+  const tasks: Array<() => void> = [];
+  const registry = AtomRegistry.make({
+    scheduleTask: (task) => {
+      tasks.push(task);
+      return () => {};
+    },
+  });
+  onTestFinished(() => registry.dispose());
+  const flush = () => {
+    for (let task = tasks.shift(); task !== undefined; task = tasks.shift()) task();
+  };
+  const threadRefsAtom = Atom.make<ReadonlyArray<ScopedThreadRef>>([]);
+  const shellAtoms = new Map<string, Atom.Writable<PromotionShell | null>>();
+  const shellAtom = (ref: ScopedThreadRef) => {
+    const key = scopedThreadKey(ref);
+    let atom = shellAtoms.get(key);
+    if (!atom) {
+      atom = Atom.make<PromotionShell | null>(null);
+      shellAtoms.set(key, atom);
+    }
+    return atom;
+  };
+  onTestFinished(
+    subscribeDraftThreadPromotion({ registry, threadRefsAtom, threadShellAtom: shellAtom }),
+  );
+  flush();
+  return {
+    flush,
+    arrive(ref: ScopedThreadRef, shell: PromotionShell | null = null) {
+      registry.set(shellAtom(ref), shell);
+      registry.set(threadRefsAtom, [...registry.get(threadRefsAtom), ref]);
+      flush();
+    },
+    updateShell(ref: ScopedThreadRef, shell: PromotionShell) {
+      registry.set(shellAtom(ref), shell);
+      flush();
+    },
+  };
+}
+
+describe("composerDraftStore draft promotion", () => {
+  const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("project-promotion"));
+  const draftId = DraftId.make("draft-promotion");
+  const threadId = ThreadId.make("thread-promotion");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const preparingRun = {
+    runId: RunId.make("run-promotion"),
+    status: "preparing" as const,
+    requestedAt: "2026-03-29T00:00:00.000Z",
+    startedAt: null,
+    completedAt: null,
+    assistantMessageId: null,
+  };
+
+  beforeEach(resetComposerDraftStore);
+
+  it("stays on the draft until the server owns the send", () => {
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef: threadRef,
+        serverThread: { latestRun: preparingRun, latestUserMessageAt: null },
+        backgroundSubmissionPending: false,
+      }),
+    ).toBeNull();
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef: threadRef,
+        serverThread: { latestRun: null, latestUserMessageAt: null },
+        backgroundSubmissionPending: false,
+      }),
+    ).toBeNull();
+    const persisted = { latestRun: preparingRun, latestUserMessageAt: "2026-03-29T00:00:00.000Z" };
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef: threadRef,
+        serverThread: persisted,
+        backgroundSubmissionPending: false,
+      }),
+    ).toBe(threadRef);
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef: threadRef,
+        serverThread: persisted,
+        backgroundSubmissionPending: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("marks a draft promoting when its reserved thread arrives, then finalizes into it", async () => {
+    const h = draftPromotionHarness();
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "typed during setup");
+    h.flush();
+    expect(store.getDraftSession(draftId)?.promotedTo).toBeNull();
+
+    h.arrive(threadRef, { latestRun: preparingRun, latestUserMessageAt: null });
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)?.promotedTo).toEqual(
+      threadRef,
+    );
+
+    h.updateShell(threadRef, {
+      latestRun: preparingRun,
+      latestUserMessageAt: "2026-03-29T00:00:00.000Z",
+    });
+    await waitForDraftHeroTransition();
+
+    const state = useComposerDraftStore.getState();
+    expect(state.getDraftSession(draftId)).toBeNull();
+    expect(state.getPromotedDraftRedirect(draftId)).toEqual(threadRef);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("typed during setup");
+  });
+
+  it("holds a background submission on its draft until the send settles", async () => {
+    const h = draftPromotionHarness();
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    beginBackgroundDraftSubmissionByRef(threadRef);
+    h.arrive(threadRef, {
+      latestRun: preparingRun,
+      latestUserMessageAt: "2026-03-29T00:00:00.000Z",
+    });
+    await waitForDraftHeroTransition();
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)?.promotedTo).toEqual(
+      threadRef,
+    );
+
+    clearBackgroundDraftSubmissionByRef(threadRef);
+    h.flush();
+    await waitForDraftHeroTransition();
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)).toBeNull();
+  });
+
+  it("does not finalize a draft whose send failed and was restored", async () => {
+    const h = draftPromotionHarness();
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    const sent = useComposerDraftStore.getState().getDraftSession(draftId)!;
+    h.arrive(threadRef, {
+      latestRun: { ...preparingRun, status: "failed" as const },
+      latestUserMessageAt: null,
+    });
+    restoreFailedDraftThread(draftId, sent, ThreadId.make("retry-thread"));
+    h.flush();
+    await waitForDraftHeroTransition();
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)?.threadId).toBe(
+      "retry-thread",
+    );
+  });
+});
+
 describe("composerDraftStore modelSelection", () => {
   const threadId = ThreadId.make("thread-model-options");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
@@ -965,103 +1597,590 @@ describe("composerDraftStore modelSelection", () => {
     resetComposerDraftStore();
   });
 
-  it("returns a manual draft to automatic selection without discarding its prompt", () => {
+  it("retains a pick matching cached state until the live shell confirms it", () => {
+    const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId, "cached");
+    const pick = h.model();
+    useComposerDraftStore.getState().setModelSelection(threadRef, pick, { explicit: true });
+    h.flush();
+    const before = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(before?.modelSelectionByProvider[pick.instanceId]).toEqual(pick);
+
+    for (const status of ["empty", "synchronizing", "cached"] as const) {
+      h.setStatus(status);
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toEqual(before);
+    }
+    h.update({ modelSelection: { ...pick, model: "remote-model" } }, "live");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toEqual(before);
+    h.update({ modelSelection: pick }, "synchronizing");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toEqual(before);
+    h.setStatus("live");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("keeps a pick matching the old model while an earlier pick is still in flight", () => {
+    const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId);
     const store = useComposerDraftStore.getState();
-    store.setPrompt(threadRef, "Investigate this failure");
+    const original = h.model();
+    const other = { ...original, model: "remote-model" };
+    store.setModelSelection(threadRef, other, { explicit: true });
+    h.showInFlightPick(other);
+    store.setModelSelection(threadRef, original, { explicit: true });
+    h.showInFlightPick(original);
+    const latest = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(latest?.modelSelectionByProvider[original.instanceId]).toEqual(original);
+
+    // The earlier pick lands, then the latest one is rejected.
+    h.update({ modelSelection: other });
+    h.showInFlightPick(null);
+    expect(h.model()).toEqual(other);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBe(latest);
+  });
+
+  it.each(["consecutive model", "consecutive options", "returning model"] as const)(
+    "releases only the latest accepted pick after %s picks",
+    (kind) => {
+      const store = useComposerDraftStore.getState();
+      store.setPrompt(threadRef, "keep this follow-up");
+      const select = () => {
+        if (kind === "consecutive options") {
+          store.setProviderModelOptions(
+            threadRef,
+            CODEX_DRIVER,
+            toSelections({ reasoningEffort: "high" }),
+            { instanceId: CODEX_INSTANCE, model: "gpt-5.5" },
+          );
+        } else {
+          store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.5"), {
+            explicit: true,
+          });
+        }
+      };
+      select();
+      const first = draftFor(threadId, TEST_ENVIRONMENT_ID)!.modelSelectionByProvider[
+        CODEX_INSTANCE
+      ]!;
+      if (kind === "returning model") {
+        store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+          explicit: true,
+        });
+      }
+      select();
+      const latest = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
+
+      store.releaseModelSelection(threadRef, first);
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBe(latest);
+      store.releaseModelSelection(threadRef, latest.modelSelectionByProvider[CODEX_INSTANCE]!);
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBeUndefined();
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider).toEqual({});
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("keep this follow-up");
+    },
+  );
+
+  it("releases an inactive thread pick only after its queued model becomes durable", () => {
+    const store = useComposerDraftStore.getState();
+    const pick = modelSelection(CODEX_DRIVER, "gpt-5.5", { fastMode: false });
+    store.setPrompt(threadRef, "keep this unsent follow-up");
+    store.addImage(threadRef, makeImage({ id: "image", previewUrl: "blob:keep-image" }));
+    store.setTerminalContexts(threadRef, [makeTerminalContext({ id: "terminal" })]);
+    store.setRuntimeMode(threadRef, "approval-required");
+    store.setInteractionMode(threadRef, "plan");
+    store.setModelSelection(threadRef, pick, { explicit: true });
+    const before = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
+    const remoteRef = scopeThreadRef(OTHER_TEST_ENVIRONMENT_ID, threadId);
+    store.setModelSelection(remoteRef, pick, { explicit: true });
+    const remoteBefore = draftFor(threadId, OTHER_TEST_ENVIRONMENT_ID);
+    const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId);
+
+    h.update({ status: "queued" });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toEqual(before);
+    h.update({ status: "running", modelSelection: modelSelection(CODEX_DRIVER, "gpt-5.5") });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toEqual({
+      ...before,
+      activeProvider: null,
+      modelSelectionByProvider: {},
+      modelSelectionExplicit: undefined,
+    });
+    expect(draftFor(threadId, OTHER_TEST_ENVIRONMENT_ID)).toEqual(remoteBefore);
+
+    const remoteModel = DEFAULT_MODEL_BY_PROVIDER[CLAUDE_AGENT_DRIVER]!;
+    h.update({ modelSelection: modelSelection(CLAUDE_AGENT_DRIVER, remoteModel) });
+    const effective = deriveEffectiveComposerModelState({
+      threadStarted: false,
+      draft: draftFor(threadId, TEST_ENVIRONMENT_ID),
+      providers: [
+        {
+          instanceId: CLAUDE_AGENT_INSTANCE,
+          driver: CLAUDE_AGENT_DRIVER,
+          enabled: true,
+          installed: true,
+          version: null,
+          status: "ready",
+          auth: { status: "authenticated" },
+          checkedAt: "2026-01-01T00:00:00.000Z",
+          models: [{ slug: remoteModel, name: remoteModel, isCustom: false, capabilities: {} }],
+          slashCommands: [],
+          skills: [],
+        },
+      ],
+      selectedProvider: CLAUDE_AGENT_DRIVER,
+      selectedInstanceId: CLAUDE_AGENT_INSTANCE,
+      threadModelSelection: h.model(),
+      projectModelSelection: null,
+      settings: DEFAULT_UNIFIED_SETTINGS,
+    });
+    expect(effective.selectedModel).toBe(remoteModel);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider).toEqual({});
+  });
+
+  it("retains an unavailable provider pick through differing durable model updates", () => {
+    const store = useComposerDraftStore.getState();
+    const pick = createModelSelection(CODEX_SECONDARY_INSTANCE, "gpt-5.5", [
+      { id: "reasoningEffort", value: "high" },
+      { id: "fastMode", value: true },
+    ]);
+    // A remembered primary pick is the visible fallback while the secondary is unavailable.
+    const primary = modelSelection(CODEX_DRIVER, DEFAULT_MODEL);
+    store.setModelSelection(threadRef, primary);
+    store.setModelSelection(threadRef, pick, { explicit: true });
+    const before = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId);
+    h.update({ modelSelection: primary });
+    const fallback = deriveEffectiveComposerModelState({
+      threadStarted: false,
+      draft: before,
+      providers: [],
+      selectedProvider: CODEX_DRIVER,
+      selectedInstanceId: CODEX_INSTANCE,
+      threadModelSelection: h.model(),
+      projectModelSelection: null,
+      settings: DEFAULT_UNIFIED_SETTINGS,
+    });
+    expect(fallback.selectedModel).toBe(h.model().model);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toEqual(before);
+
+    for (const modelSelection of [
+      { ...pick, instanceId: CODEX_INSTANCE },
+      { ...pick, model: "gpt-5.4" },
+      { ...pick, options: [{ id: "reasoningEffort", value: "high" }] },
+      {
+        ...pick,
+        options: [
+          { id: "reasoningEffort", value: "low" },
+          { id: "fastMode", value: true },
+        ],
+      },
+    ]) {
+      h.update({ modelSelection });
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toEqual(before);
+    }
+    h.update({ modelSelection: { ...pick, options: pick.options!.toReversed() } });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("marks picker writes explicit and seeding writes non-explicit", () => {
+    const store = useComposerDraftStore.getState();
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"));
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBeUndefined();
+
     store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
       explicit: true,
     });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBe(true);
 
-    store.setModelSelection(threadRef, null);
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.modelSelectionExplicit).toBeUndefined();
-    expect(draft?.prompt).toBe("Investigate this failure");
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+      replaceOptions: true,
+    });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBeUndefined();
   });
 
-  it("restores a generated header after a failed send without carrying its origin into a new prompt", () => {
-    const store = useComposerDraftStore.getState();
-    const prompt = "Ultrathink:\nInvestigate this failure";
-    store.setPrompt(threadRef, prompt, { effortInjected: true });
-    const effortInjected = draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected === true;
-    store.clearComposerContent(threadRef);
-    store.setPrompt(threadRef, "Ultrathink:\nAnother user-authored prompt");
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).not.toBe(true);
-
-    store.clearComposerContent(threadRef);
-    store.setPrompt(threadRef, prompt, { effortInjected });
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBe(true);
-  });
-
-  it("does not clear other provider options when setting options for a single provider", () => {
+  it("replaces only the targeted provider options on the current model selection", () => {
     const store = useComposerDraftStore.getState();
 
-    // Set options for both providers
-    store.setModelOptions(
+    store.setModelSelection(
       threadRef,
-      providerModelOptions({
-        codex: { fastMode: true },
-        claudeAgent: { effort: "max" },
+      modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6", {
+        effort: "max",
+        fastMode: true,
+      }),
+    );
+    store.setStickyModelSelection(
+      modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6", {
+        effort: "max",
+        fastMode: true,
       }),
     );
 
-    // Now set options for only codex — claudeAgent should be untouched
-    store.setModelOptions(threadRef, providerModelOptions({ codex: { reasoningEffort: "xhigh" } }));
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.modelSelectionByProvider[CODEX_INSTANCE]?.options).toEqual(
-      createModelSelection(CODEX_INSTANCE, "gpt-5.4", toSelections({ reasoningEffort: "xhigh" }))
-        .options,
+    store.setProviderModelOptions(
+      threadRef,
+      CLAUDE_AGENT_DRIVER,
+      toSelections({ thinking: false }),
+      {
+        persistSticky: true,
+      },
     );
-    expect(draft?.modelSelectionByProvider[CLAUDE_AGENT_INSTANCE]?.options).toEqual(
-      createModelSelection(
-        CLAUDE_AGENT_INSTANCE,
-        "claude-opus-4-6",
-        toSelections({ effort: "max" }),
-      ).options,
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CLAUDE_AGENT_INSTANCE],
+    ).toEqual(
+      modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6", {
+        thinking: false,
+      }),
+    );
+    expect(
+      useComposerDraftStore.getState().stickyModelSelectionByProvider[CLAUDE_AGENT_INSTANCE],
+    ).toEqual(
+      modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6", {
+        thinking: false,
+      }),
     );
   });
 
-  it("preserves other provider options when switching the active model selection", () => {
+  // regression: #6011 new threads ignored project default models unless edits are marked explicit
+  it("marks trait edits as explicit model intent", () => {
+    const store = useComposerDraftStore.getState();
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"));
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBeUndefined();
+
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "xhigh" }),
+    );
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBe(true);
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
+    ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "xhigh" }));
+  });
+
+  describe("seeded draft model on a started thread", () => {
+    const providers: ReadonlyArray<ServerProvider> = [
+      {
+        instanceId: CODEX_INSTANCE,
+        driver: CODEX_DRIVER,
+        enabled: true,
+        installed: true,
+        version: null,
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        models: ["gpt-5.4", "gpt-5.3-codex"].map((slug) => ({
+          slug,
+          name: slug,
+          isCustom: false,
+          capabilities: {},
+        })),
+        slashCommands: [],
+        skills: [],
+      },
+    ];
+    const threadSelection = modelSelection(CODEX_DRIVER, "gpt-5.3-codex", {
+      reasoningEffort: "low",
+    });
+    const effective = (threadStarted: boolean, baseSelection = threadSelection) => {
+      const state = deriveEffectiveComposerModelState({
+        draft: useComposerDraftStore.getState().getComposerDraft(threadRef),
+        threadStarted,
+        providers,
+        selectedProvider: CODEX_DRIVER,
+        selectedInstanceId: CODEX_INSTANCE,
+        threadModelSelection: baseSelection,
+        projectModelSelection: null,
+        settings: DEFAULT_UNIFIED_SETTINGS,
+      });
+      return {
+        model: state.selectedModel,
+        options: state.modelOptions?.[CODEX_INSTANCE] ?? [],
+      };
+    };
+
+    it("applies the seed only until the thread starts, then only an explicit pick wins", () => {
+      const store = useComposerDraftStore.getState();
+      store.setModelSelection(
+        threadRef,
+        modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "high" }),
+      );
+
+      expect(effective(false)).toEqual({
+        model: "gpt-5.4",
+        options: toSelections({ reasoningEffort: "high" }),
+      });
+      expect(effective(true)).toEqual({
+        model: "gpt-5.3-codex",
+        options: toSelections({ reasoningEffort: "low" }),
+      });
+
+      store.setModelSelection(
+        threadRef,
+        modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "high" }),
+        { explicit: true },
+      );
+      expect(effective(true)).toEqual({
+        model: "gpt-5.4",
+        options: toSelections({ reasoningEffort: "high" }),
+      });
+    });
+
+    it.each([false, true])(
+      "an explicit optionless pick overrides base traits when threadStarted=%s",
+      (threadStarted) => {
+        const store = useComposerDraftStore.getState();
+        store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+          explicit: true,
+          replaceOptions: true,
+        });
+        expect(effective(threadStarted)).toEqual({ model: "gpt-5.4", options: [] });
+      },
+    );
+
+    it("restores saved traits when the base model uses an alias", () => {
+      useComposerDraftStore
+        .getState()
+        .setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+          explicit: true,
+          replaceOptions: true,
+        });
+      expect(
+        effective(true, modelSelection(CODEX_DRIVER, "5.4", { reasoningEffort: "low" })),
+      ).toEqual({ model: "gpt-5.4", options: toSelections({ reasoningEffort: "low" }) });
+    });
+
+    it("keeps the thread's model when traits change over a seed", () => {
+      const store = useComposerDraftStore.getState();
+      store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"));
+      store.setProviderModelOptions(
+        threadRef,
+        CODEX_DRIVER,
+        toSelections({ reasoningEffort: "high" }),
+        { instanceId: CODEX_INSTANCE, model: "gpt-5.3-codex" },
+      );
+
+      expect(effective(true)).toEqual({
+        model: "gpt-5.3-codex",
+        options: toSelections({ reasoningEffort: "high" }),
+      });
+    });
+  });
+
+  it("stores provider option changes on a selected custom instance", () => {
     const store = useComposerDraftStore.getState();
 
-    store.setModelOptions(
+    store.setProviderModelOptions(
       threadRef,
-      providerModelOptions({
-        codex: { fastMode: true },
-        claudeAgent: { effort: "max" },
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "low" }),
+      {
+        instanceId: CODEX_SECONDARY_INSTANCE,
+        model: "gpt-5-codex",
+        persistSticky: true,
+      },
+    );
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_SECONDARY_INSTANCE],
+    ).toEqual(
+      expect.objectContaining({
+        instanceId: CODEX_SECONDARY_INSTANCE,
+        model: "gpt-5-codex",
+        options: [{ id: "reasoningEffort", value: "low" }],
       }),
     );
-
-    store.setModelSelection(threadRef, modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6"));
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.modelSelectionByProvider[CLAUDE_AGENT_INSTANCE]).toEqual(
-      modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6", { effort: "max" }),
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.activeProvider).toBe(CODEX_SECONDARY_INSTANCE);
+    expect(useComposerDraftStore.getState().stickyActiveProvider).toBe(CODEX_SECONDARY_INSTANCE);
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider[CODEX_INSTANCE]).toBe(
+      undefined,
     );
-    expect(draft?.modelSelectionByProvider[CODEX_INSTANCE]?.options).toEqual(
-      createModelSelection(CODEX_INSTANCE, "gpt-5.4", toSelections({ fastMode: true })).options,
+    expect(
+      useComposerDraftStore.getState().stickyModelSelectionByProvider[CODEX_SECONDARY_INSTANCE],
+    ).toEqual(
+      expect.objectContaining({
+        instanceId: CODEX_SECONDARY_INSTANCE,
+        options: [{ id: "reasoningEffort", value: "low" }],
+      }),
     );
-    expect(draft?.activeProvider).toBe("claudeAgent");
+    expect(
+      useComposerDraftStore.getState().stickyOptionsByModelByProvider[CODEX_SECONDARY_INSTANCE],
+    ).toEqual({ "gpt-5-codex": [{ id: "reasoningEffort", value: "low" }] });
+
+    // A custom slug that matches a Codex alias stays exact; the picker already resolved it.
+    store.setModelSelection(threadRef, createModelSelection(CODEX_SECONDARY_INSTANCE, "gpt-5.3"), {
+      explicit: true,
+      replaceOptions: true,
+    });
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_SECONDARY_INSTANCE]
+        ?.model,
+    ).toBe("gpt-5.3");
   });
 });
 
-describe("composerDraftStore setModelSelection", () => {
-  const threadId = ThreadId.make("thread-model");
+describe("composerDraftStore per-model sticky options", () => {
+  const threadId = ThreadId.make("thread-per-model-options");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
 
   beforeEach(() => {
     resetComposerDraftStore();
   });
 
-  it("keeps explicit model overrides instead of coercing to null", () => {
+  it("remembers sticky options per model and restores them on model switch", () => {
     const store = useComposerDraftStore.getState();
 
-    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.3-codex"));
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "xhigh" }),
+      { instanceId: CODEX_INSTANCE, model: "gpt-5.3-codex", persistSticky: true },
+    );
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "high" }),
+      { instanceId: CODEX_INSTANCE, model: "gpt-5.4", persistSticky: true },
+    );
+
+    expect(useComposerDraftStore.getState().stickyOptionsByModelByProvider[CODEX_INSTANCE]).toEqual(
+      {
+        "gpt-5.3-codex": toSelections({ reasoningEffort: "xhigh" }),
+        "gpt-5.4": toSelections({ reasoningEffort: "high" }),
+      },
+    );
+  });
+
+  it("keeps the sticky model's own traits when traits change on another shown model", () => {
+    const store = useComposerDraftStore.getState();
+    store.setStickyModelSelection(
+      modelSelection(CODEX_DRIVER, "gpt-5.3-codex", { reasoningEffort: "xhigh" }),
+    );
+
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "low" }),
+      { instanceId: CODEX_INSTANCE, model: "gpt-5.4", persistSticky: true },
+    );
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider[CODEX_INSTANCE]).toEqual(
+      modelSelection(CODEX_DRIVER, "gpt-5.3-codex", { reasoningEffort: "xhigh" }),
+    );
+    expect(
+      useComposerDraftStore.getState().stickyOptionsByModelByProvider[CODEX_INSTANCE]?.["gpt-5.4"],
+    ).toEqual(toSelections({ reasoningEffort: "low" }));
+
+    store.setProviderModelOptions(threadRef, CODEX_DRIVER, null, {
+      instanceId: CODEX_INSTANCE,
+      model: "gpt-5.4",
+      persistSticky: true,
+    });
+
+    const state = useComposerDraftStore.getState();
+    expect(state.stickyModelSelectionByProvider[CODEX_INSTANCE]).toEqual(
+      modelSelection(CODEX_DRIVER, "gpt-5.3-codex", { reasoningEffort: "xhigh" }),
+    );
+    expect(state.stickyOptionsByModelByProvider[CODEX_INSTANCE]?.["gpt-5.4"]).toBeUndefined();
+  });
+
+  it("seeds per-model memory from a persisted sticky selection on upgrade", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => Pick<
+          ReturnType<typeof useComposerDraftStore.getState>,
+          "stickyModelSelectionByProvider" | "stickyOptionsByModelByProvider"
+        >;
+      };
+    };
+    const mergedState = persistApi.getOptions().merge(
+      {
+        stickyModelSelectionByProvider: {
+          [CODEX_INSTANCE]: {
+            instanceId: CODEX_INSTANCE,
+            model: "gpt-5.3-codex",
+            options: [{ id: "reasoningEffort", value: "low" }],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+
+    expect(mergedState.stickyOptionsByModelByProvider).toEqual({
+      [CODEX_INSTANCE]: { "gpt-5.3-codex": [{ id: "reasoningEffort", value: "low" }] },
+    });
+  });
+});
+
+describe("composerDraftStore sticky composer settings", () => {
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("preserves sticky provider options when model selection omits options", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setStickyModelSelection(
+      modelSelection(CURSOR_DRIVER, "composer-2", {
+        fastMode: false,
+      }),
+    );
+    store.setStickyModelSelection(modelSelection(CURSOR_DRIVER, "composer-2.5"));
 
     expect(
-      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
-    ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.3-codex"));
+      useComposerDraftStore.getState().stickyModelSelectionByProvider[CURSOR_INSTANCE],
+    ).toEqual(
+      modelSelection(CURSOR_DRIVER, "composer-2.5", {
+        fastMode: false,
+      }),
+    );
+  });
+
+  it("applies sticky activeProvider to new drafts", () => {
+    const store = useComposerDraftStore.getState();
+    const threadId = ThreadId.make("thread-sticky-active-provider");
+    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+    store.setStickyModelSelection(modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6"));
+    store.applyStickyState(threadRef);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      modelSelectionByProvider: {
+        claudeAgent: modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6"),
+      },
+      activeProvider: "claudeAgent",
+    });
+  });
+
+  it("replaces a non-explicit stale model and its options with sticky state", () => {
+    const store = useComposerDraftStore.getState();
+    const draftId = DraftId.make("draft-stale-sticky-seed");
+
+    store.setModelSelection(
+      draftId,
+      modelSelection(CODEX_DRIVER, "stale-model", { reasoningEffort: "low" }),
+    );
+    store.setStickyModelSelection(
+      modelSelection(CODEX_DRIVER, "sticky-model", { reasoningEffort: "xhigh" }),
+    );
+    store.applyStickyState(draftId);
+
+    expect(draftByKey(draftId)).toMatchObject({
+      activeProvider: CODEX_INSTANCE,
+      modelSelectionByProvider: {
+        [CODEX_INSTANCE]: modelSelection(CODEX_DRIVER, "sticky-model", {
+          reasoningEffort: "xhigh",
+        }),
+      },
+    });
+  });
+
+  // regression: #6011 a stale seeded model overrode the project default
+  it("clears a non-explicit stale model when there is no sticky state", () => {
+    const store = useComposerDraftStore.getState();
+    const draftId = DraftId.make("draft-stale-without-sticky");
+
+    store.setModelSelection(draftId, modelSelection(CODEX_DRIVER, "stale-model"));
+    store.applyStickyState(draftId);
+
+    expect(draftByKey(draftId)).toBeUndefined();
   });
 });
 
@@ -1314,11 +2433,53 @@ describe("composerDraftStore model seed migration", () => {
       vi.useRealTimers();
     }
   });
-});
 
-// ---------------------------------------------------------------------------
-// createDeferredStorage
-// ---------------------------------------------------------------------------
+  it("upgrades v5 selections that name a provider and keep options in an object", async () => {
+    vi.useFakeTimers();
+    try {
+      const legacySelection = {
+        provider: "codex",
+        model: "gpt-5.4",
+        options: { reasoningEffort: "high", fastMode: true },
+      };
+      const storage = useComposerDraftStore.persist.getOptions().storage;
+      expect(storage).toBeDefined();
+      storage?.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
+        version: 5,
+        state: {
+          draftsByThreadKey: {
+            [serverThreadKey]: {
+              prompt: "keep this draft",
+              attachments: [],
+              modelSelectionByProvider: { codex: legacySelection },
+              activeProvider: "codex",
+            },
+          },
+          draftThreadsByThreadKey: {},
+          stickyModelSelectionByProvider: { codex: legacySelection },
+          stickyActiveProvider: "codex",
+        },
+      } as never);
+      await vi.advanceTimersByTimeAsync(300);
+
+      await useComposerDraftStore.persist.rehydrate();
+
+      const upgraded = modelSelection(CODEX_DRIVER, "gpt-5.4", {
+        reasoningEffort: "high",
+        fastMode: true,
+      });
+      expect(draftByKey(serverThreadKey)).toMatchObject({
+        prompt: "keep this draft",
+        modelSelectionByProvider: { [CODEX_INSTANCE]: upgraded },
+      });
+      expect(useComposerDraftStore.getState().stickyModelSelectionByProvider).toEqual({
+        [CODEX_INSTANCE]: upgraded,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 function createMockStorage() {
   const store = new Map<string, string>();
@@ -1333,70 +2494,6 @@ function createMockStorage() {
   };
 }
 
-describe("composer draft persistence", () => {
-  it("defers attachment reads and serialization until typing stops, then restores the last draft", async () => {
-    await useComposerDraftStore.persist.clearStorage();
-    vi.useFakeTimers();
-    const stringify = vi.spyOn(JSON, "stringify");
-    try {
-      resetComposerDraftStore();
-      const heavyThreadId = ThreadId.make("heavy-draft");
-      const typingThreadId = ThreadId.make("typing-draft");
-      const heavyRef = scopeThreadRef(TEST_ENVIRONMENT_ID, heavyThreadId);
-      const typingRef = scopeThreadRef(TEST_ENVIRONMENT_ID, typingThreadId);
-      const heavyKey = scopedThreadKey(heavyRef);
-      useComposerDraftStore.getState().setPrompt(heavyRef, "Keep this image");
-      const attachments = [
-        {
-          id: "heavy-image",
-          name: "image.png",
-          mimeType: "image/png",
-          sizeBytes: 49_152,
-          dataUrl: `data:image/png;base64,${"AQID".repeat(16_384)}`,
-          type: "image" as const,
-        },
-      ];
-      let attachmentReads = 0;
-      useComposerDraftStore.setState((state) => ({
-        draftsByThreadKey: {
-          ...state.draftsByThreadKey,
-          [heavyKey]: {
-            ...state.draftsByThreadKey[heavyKey]!,
-            get persistedAttachments() {
-              attachmentReads += 1;
-              return attachments;
-            },
-          },
-        },
-      }));
-      attachmentReads = 0;
-      stringify.mockClear();
-
-      for (let index = 1; index <= 20; index++) {
-        useComposerDraftStore.getState().setPrompt(typingRef, `Draft ${index}`);
-      }
-      expect(attachmentReads).toBe(0);
-      expect(stringify).not.toHaveBeenCalled();
-
-      await vi.advanceTimersByTimeAsync(300);
-      expect(attachmentReads).toBe(1);
-      expect(stringify).toHaveBeenCalledTimes(1);
-
-      resetComposerDraftStore();
-      await useComposerDraftStore.persist.rehydrate();
-      expect(draftFor(typingThreadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("Draft 20");
-      expect(draftFor(heavyThreadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual(
-        attachments,
-      );
-    } finally {
-      stringify.mockRestore();
-      await useComposerDraftStore.persist.clearStorage();
-      vi.useRealTimers();
-      resetComposerDraftStore();
-    }
-  });
-});
-
 describe("createDeferredStorage", () => {
   const serialize = vi.fn((value: string) => `s:${value}`);
 
@@ -1409,19 +2506,29 @@ describe("createDeferredStorage", () => {
     vi.useRealTimers();
   });
 
-  it("cancels stale writes and flushes only the latest deferred draft once", () => {
+  it("removeItem cancels a pending setItem write", () => {
     const base = createMockStorage();
     const storage = createDeferredStorage(base, serialize);
-    storage.setItem("key", "stale");
+
+    storage.setItem("key", "v1");
     storage.removeItem("key");
+
     vi.advanceTimersByTime(300);
     expect(serialize).not.toHaveBeenCalled();
     expect(base.setItem).not.toHaveBeenCalled();
     expect(base.removeItem).toHaveBeenCalledWith("key");
+  });
 
-    storage.setItem("key", "latest");
+  it("flush serializes and writes the pending value immediately", () => {
+    const base = createMockStorage();
+    const storage = createDeferredStorage(base, serialize);
+
+    storage.setItem("key", "v1");
+    expect(base.setItem).not.toHaveBeenCalled();
+
     storage.flush();
-    expect(base.setItem).toHaveBeenCalledWith("key", "s:latest");
+    expect(base.setItem).toHaveBeenCalledWith("key", "s:v1");
+
     vi.advanceTimersByTime(300);
     expect(serialize).toHaveBeenCalledTimes(1);
     expect(base.setItem).toHaveBeenCalledTimes(1);
@@ -1461,6 +2568,50 @@ describe("composerDraftStore inline context references", () => {
     resetComposerDraftStore();
   });
 
+  it("appends a link when a review comment is added and strips it on removal", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "look");
+    store.addReviewComment(threadRef, reviewComment);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`look ${reviewLink} `);
+    store.addReviewComment(threadRef, { ...reviewComment, text: "edited" });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`look ${reviewLink} `);
+    store.removeReviewComment(threadRef, "rc-1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("look");
+  });
+
+  it("keeps bulk-set review records and their inline references in sync", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Explain this pull request.");
+    store.setReviewComments(threadRef, [reviewComment]);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+      `Explain this pull request. ${reviewLink} `,
+    );
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([reviewComment]);
+
+    store.setReviewComments(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("Explain this pull request.");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([]);
+  });
+
+  it("hands new review comments to a registered caret handler instead of appending", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "look");
+    const seen: string[] = [];
+    store.setContextInsertionHandler(threadRef, (references) => {
+      seen.push(...references.map((reference) => reference.contextId));
+      return true;
+    });
+    store.addReviewComment(threadRef, reviewComment);
+    expect(seen).toEqual(["review-comment_rc-1"]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("look");
+    store.setContextInsertionHandler(threadRef, null);
+    store.addReviewComment(threadRef, { ...reviewComment, id: "rc-2" });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+      "look [b.ts L4](t3-context://v1/review-comment/review-comment_rc-2) ",
+    );
+  });
+
   it("does not overwrite a prompt update made by the caret handler", () => {
     const store = useComposerDraftStore.getState();
     store.setPrompt(threadRef, "before after");
@@ -1483,58 +2634,101 @@ describe("composerDraftStore inline context references", () => {
     store.setContextInsertionHandler(threadRef, null);
   });
 
-  it("rehydrates annotation-only drafts with their references", () => {
-    const merged = useComposerDraftStore.persist.getOptions().merge!(
-      {
-        draftsByThreadKey: {
-          [threadKeyFor(threadId)]: {
-            prompt: "",
-            attachments: [],
-            previewAnnotations: [annotation],
-          },
-        },
-      },
-      useComposerDraftStore.getInitialState(),
-    );
-    expect(merged.draftsByThreadKey[threadKeyFor(threadId)]?.previewAnnotations).toEqual([
-      annotation,
-    ]);
-    expect(merged.draftsByThreadKey[threadKeyFor(threadId)]?.prompt).toContain(annotationLink);
+  it("keeps links for retained context when clearing text and attachments", () => {
+    const store = useComposerDraftStore.getState();
+    store.addReviewComment(threadRef, reviewComment);
+    store.addPreviewAnnotation(threadRef, annotation);
+    store.clearComposerPromptAndImages(threadRef);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.prompt).toContain(reviewLink);
+    expect(draft?.prompt).toContain(annotationLink);
+    expect(draft?.reviewComments).toEqual([reviewComment]);
+    expect(draft?.previewAnnotations).toEqual([annotation]);
   });
 });
 
 describe("composerDraftStore attachment references", () => {
   const threadId = ThreadId.make("thread-attachment-refs");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const fileLink = "[notes.txt](t3-context://v1/file/file_file-1)";
+  const imageLink = "[shot.png](t3-context://v1/image/image_img-1)";
 
   beforeEach(() => {
     resetComposerDraftStore();
   });
 
-  it("restores a file-only draft with a reference and preserves it through prompt edits", () => {
+  it("reports which attachments it accepted so only those get chips", () => {
     const store = useComposerDraftStore.getState();
-    store.addFiles(
-      threadRef,
-      [
-        {
-          type: "file",
-          id: "restored",
-          name: "notes.txt",
-          mimeType: "text/plain",
-          sizeBytes: 3,
-          file: null,
-          uploadedAttachmentId: "uploaded",
-          uploadEnvironmentId: TEST_ENVIRONMENT_ID,
-        },
-      ],
-      { appendReference: true },
-    );
-    const restored = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
-    expect(restored.prompt).toBe("[notes.txt](t3-context://v1/file/file_restored) ");
-    store.setPrompt(threadRef, `${restored.prompt}explain this`);
-    const edited = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
-    expect(edited.files.map((file) => file.id)).toEqual(["restored"]);
-    expect(edited.prompt).toContain("t3-context://v1/file/file_restored");
+    const file = {
+      type: "file" as const,
+      id: "file-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      sizeBytes: 3,
+      file: null,
+      uploadedAttachmentId: "p",
+      uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+    };
+    expect(store.addFiles(threadRef, [file])).toEqual(["file-1"]);
+    expect(store.addFiles(threadRef, [{ ...file, id: "file-2" }])).toEqual([]);
+    const image = makeImage({ id: "img-1", previewUrl: "blob:img-1", name: "shot.png" });
+    expect(store.addImages(threadRef, [image])).toEqual(["img-1"]);
+    expect(
+      store.addImages(threadRef, [{ ...image, id: "img-2", previewUrl: "blob:img-2" }]),
+    ).toEqual([]);
+  });
+
+  it("strips references when an image or file is removed", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, `see ${imageLink} and ${fileLink} ok`);
+    store.addImages(threadRef, [
+      makeImage({ id: "img-1", previewUrl: "blob:img-1", name: "shot.png" }),
+    ]);
+    store.addFiles(threadRef, [
+      {
+        type: "file",
+        id: "file-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        file: null,
+        uploadedAttachmentId: "pending-1",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+      },
+    ]);
+    store.removeImage(threadRef, "img-1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`see and ${fileLink} ok`);
+    store.removeFile(threadRef, "file-1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("see and ok");
+  });
+
+  it("moves a needs-reattach marker's chip to the re-picked file", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "see [notes.txt](t3-context://v1/file/file_marker-1) ok");
+    store.addFiles(threadRef, [
+      {
+        type: "file",
+        id: "marker-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        file: null,
+      },
+    ]);
+    const acceptedIds = store.addFiles(threadRef, [
+      {
+        type: "file",
+        id: "fresh-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        file: new File(["abc"], "notes.txt", { type: "text/plain" }),
+      },
+    ]);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(acceptedIds).toEqual([]);
+    expect(draft?.files.map((file) => file.id)).toEqual(["fresh-1"]);
+    expect(draft?.prompt).toBe("see [notes.txt](t3-context://v1/file/file_fresh-1) ok");
   });
 
   it.each(["old.file:1", "file-1"])(
@@ -1561,6 +2755,57 @@ describe("composerDraftStore attachment references", () => {
     },
   );
 
+  it("appends chips for persisted files that predate references", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const mergedState = persistApi.getOptions().merge(
+      {
+        draftsByThreadId: {
+          [threadId]: {
+            prompt: "old",
+            attachments: [],
+            files: [{ id: "file-1", name: "notes.txt", mimeType: "text/plain", sizeBytes: 3 }],
+          },
+        },
+        draftThreadsByThreadId: {},
+        projectDraftThreadIdByProjectKey: {},
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.prompt).toBe(`old ${fileLink} `);
+  });
+
+  it("migrates legacy image references without doubling their image marker", () => {
+    const merged = useComposerDraftStore.persist.getOptions().merge!(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt: "see ![shot.png](t3-context://v1/image/img-1) after",
+            attachments: [
+              {
+                id: "img-1",
+                name: "shot.png",
+                mimeType: "image/png",
+                sizeBytes: 1,
+                dataUrl: "data:image/png;base64,YQ==",
+              },
+            ],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.prompt).toBe(
+      "see ![shot.png](t3-context://v1/image/image_img-1) after",
+    );
+  });
+
   it("preserves canonical references when another producer ID matches their namespace", () => {
     const prompt =
       "![x.png](t3-context://v1/image/image_x) ![image_x.png](t3-context://v1/image/image_image_x)";
@@ -1584,5 +2829,128 @@ describe("composerDraftStore attachment references", () => {
     expect(merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.prompt).toBe(
       prompt,
     );
+  });
+});
+
+describe("composerDraftStore checkout pull request", () => {
+  const projectId = ProjectId.make("project-checkout");
+  const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, projectId);
+  const otherProjectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("project-other"));
+  const threadId = ThreadId.make("thread-checkout");
+  const draftId = DraftId.make("draft-checkout");
+  const url = "https://github.com/acme/widgets/pull/42";
+  const checkout = { url, branch: "feature/pr-42" };
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  const store = () => useComposerDraftStore.getState();
+  const toLink = () => checkoutPullRequestUrlToLink(store().getDraftSession(draftId));
+
+  function draftOnMain() {
+    store().setProjectDraftThreadId(projectRef, draftId, { threadId, branch: "main" });
+  }
+
+  // GitActionsControl's live branch sync writes the git status branch onto the draft. The status
+  // refresh after a checkout is forked server-side, so the prepare response lands first and the
+  // sync replays the stale pre-checkout branch before the fresh status corrects it.
+  function liveBranchSync(branch: string) {
+    store().setDraftThreadContext(draftId, {
+      branch,
+      worktreePath: null,
+      environmentSelection: "manual",
+    });
+  }
+
+  it("still links after a local checkout the live branch sync briefly reverts", () => {
+    draftOnMain();
+    store().setDraftThreadContext(draftId, {
+      branch: checkout.branch,
+      worktreePath: null,
+      envMode: "local",
+      checkoutPullRequest: checkout,
+    });
+    liveBranchSync("main");
+    liveBranchSync(checkout.branch);
+
+    expect(toLink()).toBe(url);
+  });
+
+  it("does not link once the draft has moved to another branch", () => {
+    draftOnMain();
+    store().setDraftThreadContext(draftId, {
+      branch: checkout.branch,
+      checkoutPullRequest: checkout,
+    });
+    liveBranchSync("main");
+
+    expect(toLink()).toBeNull();
+  });
+
+  it("is dropped when cleared or when the draft moves to another project", () => {
+    store().setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      branch: checkout.branch,
+      checkoutPullRequest: checkout,
+    });
+    store().setDraftThreadContext(draftId, { checkoutPullRequest: null });
+    expect(store().getDraftSession(draftId)?.checkoutPullRequest).toBeUndefined();
+
+    store().setDraftThreadContext(draftId, { checkoutPullRequest: checkout });
+    store().setDraftThreadContext(draftId, { projectRef: otherProjectRef });
+    expect(store().getDraftSession(draftId)?.checkoutPullRequest).toBeUndefined();
+  });
+
+  it("persists the pull request and still restores drafts saved without one", async () => {
+    vi.useFakeTimers();
+    try {
+      await useComposerDraftStore.persist.clearStorage();
+      const legacyDraftId = DraftId.make("draft-before-checkout-links");
+      const storage = useComposerDraftStore.persist.getOptions().storage;
+      expect(storage).toBeDefined();
+      const persistedDraftThread = (id: ThreadId) => ({
+        threadId: id,
+        environmentId: TEST_ENVIRONMENT_ID,
+        projectId,
+        logicalProjectKey: scopedProjectKey(projectRef),
+        createdAt: "2026-08-01T00:00:00.000Z",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: checkout.branch,
+        worktreePath: null,
+        envMode: "local",
+        startFromOrigin: false,
+        promotedTo: null,
+      });
+      storage?.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
+        version: 9,
+        state: {
+          draftsByThreadKey: {},
+          draftThreadsByThreadKey: {
+            [draftId]: { ...persistedDraftThread(threadId), checkoutPullRequest: checkout },
+            [legacyDraftId]: persistedDraftThread(ThreadId.make("thread-legacy")),
+          },
+          logicalProjectDraftThreadKeyByLogicalProjectKey: {
+            [scopedProjectKey(projectRef)]: draftId,
+          },
+        },
+      } as never);
+      await vi.advanceTimersByTimeAsync(300);
+
+      await useComposerDraftStore.persist.rehydrate();
+
+      expect(toLink()).toBe(url);
+      const legacy = store().getDraftSession(legacyDraftId);
+      expect(legacy).toMatchObject({ branch: checkout.branch });
+      expect(checkoutPullRequestUrlToLink(legacy)).toBeNull();
+      expect(
+        partializeComposerDraftStoreState(store()).draftThreadsByThreadKey[draftId],
+      ).toMatchObject({ checkoutPullRequest: checkout });
+    } finally {
+      await useComposerDraftStore.persist.clearStorage();
+      vi.useRealTimers();
+      resetComposerDraftStore();
+    }
   });
 });

@@ -4,30 +4,30 @@ import {
   isProjectFaviconFallbackUrl,
 } from "@t3tools/shared/projectFavicon";
 import { FolderCodeIcon } from "lucide-react";
-import type { IconName } from "lucide-react/dynamic";
 import type { ComponentType } from "react";
-import { lazy, Suspense, useState } from "react";
+import { createElement, lazy, Suspense, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { projectFaviconUrlAtom } from "../state/assets";
 import { deriveProjectIdentity } from "../projectIdentity";
 import { projectIconColorClassName } from "../projectIconColors";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { cn } from "~/lib/utils";
-import { AldoGeneralTile } from "~/aldo/AldoGeneralTile";
-import { useAldoGeneral } from "~/aldo/keptRepo";
 
-const DynamicIcon = lazy(() =>
-  import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
+// All lucide icons load as one chunk, only once a project uses a lucide override.
+const LucideProjectIcon = lazy(() =>
+  import("../lib/lucideIconByName").then(({ lucideIconByName }) => ({
+    default: function LucideProjectIcon(props: { name: string; className: string }) {
+      return createElement(lucideIconByName(props.name) ?? FolderCodeIcon, {
+        className: props.className,
+      });
+    },
+  })),
 );
 
 function DynamicProjectIconFallback() {
   return <FolderCodeIcon className="size-full text-inherit" />;
 }
 
-// The slice of a project that decides its icon. Every surface must pass the
-// project record itself (or a snapshot spread from it) so the saved title, favicon
-// and icon override always travel together. Passing a display label as the title
-// changes the automatic icon, which is how the command palette drifted once.
 export type ProjectFaviconProject = Pick<
   EnvironmentProject,
   "environmentId" | "workspaceRoot" | "title" | "faviconPath" | "projectIcon"
@@ -38,16 +38,6 @@ export function ProjectFavicon(input: {
   fallbackIcon?: ComponentType<{ className?: string }>;
 }) {
   const { project } = input;
-  const src = useAtomValue(
-    projectFaviconUrlAtom({
-      environmentId: project.environmentId,
-      cwd: project.workspaceRoot,
-      faviconPath: project.faviconPath,
-    }),
-  );
-  // Aldo: General is no project, so it gets no letters or colour, just an empty tile.
-  const aldoGeneral = useAldoGeneral(project.environmentId);
-  if (aldoGeneral) return <AldoGeneralTile className={input.className} />;
   if (project.projectIcon?.kind === "monogram") {
     return (
       <ProjectMonogram
@@ -76,15 +66,26 @@ export function ProjectFavicon(input: {
     return (
       <span aria-hidden="true" className={iconClassName}>
         <Suspense fallback={<DynamicProjectIconFallback />}>
-          <DynamicIcon
-            name={project.projectIcon.name as IconName}
+          <LucideProjectIcon
+            name={project.projectIcon.name}
             className={cn("size-full", colorClassName)}
-            fallback={DynamicProjectIconFallback}
           />
         </Suspense>
       </span>
     );
   }
+  return <AutomaticProjectFavicon {...input} />;
+}
+
+function AutomaticProjectFavicon(input: Parameters<typeof ProjectFavicon>[0]) {
+  const { project } = input;
+  const src = useAtomValue(
+    projectFaviconUrlAtom({
+      environmentId: project.environmentId,
+      cwd: project.workspaceRoot,
+      faviconPath: project.faviconPath,
+    }),
+  );
   const FallbackIcon = input.fallbackIcon ?? FolderCodeIcon;
 
   if (!src || isProjectFaviconFallbackUrl(src)) {

@@ -1,9 +1,20 @@
+/* Clerk injects its component styles into the clerk layer (clerkAppearance.cssLayerName). */
+@layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
+
+/* Secondary hovering pointers reveal sidebar actions on touch-primary devices. */
+@custom-variant any-hover {
+  @media (any-hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+}
 
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
@@ -66,12 +77,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   mix-blend-mode: normal;
 }
 
-/* Center the wake content when it fits, but align it to the scroll start on
-   short landscape viewports so no lifecycle guidance is clipped. */
-.managed-wake-surface {
-  align-items: safe center;
-}
-
 @keyframes t3-mobile-draft-headline-exit {
   from {
     opacity: 1;
@@ -100,16 +105,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --sidebar-control-gap: 0.5rem;
   --sidebar-icon-color: color-mix(
     in srgb,
-    var(--contrast-sidebar-muted-foreground) 60%,
+    var(--contrast-sidebar-muted-foreground) 85%,
     var(--sidebar)
   );
   --sidebar-row-content-inset: 0.625rem;
   --command-shell-inset: 0.5rem;
   --command-content-inset: 1rem;
   --floating-content-inset: 0.75rem;
-  /* App layer order: the sidebar toggle pinned to the corner (45), docked sheets, then
-     the floating preview player (47–49, see previewMiniPlayerLayout.ts), then dialogs
-     and popovers (50 and up). */
+  /* App layer order: the bottom terminal drawer (45, above the timeline minimap),
+     docked sheets, then the floating preview player (47–49, see
+     previewMiniPlayerLayout.ts), then dialogs and popovers (50 and up). */
   --z-sheet: 46;
   --glass-blur: 12px;
   --glass-opacity: 80%;
@@ -123,6 +128,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
   --workspace-titlebar-scroll-fade-height: 1.5rem;
+  --chat-content-max-width: 46rem;
+  --thread-details-panel-width: 17.5rem;
   /* The prompt on phones: iOS zooms into any input under 16px on focus. */
   --font-size-prompt-touch: max(var(--font-size-prompt, 1rem), 16px);
   /* Horizontal gutter shared by the page header and the chat column, clear of
@@ -137,15 +144,17 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @variant dark {
     --appearance-contrast-target: white;
-    --app-scrollbar-thumb: rgb(255 255 255 / 8%);
-    --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);
+    /* Keeps the idle thumb above 3:1 (WCAG 1.4.11) on #000; 35% renders as gray 89, just under. */
+    --app-scrollbar-thumb: rgb(255 255 255 / 36%);
+    --app-scrollbar-thumb-hover: rgb(255 255 255 / 45%);
     --glass-blur: 16px;
     --glass-saturation: 1.08;
   }
 }
 
 .wco {
-  --workspace-topbar-height: env(titlebar-area-height, 52px);
+  --native-titlebar-height: env(titlebar-area-height, 0px);
+  --workspace-topbar-height: max(40px, env(titlebar-area-height, 52px));
   --workspace-controls-top: env(titlebar-area-y, 0px);
   --workspace-controls-left: calc(env(titlebar-area-x, 0px) + 0.75rem);
   --workspace-controls-right: calc(
@@ -160,7 +169,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    the variables and Settings -> Appearance can override them at runtime. The
    default stacks are mirrored in `appearanceFonts.ts`. */
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -181,11 +191,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-5xs--line-height: 1;
   /* Motion. drawer is the decelerating curve for surfaces that slide or pop in
      (composer context, pills). */
+  --inset-shadow-control-highlight: 0 1px rgb(255 255 255 / 16%);
+  --inset-shadow-control-pressed: 0 1px rgb(0 0 0 / 8%);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
      by the composer, its context strip and attached banners. */
-  --shadow-composer: 0 12px 28px -18px rgb(0 0 0 / 40%);
+  --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
+  /* Overlap the lower toolbar backdrop by one pixel to cover the composer seam. */
+  --spacing-composer-seam: calc(var(--spacing) * 4 - 1px);
   /* Dark-mode shade where an attached surface meets the composer: 10px of
      shadow fading away from the seam. Inline, so the offsets resolve on the
      element. below: the context strip under the composer (1rem seam, faint
@@ -203,7 +217,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     linear-gradient(
       to top,
       transparent 0 var(--chat-composer-attachment-overlap),
-      rgb(0 0 0 / 18%) var(--chat-composer-attachment-overlap),
+      var(--chat-composer-attached-seam, rgb(0 0 0 / 18%)) var(--chat-composer-attachment-overlap),
       transparent calc(var(--chat-composer-attachment-overlap) + 10px)
     );
   --color-zinc-25: oklch(99.2% 0 0);
@@ -212,7 +226,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      compositor updates discrete frames instead of every vsync. */
   --animate-status-pulse: status-pulse 2s infinite;
   --animate-status-ping: status-ping 2s infinite;
-  --animate-managed-wake-progress: managed-wake-progress 1.8s ease-in-out infinite;
+  /* Stash pulses hold a highlight for 1.2s; the row then eases back over 200ms, the count snaps.
+     The row alternates two identical keyframes so each stash restarts it without a remount. */
+  --animate-stash-pulse-row: stash-pulse-row 1400ms;
+  --animate-stash-pulse-row-alt: stash-pulse-row-alt 1400ms;
+  --animate-stash-pulse-count: stash-pulse-count 1400ms step-start;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -222,7 +240,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-error-surface: var(--error-surface);
   --color-update-foreground: var(--update-foreground);
   --color-update: var(--update);
-  --color-update-surface: var(--update-surface);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
   --color-diff-addition: var(--diff-addition);
@@ -231,6 +248,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-diff-deletion-foreground: var(--diff-deletion-foreground);
   --color-info-foreground: var(--info-foreground);
   --color-info: var(--info);
+  --color-guest: var(--guest);
+  --color-guest-foreground: var(--guest-foreground);
+  --color-guest-surface: var(--guest-surface);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
   --color-input: var(--contrast-input);
@@ -252,10 +272,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-card-foreground: var(--contrast-card-foreground);
   --color-card: var(--card);
   --color-code: var(--code-background);
-  --color-code-foreground: var(--code-foreground);
   --color-foreground: var(--contrast-foreground);
   --color-background: var(--background);
-  --color-surface-raised: var(--surface-raised);
   --color-message: var(--message-surface);
   --color-message-foreground: var(--contrast-message-foreground);
   --color-message-action: var(--message-action);
@@ -294,6 +312,24 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       opacity: 1;
     }
   }
+  @keyframes stash-pulse-row {
+    from,
+    85.7% {
+      color: var(--color-foreground);
+    }
+  }
+  @keyframes stash-pulse-row-alt {
+    from,
+    85.7% {
+      color: var(--color-foreground);
+    }
+  }
+  @keyframes stash-pulse-count {
+    from,
+    85.7% {
+      color: var(--color-primary);
+    }
+  }
   @keyframes status-pulse {
     0%,
     40% {
@@ -322,17 +358,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     100% {
       opacity: 0;
       scale: 2;
-    }
-  }
-  @keyframes managed-wake-progress {
-    0% {
-      transform: translateX(-110%);
-    }
-    50% {
-      transform: translateX(80%);
-    }
-    100% {
-      transform: translateX(250%);
     }
   }
 }
@@ -377,6 +402,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--background) !important;
   }
+}
+
+/* Paint find results without changing rendered markdown or copied text. */
+::highlight(t3-thread-find) {
+  color: var(--app-theme-search-match-foreground, oklch(0.216164 0.028283 77.423));
+  background-color: var(--app-theme-search-match-background, oklch(0.915 0.11 85));
+
+  @variant dark {
+    color: var(--app-theme-search-match-foreground, oklch(0.970151 0 0));
+    background-color: var(--app-theme-search-match-background, oklch(0.55 0.1 85));
+  }
+}
+
+::highlight(t3-thread-find-active) {
+  color: var(--app-theme-search-match-active-foreground, oklch(0.216164 0.028283 77.423));
+  background-color: var(
+    --app-theme-search-match-active-background,
+    oklch(0.774202 0.151946 74.331)
+  );
 }
 
 @utility dialog-glass {
@@ -588,7 +632,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     transparent 100%
   );
   mask-repeat: no-repeat;
-  animation: live-activity-focus 2.2s linear infinite;
+  animation: live-activity-focus 2.2s steps(30) infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -601,7 +645,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @utility live-activity-focus-counter {
   width: 100%;
-  animation: live-activity-focus-counter 2.2s linear infinite;
+  animation: live-activity-focus-counter 2.2s steps(30) infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -613,7 +657,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @utility live-activity-focus-aligned {
   width: calc(100% - var(--live-activity-focus-width) - var(--live-activity-focus-width));
-  margin-left: var(--live-activity-focus-width);
+  margin-inline-start: var(--live-activity-focus-width);
 }
 
 @property --assistant-citation-highlight-opacity {
@@ -670,6 +714,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   * {
     @apply border-border outline-ring/50;
+  }
+  /* The app's 2px outlines stay inside controls at clipped and scrollport edges. */
+  *,
+  ::before,
+  ::after {
+    outline-offset: -2px;
   }
   :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus,
   :where(
@@ -833,34 +883,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
 
-  /* Prism draws the art in polished chrome, with its gold refraction as the
-     warm note. */
-  html[data-theme-id="prism"] {
-    --stage-art-top: oklch(0.8 0.035 245);
-    --stage-art-mid: oklch(0.56 0.055 255);
-    --stage-art-bottom: oklch(0.31 0.035 265);
-    --stage-art-highlight: oklch(0.98 0.006 250);
-    --stage-art-secondary: oklch(0.82 0.09 230);
-    --stage-art-tertiary: oklch(0.84 0.12 82);
-    --stage-art-line: oklch(0.975 0.008 250);
-
-    @variant dark {
-      --stage-art-top: oklch(0.6 0.045 250);
-      --stage-art-mid: oklch(0.42 0.045 258);
-      --stage-art-bottom: oklch(0.24 0.03 268);
-      --stage-art-highlight: oklch(0.95 0.012 248);
-      --stage-art-secondary: oklch(0.74 0.1 232);
-      --stage-art-tertiary: oklch(0.78 0.13 80);
-      --stage-art-line: oklch(0.96 0.01 250);
-    }
-  }
-
-  :is(
-    html[data-theme-id="t3-chat"],
-    html[data-theme-id="ocean"],
-    html[data-theme-id="iris"],
-    html[data-theme-id="prism"]
-  ) {
+  :is(html[data-theme-id="t3-chat"], html[data-theme-id="ocean"], html[data-theme-id="iris"]) {
     --stage-night-top: color-mix(in oklch, var(--stage-art-top) 38%, var(--stage-night-base-top));
     --stage-night-mid: color-mix(in oklch, var(--stage-art-mid) 38%, var(--stage-night-base-mid));
     --stage-night-bottom: color-mix(
@@ -887,8 +910,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     html[data-theme-id="grove"],
     html[data-theme-id="ocean"],
     html[data-theme-id="ember"],
-    html[data-theme-id="iris"],
-    html[data-theme-id="prism"]
+    html[data-theme-id="iris"]
   ) {
     --stage-art-celeste-highlight: var(--stage-art-highlight);
     --stage-art-celeste-secondary: var(--stage-art-secondary);
@@ -902,10 +924,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   @keyframes settings-search-target-pulse {
     0%,
     100% {
-      box-shadow: 0 0 0 0 transparent;
+      box-shadow: inset 0 0 0 0 transparent;
     }
     50% {
-      box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 70%, transparent);
+      box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-primary) 70%, transparent);
     }
   }
 
@@ -919,6 +941,24 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      focus outline takes over, so exactly one indicator shows at a time. */
   [data-settings-page-scroll] .settings-search-target-pulse:focus {
     outline: none;
+  }
+
+  [data-preview-panel-mode="inline"] [data-right-panel-surface-content] [data-surface-subheader] {
+    height: calc(var(--spacing) * 7);
+    min-height: calc(var(--spacing) * 7);
+    margin-bottom: calc(var(--spacing) * 3);
+    border-bottom-color: transparent;
+  }
+
+  .chat-content-lane {
+    margin-inline: auto;
+    width: 100%;
+    min-width: 0;
+    max-width: var(--chat-content-max-width);
+  }
+
+  .messages-timeline-row-frame {
+    padding-inline: 0;
   }
 
   .settings-slider {
@@ -1008,14 +1048,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   .settings-slider:focus-visible::-webkit-slider-thumb {
     box-shadow:
-      0 0 0 3px var(--background),
-      0 0 0 5px var(--ring);
+      inset 0 0 0 1px var(--background),
+      inset 0 0 0 3px var(--ring);
   }
 
   .settings-slider:focus-visible::-moz-range-thumb {
     box-shadow:
-      0 0 0 3px var(--background),
-      0 0 0 5px var(--ring);
+      inset 0 0 0 1px var(--background),
+      inset 0 0 0 3px var(--ring);
   }
 
   @media (forced-colors: active) {
@@ -1073,7 +1113,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 :root {
   color-scheme: light;
-  --radius: 0.625rem;
+  --radius: 0.5rem;
   --background: var(--color-zinc-25);
   --app-chrome-background: var(--background);
   --toolbar-background: var(--app-chrome-background);
@@ -1083,11 +1123,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --toolbar-control-foreground: var(--foreground);
   --toolbar-control-hover: var(--accent);
   --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
-  --foreground: var(--color-zinc-800);
+  --foreground: var(--color-zinc-900);
   --card: var(--color-white);
-  --card-foreground: var(--color-zinc-800);
+  --card-foreground: var(--color-zinc-900);
   --popover: var(--color-white);
-  --popover-foreground: var(--color-zinc-800);
+  --popover-foreground: var(--color-zinc-900);
   --primary: oklch(0.488 0.217 264);
   --primary-foreground: var(--color-white);
   --secondary: var(--color-zinc-50);
@@ -1097,7 +1137,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --placeholder: var(--muted-foreground);
   --secondary-label: var(--muted-foreground);
   --icon-muted: var(--muted-foreground);
-  --message-surface: var(--accent);
+  /* One step past the accent, so a user turn stands off the near-white canvas. */
+  --message-surface: color-mix(in srgb, var(--color-zinc-200) 55%, var(--color-zinc-100));
   --message-foreground: var(--foreground);
   --message-action: var(--primary);
   --message-action-foreground: var(--primary-foreground);
@@ -1115,6 +1156,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --destructive-foreground: var(--error-foreground);
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-700);
+  /* Messages from a guest link, and the sidebar Request status. */
+  --guest: var(--color-fuchsia-500);
+  --guest-foreground: var(--color-fuchsia-600);
+  --guest-surface: color-mix(in srgb, var(--guest) 14%, var(--message-surface));
   --success: var(--color-emerald-500);
   --success-foreground: var(--color-emerald-700);
   --warning: var(--color-amber-500);
@@ -1122,7 +1167,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
   --update: var(--primary);
   --update-foreground: var(--primary);
-  --update-surface: color-mix(in srgb, var(--update) 12%, transparent);
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
   --sidebar: var(--color-zinc-50);
@@ -1143,34 +1187,37 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @variant dark {
     color-scheme: dark;
-    /* Keep controls and floating surfaces close to the neutral-black canvas.
-       Borders and hover states provide separation without milky gray fills. */
-    --background: var(--color-neutral-950);
-    --surface-raised: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    /* The canvas is true black, matching the sidebar. Raised surfaces keep the tone they had
+       over neutral-950, so cards, popovers, and the composer still lift. Borders and hover
+       states provide separation without milky gray fills. */
+    --background: #000;
+    --surface-raised: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
     --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    --card: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
     --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    --popover: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
     --popover-foreground: var(--color-neutral-100);
     --primary: oklch(0.571 0.21 264);
     --secondary: --alpha(var(--color-white) / 3%);
     --secondary-foreground: var(--color-neutral-100);
     --muted: --alpha(var(--color-white) / 3%);
-    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+    --muted-foreground: var(--color-neutral-400);
     --accent: --alpha(var(--color-white) / 4%);
     --accent-foreground: var(--color-neutral-100);
+    /* A user turn sits above the composer tone, level with the selected sidebar row. */
+    --message-surface: color-mix(in srgb, var(--color-neutral-950) 92%, var(--color-white));
     --error: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
     --error-foreground: var(--color-red-400);
     --tool-error-icon: #fca5a5;
     --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
-    --border: --alpha(var(--color-white) / 6%);
-    --input: --alpha(var(--color-white) / 8%);
+    --border: --alpha(var(--color-white) / 8%);
+    --input: --alpha(var(--color-white) / 11%);
     --info-foreground: var(--color-blue-400);
+    --guest-foreground: var(--color-fuchsia-300);
     --success-foreground: var(--color-emerald-400);
     --warning-foreground: var(--color-amber-400);
     --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
     --update-foreground: var(--color-blue-400);
-    --update-surface: color-mix(in srgb, var(--update) 18%, transparent);
     --sidebar: var(--card);
     --sidebar-control-surface: var(--muted);
     --sidebar-row-hover: var(--accent);
@@ -1187,9 +1234,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    surfaces. */
 [data-app-sidebar] {
   --background: var(--color-zinc-25);
-  --foreground: var(--color-zinc-800);
+  --foreground: var(--color-zinc-900);
   --card: var(--color-white);
-  --card-foreground: var(--color-zinc-800);
+  --card-foreground: var(--color-zinc-900);
   --accent: var(--color-zinc-100);
   --accent-foreground: var(--color-zinc-900);
   --muted: var(--color-zinc-50);
@@ -1197,7 +1244,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --border: var(--color-zinc-200);
   --input: var(--color-zinc-300);
   --sidebar: var(--color-zinc-50);
-  --sidebar-foreground: var(--color-zinc-800);
+  --sidebar-foreground: var(--color-zinc-900);
   --sidebar-muted-foreground: var(--color-zinc-500);
   --sidebar-control-surface: var(--color-zinc-100);
   --sidebar-row-hover: var(--color-zinc-25);
@@ -1226,6 +1273,46 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --sidebar-row-selected: color-mix(in srgb, var(--contrast-foreground) 7%, transparent);
     --sidebar-border: var(--border);
     --sidebar-stage-fade: var(--card);
+    /* Row metadata sits a step below read titles (75% white). */
+    --secondary-label: #8f8f8f;
+  }
+}
+
+/* Modified files get a muted blue so added and deleted files lead. Built from the info token,
+   which themes do not override, so it stays blue in every theme. */
+:root {
+  --diff-modified-icon: color-mix(in srgb, var(--info-foreground) 50%, var(--muted-foreground));
+
+  @variant dark {
+    /* On black a gray mix stays as bright as the blue, so dim with transparency instead. */
+    --diff-modified-icon: color-mix(in srgb, var(--info-foreground) 65%, transparent);
+    --diff-added-icon: var(--success-foreground);
+  }
+}
+
+/* Blue-orange already spends blue on additions. Same specificity as the dark block above and
+   later, so it wins there too. */
+:root[data-diff-color-scheme="blue-orange"] {
+  --diff-modified-icon: var(--muted-foreground);
+  --diff-added-icon: initial;
+
+  @variant dark {
+    --diff-modified-icon: color-mix(in srgb, var(--muted-foreground) 65%, transparent);
+  }
+}
+
+/* Sections in the provider detail pane sit flat in its card instead of nesting cards inside
+   it. Headings and row dividers still separate them. */
+[data-provider-detail] [data-slot="settings-group"] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* A diff header's copy button shows on file hover or focus. */
+@media (hover: hover) {
+  diffs-container:not(:hover) [data-diff-copy-path]:not(:focus-within) {
+    opacity: 0;
   }
 }
 
@@ -1234,7 +1321,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    compatibility overrides so both navigation implementations receive the
    same palette. Success, info, provider, and channel identity colors remain
    independent; error, warning, and update roles are themeable below. */
-
 /* The non-empty marker adds enough specificity to outrank the generated root
    dark variant without reintroducing raw `.dark` selectors. */
 html[data-theme-id]:not([data-theme-id=""]) {
@@ -1283,7 +1369,6 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --warning-surface: var(--app-theme-warning-surface);
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
-  --update-surface: var(--app-theme-update-surface);
   --border: var(--app-theme-border);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
@@ -1435,7 +1520,7 @@ html[data-theme-id] [data-chat-header] [data-slot="separator"] {
 /* Chat code blocks join the other code surfaces on the code tokens. The
    default look keeps its secondary/input tints; themed palettes tint those
    surfaces with the accent, which fights syntax highlighting. */
-html[data-theme-id] .chat-markdown .chat-markdown-codeblock {
+html[data-theme-id] :is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock {
   background-color: var(--code-background);
   border-color: var(--contrast-border);
   color: var(--code-foreground);
@@ -1446,11 +1531,11 @@ html[data-theme-id] .chat-markdown pre {
   color: var(--code-foreground);
 }
 
-html[data-theme-id] .chat-markdown .chat-markdown-codeblock pre {
+html[data-theme-id] :is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock pre {
   background-color: transparent;
 }
 
-html[data-theme-id] .chat-markdown .chat-markdown-codeblock-header {
+html[data-theme-id] :is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock-header {
   color: color-mix(in srgb, var(--code-foreground) 72%, transparent);
 }
 
@@ -1485,6 +1570,7 @@ html[data-theme-id] [data-app-sidebar] {
   --accent-foreground: var(--app-theme-accent-surface-foreground);
   --muted: var(--app-theme-muted);
   --muted-foreground: var(--app-theme-muted-foreground);
+  --secondary-label: var(--app-theme-secondary-label);
   --border: var(--app-theme-border);
   --input: var(--app-theme-input);
   --sidebar: var(--app-theme-sidebar);
@@ -1508,498 +1594,6 @@ html[data-theme-id] [data-app-sidebar] {
 html[data-theme-id="t3-chat"] [data-app-sidebar] {
   @variant dark {
     border-color: var(--contrast-sidebar-border);
-  }
-}
-
-/* Prism: liquid chrome and glass. The palette stays opaque so the editor,
-   exports, and mobile read it like any other theme; the glass is added here.
-   The body paints one static scene (iridescent glows, chrome ribbons, a few
-   sparks); the canvases over it are thin tints so it shows through; and the
-   surfaces that float over other content are either frosted (overlays:
-   heavy blur and enough tint to read on) or liquid glass (controls: a
-   specular fill, a lit rim, and a soft inner highlight). Blur stays on those
-   floating surfaces only. */
-html[data-theme-id="prism"] {
-  /* The ink every hairline, fill, and highlight is mixed from: graphite on
-     the pearl canvas, white on the ink-black one. */
-  --prism-ink: oklch(0.22 0.02 268);
-  --prism-line: color-mix(in srgb, var(--prism-ink) 10%, transparent);
-  --prism-line-strong: color-mix(in srgb, var(--prism-ink) 16%, transparent);
-  --prism-fill: color-mix(in srgb, var(--prism-ink) 5%, transparent);
-  --prism-fill-hover: color-mix(in srgb, var(--prism-ink) 8%, transparent);
-  --prism-fill-active: color-mix(in srgb, var(--prism-ink) 11%, transparent);
-  --prism-highlight: oklch(1 0 0 / 85%);
-  --prism-frost-inset:
-    inset 0 1px 0 oklch(1 0 0 / 95%), inset 0 -1px 0 oklch(1 0 0 / 40%),
-    inset 1px 0 0 oklch(1 0 0 / 55%), inset -1px 0 0 oklch(1 0 0 / 55%);
-  /* The canvas stacks two or three deep (route, view, column), so it stays
-     thin for the scene to come through. */
-  --prism-canvas-opacity: 34%;
-  --prism-pane-opacity: 56%;
-  /* Frosted glass: what overlays are made of. Opaque palette colors, so the
-     thin canvas never leaks into them. */
-  --prism-frost: color-mix(in srgb, var(--app-theme-surface-overlay) 84%, transparent);
-  --prism-frost-sidebar: color-mix(in srgb, var(--app-theme-sidebar) 86%, transparent);
-  --prism-frost-canvas: color-mix(in srgb, var(--app-theme-canvas) 84%, transparent);
-  --prism-frost-blur: blur(40px) saturate(1.4);
-  --prism-dim: color-mix(in srgb, var(--app-theme-chrome) 48%, transparent);
-  /* Liquid glass: a specular fill over a light tint, a rim lit from the top
-     left, and an inner highlight along the top edge. */
-  /* Liquid glass, for controls only: a light tint, a faint specular fill,
-     a hairline, and the rim light and bend that prismGlass.ts hands each
-     element through --prism-rim and --prism-lens. */
-  --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 46%, transparent);
-  --prism-lg-fill: linear-gradient(
-    135deg,
-    oklch(1 0 0 / 60%) 0%,
-    oklch(1 0 0 / 30%) 45%,
-    oklch(1 0 0 / 20%) 70%,
-    oklch(1 0 0 / 45%) 100%
-  );
-  --prism-lg-inset: inset 0 0 0 1px oklch(0.2 0.02 268 / 16%);
-  --prism-lg-blur: blur(6px) saturate(1.3);
-  --prism-lg-shadow:
-    0 10px 30px -12px oklch(0.25 0.03 268 / 35%), 0 1px 2px oklch(0.25 0.03 268 / 12%);
-  --prism-shadow: 0 24px 64px -28px oklch(0.25 0.03 268 / 40%);
-  --prism-chrome-text: linear-gradient(
-    180deg,
-    oklch(0.52 0.02 265) 0%,
-    oklch(0.24 0.02 268) 44%,
-    oklch(0.58 0.02 262) 52%,
-    oklch(0.28 0.02 268) 100%
-  );
-  /* The scene: a blue-to-violet sweep, gold at the right edge, cyan under the
-     sidebar, a lit spot behind the composer, and two chrome ribbons with
-     iridescent edges crossing the middle. Static, so it paints once. */
-  --prism-scene:
-    radial-gradient(75% 60% at 26% -12%, oklch(0.72 0.15 262 / 50%), transparent 62%),
-    radial-gradient(60% 46% at 102% 18%, oklch(0.9 0.11 85 / 60%), transparent 62%),
-    radial-gradient(64% 54% at 80% 112%, oklch(0.78 0.13 305 / 50%), transparent 62%),
-    radial-gradient(52% 42% at 6% 108%, oklch(0.88 0.08 220 / 55%), transparent 62%),
-    radial-gradient(44% 34% at 50% 102%, oklch(0.75 0.13 258 / 30%), transparent 65%),
-    linear-gradient(
-      112deg,
-      transparent 32%,
-      oklch(0.78 0.12 262 / 30%) 40%,
-      oklch(1 0 0 / 95%) 45%,
-      oklch(0.92 0.1 85 / 35%) 49%,
-      transparent 58%
-    ),
-    linear-gradient(
-      -28deg,
-      transparent 54%,
-      oklch(0.8 0.12 305 / 28%) 62%,
-      oklch(1 0 0 / 85%) 66%,
-      oklch(0.86 0.09 220 / 30%) 70%,
-      transparent 78%
-    );
-
-  @variant dark {
-    --prism-ink: oklch(1 0 0);
-    --prism-highlight: oklch(1 0 0 / 14%);
-    --prism-frost-inset:
-      inset 0 1px 0 oklch(1 0 0 / 34%), inset 0 -1px 0 oklch(1 0 0 / 7%),
-      inset 1px 0 0 oklch(1 0 0 / 12%), inset -1px 0 0 oklch(1 0 0 / 12%);
-    --prism-canvas-opacity: 20%;
-    --prism-pane-opacity: 58%;
-    --prism-frost: color-mix(in srgb, var(--app-theme-surface-overlay) 82%, transparent);
-    --prism-frost-sidebar: color-mix(in srgb, var(--app-theme-sidebar) 84%, transparent);
-    --prism-frost-canvas: color-mix(in srgb, var(--app-theme-canvas) 82%, transparent);
-    --prism-frost-blur: blur(40px) saturate(1.5);
-    --prism-dim: color-mix(in srgb, var(--app-theme-chrome) 55%, transparent);
-    --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 40%, transparent);
-    --prism-lg-fill: linear-gradient(
-      135deg,
-      oklch(1 0 0 / 9%) 0%,
-      oklch(1 0 0 / 3%) 45%,
-      oklch(1 0 0 / 2%) 70%,
-      oklch(1 0 0 / 6%) 100%
-    );
-    --prism-lg-inset: inset 0 0 0 1px oklch(1 0 0 / 12%);
-    --prism-lg-blur: blur(6px) saturate(1.4) brightness(1.03);
-    --prism-lg-shadow: 0 10px 30px -12px oklch(0 0 0 / 60%), 0 1px 2px oklch(0 0 0 / 25%);
-    --prism-shadow: 0 28px 72px -28px oklch(0 0 0 / 85%);
-    --prism-chrome-text: linear-gradient(
-      180deg,
-      oklch(1 0 0) 0%,
-      oklch(0.86 0.012 250) 42%,
-      oklch(0.64 0.02 255) 50%,
-      oklch(0.94 0.01 250) 68%,
-      oklch(1 0 0) 100%
-    );
-    --prism-scene:
-      radial-gradient(75% 60% at 26% -12%, oklch(0.66 0.2 262 / 78%), transparent 62%),
-      radial-gradient(60% 46% at 102% 18%, oklch(0.86 0.14 82 / 55%), transparent 62%),
-      radial-gradient(64% 54% at 80% 112%, oklch(0.6 0.22 302 / 70%), transparent 62%),
-      radial-gradient(52% 42% at 6% 108%, oklch(0.8 0.13 222 / 58%), transparent 62%),
-      radial-gradient(44% 34% at 50% 102%, oklch(0.64 0.18 258 / 40%), transparent 65%),
-      linear-gradient(
-        112deg,
-        transparent 32%,
-        oklch(0.72 0.18 262 / 14%) 40%,
-        oklch(1 0 0 / 20%) 45%,
-        oklch(0.92 0.12 82 / 14%) 49%,
-        transparent 58%
-      ),
-      linear-gradient(
-        -28deg,
-        transparent 54%,
-        oklch(0.72 0.2 302 / 12%) 62%,
-        oklch(1 0 0 / 16%) 66%,
-        oklch(0.82 0.12 222 / 12%) 70%,
-        transparent 78%
-      ),
-      radial-gradient(2px 2px at 84% 10%, oklch(1 0 0 / 85%), transparent),
-      radial-gradient(1.5px 1.5px at 18% 84%, oklch(1 0 0 / 75%), transparent),
-      radial-gradient(2px 2px at 64% 72%, oklch(0.95 0.03 250 / 65%), transparent),
-      radial-gradient(1.5px 1.5px at 92% 58%, oklch(0.9 0.05 80 / 65%), transparent),
-      radial-gradient(1.5px 1.5px at 40% 22%, oklch(1 0 0 / 55%), transparent);
-  }
-
-  /* `:root` matches the same element; it only adds the specificity needed to
-     outrank the generic theme mapping and the root defaults above. */
-  &:root {
-    --glass-blur: 32px;
-    --glass-saturation: 1.4;
-    --app-scrollbar-thumb: color-mix(in srgb, var(--prism-ink) 12%, transparent);
-    --app-scrollbar-thumb-hover: color-mix(in srgb, var(--prism-ink) 18%, transparent);
-    --background: color-mix(
-      in srgb,
-      var(--app-theme-canvas) var(--prism-canvas-opacity),
-      transparent
-    );
-    --toolbar-background: color-mix(
-      in srgb,
-      var(--app-theme-toolbar) var(--prism-pane-opacity),
-      transparent
-    );
-    --toolbar-border: var(--prism-line);
-    --toolbar-control: var(--prism-fill);
-    --toolbar-control-hover: var(--prism-fill-active);
-    --surface-raised: color-mix(in srgb, var(--app-theme-surface-raised) 70%, transparent);
-    --card: color-mix(in srgb, var(--app-theme-surface) var(--prism-pane-opacity), transparent);
-    /* Popups are frosted below; the token stays nearly solid for everything
-       else that paints with it. */
-    --popover: var(--prism-frost);
-    --secondary: var(--prism-fill);
-    --muted: var(--prism-fill);
-    --accent: var(--prism-fill-hover);
-    --message-surface: var(--prism-fill-hover);
-    --border: var(--prism-line);
-    --input: var(--prism-line-strong);
-    --sidebar: color-mix(in srgb, var(--app-theme-sidebar) var(--prism-pane-opacity), transparent);
-    --sidebar-control-surface: var(--prism-fill);
-    --sidebar-row-hover: var(--prism-fill);
-    --sidebar-row-active: var(--prism-fill-hover);
-    --sidebar-row-selected: var(--prism-fill-active);
-    --sidebar-border: var(--prism-line);
-    --sidebar-stage-fade: var(--sidebar);
-    --code-background: color-mix(in srgb, var(--app-theme-code-background) 88%, transparent);
-  }
-}
-
-/* The scene replaces the body grain: glass wants a clean backdrop. */
-html[data-theme-id="prism"] body {
-  background-image: var(--prism-scene);
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-}
-
-/* The docked sidebar owns a local palette (above); give it the same glass.
-   It is the pane that blurs, so its inner wrapper stops painting a second
-   tint over it. */
-html[data-theme-id="prism"] [data-app-sidebar] {
-  --background: color-mix(
-    in srgb,
-    var(--app-theme-canvas) var(--prism-canvas-opacity),
-    transparent
-  );
-  --card: color-mix(in srgb, var(--app-theme-surface) var(--prism-pane-opacity), transparent);
-  --accent: var(--prism-fill-hover);
-  --muted: var(--prism-fill);
-  --border: var(--prism-line);
-  --input: var(--prism-line-strong);
-  --sidebar: color-mix(in srgb, var(--app-theme-sidebar) var(--prism-pane-opacity), transparent);
-  --sidebar-control-surface: var(--prism-fill);
-  --sidebar-row-hover: var(--prism-fill);
-  --sidebar-row-active: var(--prism-fill-hover);
-  --sidebar-row-selected: var(--prism-fill-active);
-  --sidebar-border: var(--prism-line);
-  --sidebar-stage-fade: var(--sidebar);
-  border-color: var(--prism-line);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-}
-
-html[data-theme-id="prism"] [data-app-sidebar] [data-slot="sidebar-inner"] {
-  background-color: transparent;
-}
-
-/* ---- Frosted overlays ---------------------------------------------------
-   Everything that opens over other content. On narrow screens the sidebar
-   is a sheet (and never carries the docked sidebar's attribute), so it is
-   matched by its slot here. */
-html[data-theme-id="prism"] [data-slot="sidebar"][data-mobile="true"] {
-  --sidebar-stage-fade: var(--prism-frost-sidebar);
-  background-color: var(--prism-frost-sidebar);
-  border-color: var(--prism-line-strong);
-  box-shadow:
-    inset -1px 0 0 var(--prism-highlight),
-    var(--prism-shadow);
-  -webkit-backdrop-filter: var(--prism-frost-blur);
-  backdrop-filter: var(--prism-frost-blur);
-}
-
-/* Menus and popovers carry dropdown-glass on the popup itself; a select's
-   popup slot is a bare wrapper around a dropdown-glass child, so the class
-   is the one element to frost in all three. */
-html[data-theme-id="prism"]
-  :is(
-    [data-slot="sheet-popup"],
-    [data-slot="dialog-popup"],
-    [data-slot="command-dialog-popup"],
-    .dropdown-glass
-  ) {
-  background: var(--prism-frost);
-  border-color: var(--prism-line-strong);
-  box-shadow: var(--prism-frost-inset), var(--prism-shadow);
-  -webkit-backdrop-filter: var(--prism-frost-blur);
-  backdrop-filter: var(--prism-frost-blur);
-}
-
-html[data-theme-id="prism"]
-  :is(
-    [data-slot="sheet-backdrop"],
-    [data-slot="dialog-backdrop"],
-    [data-slot="command-dialog-backdrop"]
-  ) {
-  background: var(--prism-dim);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
-
-/* The glass utilities mix from the canvas token, which Prism thins; give
-   them the opaque palette color instead so they stay frosted, not clear. */
-html[data-theme-id="prism"] .surface-glass {
-  background: var(--prism-frost-canvas);
-  -webkit-backdrop-filter: var(--prism-frost-blur);
-  backdrop-filter: var(--prism-frost-blur);
-}
-
-html[data-theme-id="prism"] .dialog-glass {
-  background: var(--prism-frost);
-}
-
-/* Floating capsules (scroll-to-latest, new messages, the search shortcut
-   badge) paint a near-solid canvas and expect it to be opaque. Scoped to the
-   capsule shape so the sticky browser toolbar, which shares the class, keeps
-   its own lighter blur. */
-html[data-theme-id="prism"] :is(.bg-background\/88, .bg-background\/95).rounded-full {
-  background-color: var(--prism-frost-canvas);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  backdrop-filter: blur(16px) saturate(1.4);
-}
-
-html[data-theme-id="prism"] [data-aldo-assistant-footer] {
-  background-color: var(--prism-frost-canvas);
-  -webkit-backdrop-filter: var(--prism-frost-blur);
-  backdrop-filter: var(--prism-frost-blur);
-}
-
-@layer base {
-  /* alert-glass sets its background !important; only an important rule in
-     an earlier layer outranks it. */
-  html[data-theme-id="prism"] .alert-glass {
-    background:
-      linear-gradient(
-        color-mix(in srgb, var(--alert-glass-tint) 6%, transparent),
-        color-mix(in srgb, var(--alert-glass-tint) 6%, transparent)
-      ),
-      var(--prism-frost) !important;
-  }
-}
-
-/* ---- Liquid glass -------------------------------------------------------
-   Controls that sit on the scene: the composer, primary buttons, the Aldo
-   dock, and the thread toolbar's pills. Each is a thick lens: a light tint
-   over the bent, lightly blurred backdrop, a faint specular fill, a thin rim
-   lit from the upper left, and a chromatic edge. prismGlass.ts measures
-   these elements and hands them --prism-rim and --prism-lens; where the lens
-   can't run (Safari, Firefox) the rim and tint still read as glass. */
-
-/* The composer: its backdrop pseudo is the glass body (and with a banner
-   attached, the main surface paints instead); the outline pseudo on its
-   host is a hairline. The pseudo inherits the lens and rim from the shell. */
-html[data-theme-id="prism"] [data-slot="composer-shell"] {
-  --chat-composer-glass-surface: var(--app-theme-surface-raised);
-  --chat-composer-outline: var(--prism-line-strong);
-  --chat-composer-highlight: transparent;
-}
-
-html[data-theme-id="prism"] [data-slot="composer-shell"]::before,
-html[data-theme-id="prism"]
-  [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
-  [data-chat-composer-main-surface] {
-  background-color: var(--prism-lg-tint);
-  background-image: var(--prism-rim, none), var(--prism-lg-fill);
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  box-shadow: var(--prism-lg-inset), var(--prism-lg-shadow);
-  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
-  backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
-}
-
-html[data-theme-id="prism"] [data-slot="composer-host"]::after,
-html[data-theme-id="prism"] [data-chat-composer-main-surface]::after {
-  box-shadow: none;
-}
-
-html[data-theme-id="prism"] [data-slot="composer-context-strip"]::before {
-  border-color: var(--prism-line-strong);
-  background: var(--prism-lg-tint);
-  box-shadow: var(--prism-lg-inset);
-}
-
-/* The chat composer's own textarea sits inside the glass; keep it clear. */
-html[data-theme-id="prism"] [data-slot="composer-shell"] textarea {
-  background: transparent;
-}
-
-/* The Aldo dock: a liquid glass capsule and speech bubble. */
-html[data-theme-id="prism"] [data-aldo-dock] {
-  background-color: var(--prism-lg-tint);
-  background-image: var(--prism-rim, none), var(--prism-lg-fill);
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  border-color: transparent;
-  box-shadow: var(--prism-lg-inset), var(--prism-lg-shadow);
-  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
-  backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
-}
-
-html[data-theme-id="prism"] [data-aldo-dock] [data-slot="input-control"] {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-/* Primary buttons and the composer's send button: the action color as
-   glass, light enough for its ink. */
-html[data-theme-id="prism"] [data-slot="button"][data-variant="default"],
-html[data-theme-id="prism"] [data-composer-send] {
-  background-color: color-mix(in srgb, var(--primary) 74%, transparent);
-  background-image: var(--prism-rim, none), var(--prism-lg-fill);
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  border-color: transparent;
-  box-shadow:
-    var(--prism-lg-inset),
-    0 6px 18px -8px oklch(0 0 0 / 45%);
-  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
-  backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
-}
-
-html[data-theme-id="prism"] [data-slot="button"][data-variant="default"]:hover,
-html[data-theme-id="prism"] [data-slot="button"][data-variant="default"][data-pressed],
-html[data-theme-id="prism"] [data-composer-send]:enabled:hover {
-  background-color: color-mix(in srgb, var(--primary) 86%, transparent);
-}
-
-/* Aldo: a thread's send button is neutral, solid ink once there's something to
-   send; Aldo's blue is for Aldo itself (its orb, its dock), so a thread doesn't
-   read as a conversation with Aldo. */
-[data-aldo-thread-composer] {
-  --message-action: var(--foreground);
-  --message-action-foreground: var(--background);
-  --message-action-hover: color-mix(in srgb, var(--foreground) 88%, var(--background));
-}
-
-[data-aldo-thread-composer] [data-composer-send]:disabled {
-  background-color: var(--accent);
-  color: var(--muted-foreground);
-}
-
-html[data-theme-id="prism"] [data-aldo-thread-composer] [data-composer-send] {
-  background-color: color-mix(in srgb, var(--foreground) 74%, transparent);
-}
-
-html[data-theme-id="prism"] [data-aldo-thread-composer] [data-composer-send]:enabled:hover {
-  background-color: color-mix(in srgb, var(--foreground) 86%, transparent);
-}
-
-html[data-theme-id="prism"] [data-aldo-thread-composer] [data-composer-send]:disabled {
-  background-color: color-mix(in srgb, var(--accent) 74%, transparent);
-}
-
-/* Toolbar pills: small lenses. */
-html[data-theme-id="prism"] [data-chat-header] [data-slot="button"],
-html[data-theme-id="prism"] [data-chat-header] [data-slot="menu-trigger"],
-html[data-theme-id="prism"] [data-chat-header] [data-toolbar-control] {
-  background-image: var(--prism-rim, none), var(--prism-lg-fill);
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  border-color: var(--prism-line-strong);
-  box-shadow: var(--prism-lg-inset);
-  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) blur(4px) saturate(1.3);
-  backdrop-filter: var(--prism-lens, opacity(1)) blur(4px) saturate(1.3);
-}
-
-/* Inputs have no blur of their own, so their fill stays thin: the lit top
-   edge and hairline carry the glass. Only the styled wrapper owns a surface;
-   an unstyled one (input groups, the sidebar search) belongs to its host. */
-html[data-theme-id="prism"] [data-slot="input-control"]:not([data-unstyled], [data-aldo-dock] *) {
-  background: var(--prism-fill);
-  border-color: var(--prism-line-strong);
-  box-shadow: inset 0 1px 0 var(--prism-highlight);
-}
-
-/* The selected sidebar row and the active settings entry. */
-html[data-theme-id="prism"] [data-slot="sidebar"] :is([aria-current="page"], [data-active="true"]),
-html[data-theme-id="prism"] [data-app-sidebar] :is([aria-current="page"], [data-active="true"]) {
-  background-image: var(--prism-lg-fill);
-  box-shadow:
-    inset 0 1px 0 var(--prism-highlight),
-    inset 0 0 0 1px var(--prism-line);
-}
-
-/* Without the lens (Safari, Firefox), an inner ring stands in for the bezel. */
-html[data-theme-id="prism"][data-prism-lens="none"]
-  :is([data-aldo-dock], [data-slot="button"][data-variant="default"], [data-composer-send]),
-html[data-theme-id="prism"][data-prism-lens="none"] [data-slot="composer-shell"]::before {
-  box-shadow:
-    var(--prism-lg-inset),
-    inset 0 0 18px color-mix(in srgb, var(--prism-ink) 6%, transparent),
-    var(--prism-lg-shadow);
-}
-
-/* The wordmark is set in chrome: its text spans, not the T3 mark's wrapper. */
-html[data-theme-id="prism"] .sidebar-brand span:not(:has(> svg)) {
-  background-image: var(--prism-chrome-text);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* Without backdrop support a see-through pane is just a see-through pane:
-   fall back to the opaque palette. */
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  html[data-theme-id="prism"]:root,
-  html[data-theme-id="prism"] [data-app-sidebar] {
-    --background: var(--app-theme-canvas);
-    --toolbar-background: var(--app-theme-toolbar);
-    --card: var(--app-theme-surface);
-    --popover: var(--app-theme-surface-overlay);
-    --surface-raised: var(--app-theme-surface-raised);
-    --sidebar: var(--app-theme-sidebar);
-    --sidebar-stage-fade: var(--app-theme-sidebar);
-    --prism-frost: var(--app-theme-surface-overlay);
-    --prism-frost-sidebar: var(--app-theme-sidebar);
-    --prism-frost-canvas: var(--app-theme-canvas);
-    --prism-lg-tint: var(--app-theme-surface-raised);
-  }
-
-  html[data-theme-id="prism"] [data-app-sidebar] [data-slot="sidebar-inner"] {
-    background-color: var(--sidebar);
   }
 }
 
@@ -2126,6 +1720,18 @@ body {
   padding: 0;
 }
 
+[data-preview-url-input] {
+  font-variant-ligatures: none;
+}
+
+/* Lighter default icon stroke. In the base layer so stroke-* utilities still win; any
+   CSS beats lucide's stroke-width="2" attribute. */
+@layer base {
+  :where(svg.lucide[stroke-width="2"]) {
+    stroke-width: 1.75;
+  }
+}
+
 html,
 body {
   min-height: calc(100svh + env(safe-area-inset-top));
@@ -2189,8 +1795,9 @@ code {
    inherited sizes on unrelated pre surfaces (terminal previews, approvals).
    Inline code stays relative to its sentence so it never towers over prose;
    diffs and file previews take the size through --diffs-font-size. */
-.chat-markdown .chat-markdown-shiki .shiki,
-.chat-markdown pre code {
+.chat-markdown .chat-markdown-shiki :is(.shiki, .diffs),
+.chat-markdown .chat-markdown-codeblock pre,
+:is(.chat-markdown, .composer-tiptap) pre code {
   font-size: var(--font-size-code, inherit);
 }
 
@@ -2202,6 +1809,20 @@ code {
 :root {
   --diffs-font-family: var(--font-mono);
   --diffs-header-font-family: var(--font-sans);
+}
+
+/* Pele diagrams read their colors through these, so a theme change recolors
+   them without re-rendering. */
+.pele {
+  --pele-bg: var(--background);
+  --pele-fg: var(--foreground);
+  --pele-muted: var(--muted-foreground);
+  --pele-line: var(--muted-foreground);
+  --pele-surface: var(--secondary);
+  --pele-surface-alt: var(--accent);
+  --pele-border: color-mix(in srgb, var(--foreground) 28%, transparent);
+  --pele-accent: var(--primary);
+  --pele-critical: var(--destructive);
 }
 
 /* Window drag region (frameless titlebar) */
@@ -2227,21 +1848,21 @@ code {
   -webkit-app-region: no-drag;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
+/* Keep parent scrollbar styles off iframe owners to avoid WebKit resize loops: https://webkit.org/b/324485 */
+:where(:not(iframe))::-webkit-scrollbar {
   width: var(--app-scrollbar-width);
 }
 
-::-webkit-scrollbar-track {
+:where(:not(iframe))::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+:where(:not(iframe))::-webkit-scrollbar-thumb {
   background: var(--app-scrollbar-thumb);
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+:where(:not(iframe))::-webkit-scrollbar-thumb:hover {
   background: var(--app-scrollbar-thumb-hover);
 }
 
@@ -2260,73 +1881,125 @@ code {
 .chat-markdown ol,
 .chat-markdown blockquote,
 .chat-markdown pre,
-.chat-markdown .chat-markdown-table-container {
+.chat-markdown .chat-markdown-table-container,
+.composer-tiptap ul,
+.composer-tiptap ol {
   margin: 0.65rem 0;
 }
 
-.chat-markdown h1,
-.chat-markdown h2,
-.chat-markdown h3,
-.chat-markdown h4,
-.chat-markdown h5,
-.chat-markdown h6 {
+.chat-markdown-math-display .katex-display {
+  margin: 0;
+}
+
+:is(.chat-markdown, .composer-tiptap) h1,
+:is(.chat-markdown, .composer-tiptap) h2,
+:is(.chat-markdown, .composer-tiptap) h3,
+:is(.chat-markdown, .composer-tiptap) h4,
+:is(.chat-markdown, .composer-tiptap) h5,
+:is(.chat-markdown, .composer-tiptap) h6 {
   margin: 1.25rem 0 0.5rem;
   font-weight: 600;
   line-height: 1.3;
   color: var(--contrast-foreground);
 }
 
-.chat-markdown h1 {
+:is(.chat-markdown, .composer-tiptap) h1 {
   font-size: 1.25rem;
 }
 
-.chat-markdown h2 {
+:is(.chat-markdown, .composer-tiptap) h2 {
   font-size: 1.125rem;
 }
 
-.chat-markdown h3 {
+:is(.chat-markdown, .composer-tiptap) h3 {
   font-size: 1rem;
 }
 
-.chat-markdown h4,
-.chat-markdown h5,
-.chat-markdown h6 {
+:is(.chat-markdown, .composer-tiptap) h4,
+:is(.chat-markdown, .composer-tiptap) h5,
+:is(.chat-markdown, .composer-tiptap) h6 {
   font-size: 0.875rem;
 }
 
-.chat-markdown h6 {
+:is(.chat-markdown, .composer-tiptap) h6 {
   color: var(--contrast-muted-foreground);
 }
 
-.chat-markdown ul {
+:is(.chat-markdown, .composer-tiptap) ul {
   /* Reset for nested uls under a widened ol. --list-gutter is an inherited
      custom property, so without this a task-list under a multi-digit ordered
      list would inherit the outer gutter instead of its own default. */
   --list-gutter: 1.25rem;
-  padding-left: 1.25rem;
+  padding-inline-start: 1.25rem;
   list-style-type: disc;
 }
 
-/* --list-gutter defaults to the same 1.25rem as .chat-markdown ul, but
-   ChatMarkdown's `ol` renderer widens it (via inline style) for lists whose
-   widest marker has multiple characters so it isn't clipped by list-style-position:
-   outside painting the marker past the padding box. Reset it here too so a
-   nested ol without its own widened marker doesn't inherit the outer one. */
-.chat-markdown ol {
-  --list-gutter: 1.25rem;
-  padding-left: var(--list-gutter, 1.25rem);
+/* Outside markers paint past the padding box, so the gutter must fit `0. `,
+   measured per font in appearanceFonts. ChatMarkdown widens it inline for
+   multi-digit markers; setting it here stops a nested ol inheriting that. */
+:is(.chat-markdown, .composer-tiptap) ol {
+  --list-gutter: max(1.25rem, var(--list-marker-sans, 0px));
+  padding-inline-start: var(--list-gutter, 1.25rem);
   list-style-type: decimal;
 }
 
-.chat-markdown ol > li::marker {
+:is(.chat-markdown, .composer-tiptap) ol > li::marker {
   font-variant-numeric: tabular-nums;
 }
 
-.chat-markdown ul ul {
+/* The composer shows the marker the source has, `3)` or a nested `7.`, not the
+   browser counter. Browsers without ::marker content fall back to `start`. */
+.composer-tiptap ol > li[data-marker]::marker {
+  content: attr(data-marker) " ";
+}
+
+/* The prompt font and size can differ from the interface, so its gutter must
+   also follow the prompt's font metrics. */
+.composer-tiptap ol {
+  --list-gutter: max(1.25rem, 3ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="3"]) {
+  --list-gutter: max(1.25rem, 4ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="4"]) {
+  --list-gutter: max(1.25rem, 5ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="5"]) {
+  --list-gutter: max(1.25rem, 6ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="6"]) {
+  --list-gutter: max(1.25rem, 7ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="7"]) {
+  --list-gutter: max(1.25rem, 8ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="8"]) {
+  --list-gutter: max(1.25rem, 9ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="9"]) {
+  --list-gutter: max(1.25rem, 10ch);
+}
+
+.composer-tiptap ol:has(> li[data-marker-width="10"]) {
+  --list-gutter: max(1.25rem, 11ch);
+}
+
+.composer-tiptap ul {
+  padding-inline-start: max(1.25rem, 2ch);
+}
+
+:is(.chat-markdown, .composer-tiptap) ul ul {
   list-style-type: circle;
 }
 
-.chat-markdown ul ul ul {
+:is(.chat-markdown, .composer-tiptap) ul ul ul {
   list-style-type: square;
 }
 
@@ -2336,6 +2009,18 @@ code {
 
 .chat-markdown ol ol ol {
   list-style-type: lower-roman;
+}
+
+.chat-markdown.user-message-markdown ol {
+  list-style-type: decimal;
+}
+
+/* Spaces a user typed at the start of a line, which Markdown would otherwise drop. pre-wrap, not
+   pre, so an indent wider than the bubble wraps instead of pushing the line's text out of view.
+   Not selectable, so a selection, a drag or a copy carries the text as it did before. */
+.chat-markdown.user-message-markdown [data-leading-whitespace] {
+  white-space: pre-wrap;
+  user-select: none;
 }
 
 .chat-markdown li + li {
@@ -2348,7 +2033,8 @@ code {
 }
 
 .chat-markdown li.task-list-item input[type="checkbox"] {
-  margin: 0 0.35em 0.15em calc(-1 * var(--list-gutter, 1.25rem));
+  margin-block: 0 0.15em;
+  margin-inline: calc(-1 * var(--list-gutter, 1.25rem)) 0.35em;
   vertical-align: middle;
 }
 
@@ -2362,23 +2048,83 @@ code {
   text-decoration: none;
 }
 
-/* File links are Chips and own their color and focus ring. */
-.chat-markdown a:not(.chat-markdown-file-link) {
+/* Triple-click selection stops at block-level boxes, flex items included, so file chips in
+   prose stay inline-level down to the icon and label. */
+.chat-markdown-file-link {
+  display: inline-block;
+  overflow-x: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-markdown-file-link > :is(svg, img) {
+  display: inline;
+  margin-inline-end: 0.2em;
+  vertical-align: -0.125em;
+}
+
+.chat-markdown-file-link > [data-slot="context-chip-label"] {
+  display: inline;
+}
+
+/* File links and context chips own their color and focus ring. */
+.chat-markdown a:not(.chat-markdown-file-link, :has([data-slot="context-chip-label"])) {
   color: var(--info-foreground);
 }
 
-.chat-markdown a:not(.chat-markdown-file-link):hover,
-.chat-markdown a:not(.chat-markdown-file-link):focus-visible {
+.chat-markdown
+  a:not(
+    .chat-markdown-file-link,
+    :has([data-slot="context-chip-label"]),
+    [data-markdown-image-link]
+  ):hover,
+.chat-markdown
+  a:not(
+    .chat-markdown-file-link,
+    :has([data-slot="context-chip-label"]),
+    [data-markdown-image-link]
+  ):focus-visible {
   background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
   background-position: left bottom;
   background-repeat: repeat-x;
   background-size: 4px 2px;
 }
 
-.chat-markdown blockquote {
-  border-left: 2px solid var(--contrast-border);
-  padding-left: 0.8rem;
-  color: var(--contrast-muted-foreground);
+:is(.chat-markdown, .composer-tiptap) blockquote {
+  border-inline-start: 2px solid color-mix(in srgb, currentcolor 35%, transparent);
+  padding-inline-start: 0.8rem;
+  color: inherit;
+}
+
+.composer-tiptap blockquote {
+  margin: 0.65rem 0;
+}
+
+/* Surface borders can blend into dark message bubbles; rules need a readable color. */
+:is(.chat-markdown, .composer-tiptap) hr {
+  @variant dark {
+    border-color: var(--contrast-muted-foreground);
+  }
+}
+
+.composer-tiptap hr {
+  margin: 0.65rem 0;
+}
+
+/* Block spacing separates blocks, not the draft from the composer edge. A
+   leading list or quote would otherwise push the first line down, and the
+   one-line resting composer clips it. */
+.composer-tiptap > :first-child {
+  margin-top: 0;
+}
+
+.composer-tiptap > :last-child {
+  margin-bottom: 0;
+}
+
+/* A heading at the top of a draft should not push the first line down. */
+.composer-tiptap :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
 }
 
 .chat-markdown section[data-footnotes] {
@@ -2410,19 +2156,30 @@ code {
 }
 
 .chat-markdown :not(pre) > code {
-  border: 1px solid var(--contrast-border);
-  border-radius: 0.375rem;
-  background: var(--muted);
-  padding: 0.1rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  background: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  padding: 0.1em 0.35em;
   color: var(--contrast-foreground);
-  font-size: 0.75rem;
+  font-size: 0.85em;
+}
+
+.chat-markdown.user-message-markdown :not(pre) > code {
+  background: color-mix(in srgb, var(--contrast-message-foreground) 10%, transparent);
+  color: var(--contrast-message-foreground);
+}
+
+.chat-markdown strong {
+  font-weight: 700;
 }
 
 .chat-markdown pre {
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--contrast-border);
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   background: var(--muted);
   padding: 0.8rem 0.9rem;
   scrollbar-width: thin;
@@ -2436,7 +2193,7 @@ code {
 }
 
 .chat-markdown pre::-webkit-scrollbar {
-  height: 7px;
+  height: var(--app-scrollbar-width);
 }
 
 .chat-markdown pre::-webkit-scrollbar-thumb {
@@ -2444,24 +2201,50 @@ code {
   background: color-mix(in srgb, var(--contrast-border) 78%, transparent);
 }
 
-.chat-markdown .chat-markdown-codeblock-header {
+:is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock-header {
   color: color-mix(in srgb, var(--contrast-foreground) 72%, transparent);
 }
 
-.chat-markdown .chat-markdown-codeblock pre {
+:is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock pre {
   margin: 0;
   border: none;
   border-radius: 0;
   background: transparent;
 }
 
-.chat-markdown .chat-markdown-codeblock[data-wrap="true"] pre {
+:is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock[data-wrap="true"] pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.chat-markdown .chat-markdown-shiki .shiki {
+:is(.chat-markdown, .composer-tiptap) .chat-markdown-shiki :is(.shiki, .diffs) {
   background: transparent !important;
+}
+
+/* Plain-text fences override the highlighter's inline foreground colors. */
+:is(.chat-markdown, .composer-tiptap)
+  .chat-markdown-codeblock:is(
+    [data-language="text" i],
+    [data-language="txt" i],
+    [data-language="plain" i],
+    [data-language="plaintext" i]
+  ) {
+  &,
+  & :is(pre, pre *) {
+    color: inherit !important;
+  }
+}
+
+/* Sent messages color prose with the message foreground, which is not chosen
+   for the code surface, so their plain-text fences keep the global foreground. */
+.chat-markdown.user-message-markdown
+  .chat-markdown-codeblock:is(
+    [data-language="text" i],
+    [data-language="txt" i],
+    [data-language="plain" i],
+    [data-language="plaintext" i]
+  ) {
+  color: var(--contrast-foreground) !important;
 }
 
 /* Paragraphs and code blocks arrive in chunks while a response streams. Fade
@@ -2471,7 +2254,8 @@ code {
    shot, no layout change. */
 @media (prefers-reduced-motion: no-preference) {
   .chat-markdown[data-streaming] > *,
-  .chat-markdown[data-streaming] .chat-markdown-shiki {
+  .chat-markdown[data-streaming] .chat-markdown-shiki,
+  .chat-markdown[data-streaming] .chat-markdown-mermaid {
     transition: opacity 600ms ease-out;
 
     @starting-style {
@@ -2480,70 +2264,83 @@ code {
   }
 }
 
-/* Diagnostics-style tables: row separators only, uppercase headers, and a
-   scroll-fade container for horizontal overflow. The root chat-markdown
-   wrapping rules (overflow-wrap: anywhere) would let columns shrink to single
-   characters and defeat the overflow — restore word-boundary wrapping so the
-   min column width is the longest word. */
+/* Diagnostics-style tables: row separators only, and a scroll-fade container
+   for horizontal overflow. Cells wrap and the table fits its lane. The root
+   chat-markdown wrapping rules (overflow-wrap: anywhere) would let columns
+   shrink to single characters, so restore word-boundary wrapping: the min
+   column width is the longest word, and only wider content scrolls. */
 .chat-markdown table {
   width: 100%;
-  min-width: max-content;
   border-collapse: collapse;
   overflow-wrap: normal;
   word-break: normal;
-  font-size: 0.75rem;
+  /* One step under 15px prose. */
+  font-size: 0.875rem;
 }
 
+/* Top-aligned so wrapped rows share a first line, and the outer columns sit
+   flush with the surrounding prose. */
 .chat-markdown th,
 .chat-markdown td {
   padding: 0.45rem 0.75rem;
-  text-align: left;
+  text-wrap: pretty;
+  text-align: start;
+  vertical-align: top;
+}
+
+.chat-markdown :is(th, td):first-child {
+  padding-inline-start: 0;
+}
+
+.chat-markdown :is(th, td):last-child {
+  padding-inline-end: 0;
 }
 
 .chat-markdown thead th {
   border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
   padding-block: 0.55rem;
   font-weight: 600;
-  white-space: nowrap;
 }
 
 .chat-markdown tbody td {
   border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
 }
 
-/* Collapsed (default): single-line cells truncate so arbitrary chat content
-   cannot blow the column out; the footer toggle expands cells to wrap. */
-.chat-markdown .chat-markdown-table-container[data-expanded="false"] th,
-.chat-markdown .chat-markdown-table-container[data-expanded="false"] td {
-  overflow: hidden;
+/* Caps a long path, URL, or chip at 24rem; text past the cap wraps. */
+.chat-markdown :is(th, td) {
   max-width: 24rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
-.chat-markdown .chat-markdown-table-container[data-expanded="true"] td {
-  max-width: 24rem;
-  overflow-wrap: anywhere;
+/* Formula cells keep their natural width and scroll with the table. */
+.chat-markdown :is(th, td):has([data-markdown-math]) {
+  max-width: none;
+}
+
+/* Keep overflow discoverable when the edge fade falls between columns. */
+.chat-markdown
+  .chat-markdown-table-container
+  [data-slot="scroll-area-scrollbar"][data-orientation="horizontal"] {
+  opacity: 1;
+  --app-scrollbar-thumb: color-mix(in srgb, var(--muted-foreground) 60%, transparent);
+  --app-scrollbar-thumb-hover: color-mix(in srgb, var(--muted-foreground) 80%, transparent);
 }
 
 :root {
   --diff-addition: var(--success);
   --diff-deletion: var(--destructive);
-  --diff-addition-foreground: light-dark(var(--color-emerald-600), var(--color-emerald-400));
-  --diff-deletion-foreground: light-dark(var(--color-red-600), var(--color-red-400));
+  --diff-addition-foreground: light-dark(var(--color-emerald-700), var(--color-emerald-400));
+  --diff-deletion-foreground: light-dark(var(--color-red-700), var(--color-red-400));
 }
 
-/* Chat timeline and composer column width, set from the Chat width setting. */
-:root {
-  --chat-max-width: 48rem;
-}
-
+/* Chat width setting. Comfortable keeps the default --chat-content-max-width,
+   which sizes the timeline lane, the composer, and ChatCanvas's width probe. */
 :root[data-chat-width="wide"] {
-  --chat-max-width: 72rem;
+  --chat-content-max-width: 72rem;
 }
 
 :root[data-chat-width="full"] {
-  --chat-max-width: 100%;
+  --chat-content-max-width: 100%;
 }
 
 :root[data-diff-color-scheme="blue-orange"] {
@@ -2567,6 +2364,16 @@ code {
   overflow: clip;
   background: var(--code-background);
   color: var(--code-foreground);
+}
+
+/* Pierre's find panel is a sibling of the diff containers, so it misses their theme tokens.
+   The top inset clears the 32px sticky file header and its line counts. */
+.diff-render-surface > [data-search-panel] {
+  --diffs-search-panel-bg: var(--popover);
+  --diffs-search-panel-fg: var(--popover-foreground);
+  --diffs-search-panel-modified: var(--primary);
+  --diffs-header-font-fallback: var(--font-sans);
+  --diffs-search-panel-inset-top: 40px;
 }
 
 /* Pierre's file renderer owns its own surface tokens. Keep the root of a file
@@ -2680,6 +2487,12 @@ code {
   position: relative;
 }
 
+/* Tiptap's injected base CSS disables ligatures; match sent messages. */
+.composer-tiptap.ProseMirror {
+  font-variant-ligatures: normal;
+  font-feature-settings: normal;
+}
+
 .composer-tiptap p {
   margin: 0;
 }
@@ -2689,7 +2502,7 @@ code {
   outline: none;
 }
 
-.composer-tiptap code {
+.composer-tiptap :not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   background: color-mix(in oklab, var(--muted-foreground) 12%, transparent);
@@ -2697,20 +2510,24 @@ code {
   padding: 0.05em 0.25em;
 }
 
+/* Markdown delimiters shown, as editable text, around styled text with the caret in it. */
 .composer-rich-marker {
   color: var(--muted-foreground);
   opacity: 0.75;
   font-weight: 400;
   font-style: normal;
   text-decoration: none;
-  user-select: none;
-  pointer-events: none;
+}
+
+/* Delimiters of source restored by undo or redo, once the caret leaves it. */
+.composer-rich-marker-hidden {
+  display: none;
 }
 
 /* Selected chips (node selection from arrowing into or clicking a chip). */
 .composer-tiptap .ProseMirror-selectednode {
   outline: 2px solid var(--ring);
-  outline-offset: 1px;
+  outline-offset: -2px;
   border-radius: 6px;
 }
 
@@ -2739,7 +2556,7 @@ code {
 }
 
 .composer-tiptap ul[data-type="taskList"] ul[data-type="taskList"] {
-  padding-left: 1.375rem;
+  padding-inline-start: 1.375rem;
 }
 
 .composer-tiptap li[data-checked] {
@@ -2773,4 +2590,62 @@ code {
 
 .composer-tiptap li[data-checked] > div > p {
   margin: 0;
+}
+
+@layer components {
+  .chat-composer-lane {
+    padding-inline-start: calc(
+      env(safe-area-inset-left) + 0.75rem + var(--chat-lane-inset-start, 0px)
+    );
+    padding-inline-end: calc(
+      env(safe-area-inset-right) + 0.75rem + var(--chat-lane-inset-end, 0px)
+    );
+  }
+  [data-chat-canvas] .messages-timeline-scroll {
+    padding-inline-start: calc(
+      0.75rem + var(--chat-lane-inset-start, 0px) - var(--chat-timeline-gutter, 0px)
+    );
+    padding-inline-end: calc(
+      0.75rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px)
+    );
+  }
+  .chat-scroll-to-bottom,
+  .chat-banner-lane {
+    inset-inline-start: var(--chat-lane-inset-start, 0px);
+    inset-inline-end: var(--chat-lane-inset-end, 0px);
+  }
+  @media (min-width: 640px) {
+    .chat-composer-lane {
+      padding-inline-start: calc(
+        env(safe-area-inset-left) + 3rem + var(--chat-lane-inset-start, 0px)
+      );
+      padding-inline-end: calc(env(safe-area-inset-right) + 3rem + var(--chat-lane-inset-end, 0px));
+    }
+    [data-chat-canvas] .messages-timeline-scroll {
+      padding-inline-start: calc(
+        3rem + var(--chat-lane-inset-start, 0px) - var(--chat-timeline-gutter, 0px)
+      );
+      padding-inline-end: calc(
+        3rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px)
+      );
+    }
+  }
+}
+
+/* A workspace area with no control of its own takes F6 focus itself; keep that visible.
+   workspaceFocus.ts marks those, since :focus-visible also matches a clicked area after a key press.
+   The conversation's timeline takes it instead, and its top fade mask would hide its own ring. */
+[data-workspace-area]:focus-visible {
+  outline: none;
+}
+[data-workspace-keyboard-focus]:focus,
+[data-workspace-area="conversation"]:has(
+  .messages-timeline-scroll[data-workspace-keyboard-focus]:focus
+) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.messages-timeline-scroll:focus-visible {
+  outline: none;
 }

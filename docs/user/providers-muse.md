@@ -1,52 +1,66 @@
 # Muse Code
 
-Muse Code is a Beta provider in T3 Code. It uses Meta's `muse exec` headless interface and
-defaults to the Muse Spark 1.3 model. The model picker lists the models Meta's catalog offers your
-account (Muse Wonder, Muse Spark, and their Contributor versions, which use less of your plan and
-which Meta may train on), read from `muse serve` when T3 Code checks the provider; if the catalog
-can't be read, it lists Muse Wonder 1.0, Muse Spark 1.3 and Muse Spark 1.2.
+Muse Code is disabled by default. Install
+[Muse Code](https://dev.meta.ai/docs/muse-code) on the machine hosting your
+environment, then run `muse login` as the account that runs T3 Code.
 
-## Install and connect
+Open **Settings → Providers** in the web or desktop app, select the environment,
+and enable **Muse Code**. Set **Binary path** if Muse is not on the host's `PATH`.
+Refresh provider status after installation or login, then select Muse in a
+thread's model picker.
 
-Install Muse Code using [Meta's instructions](https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2), then connect it from the Muse Code card in T3 Code Settings. T3 Code supports both of the CLI's authentication methods:
+Provider status does not check your login. If you are signed out, messages
+fail until you run `muse login` on the host.
 
-- **Sign in with Meta** starts the `muse login` device flow and opens Meta's authorization page.
-- **Use a Meta API key** securely sends a key to `muse auth set --provider meta --api-key-stdin`.
+## Sign-in and API keys
 
-You can also authenticate before starting T3 Code by running `muse login`, or provide a
-`META_API_KEY` environment variable on a separate Muse provider instance.
+T3 Code ignores a `META_API_KEY` that the T3 server inherits from its own
+environment, so Muse uses the credential saved on the host by `muse login`. To
+use an API key instead, add `META_API_KEY` to the Muse instance's environment
+variables in **Settings → Providers**. Muse gives that key priority over the
+saved login.
 
-## What Works
+## Remote access and instances
 
-Muse sessions keep a stable Muse session ID across turns, so normal conversation continuation
-works after T3 Code reconnects. The integration also supports:
+Connect from web, desktop, or mobile through [remote access](./remote-access.md).
+Muse uses the selected environment's files and login; connecting devices do not
+need Muse installed. Install and sign in separately on each host where you want
+Muse to run.
 
-- streamed responses and the canonical T3 work log for Muse tool activity
-- Model selection and reasoning-effort controls (Minimal to Extra high, Max on the models Meta serves it for, and Ultra on plans that include it)
-- image and file attachments
-- Plan mode, with write and shell tools disabled
-- turn interruption and queued follow-up messages
-- commit-message and thread-title generation through an isolated Muse invocation
+Add a provider instance for a separate configuration. Instances on the same host
+share its Muse login; give an instance its own `META_API_KEY` to bill it
+separately. Existing conversations retain their instance when its model catalog
+becomes unavailable.
 
-## Runtime Modes
+## Models
 
-Muse's headless protocol does not currently expose a way for T3 Code to answer an approval prompt.
-T3 Code maps its runtime modes accordingly:
+Models and reasoning choices come from Muse on the selected host. After changing
+Muse configuration, refresh provider status in **Settings → Providers**. On
+mobile, pull down in thread settings to refresh models. If a saved model becomes
+unavailable, select an available model before sending another message.
 
-- **Supervised** runs Muse read-only so an invisible approval request cannot hang the turn.
-- **Auto** allows sandboxed changes without interactive approval.
-- **Full Access** uses Muse's trusted, unsandboxed mode.
-- **Plan** is always read-only, regardless of the selected runtime mode.
+Muse can list models that your account cannot use. If a message fails with
+"does not exist or you lack access", pick another model, or add one your account
+can use under **Custom models** in the instance settings.
 
-Muse also does not currently expose mid-turn steering or durable rollback through its headless
-interface. Interrupt a running turn before sending a replacement instruction.
+## Permissions and limitations
 
-## Context And Privacy
+Muse offers two [permission modes](./permission-modes.md): **Supervised** asks
+before commands and edits, and **Full access** runs them without asking. Muse has
+no equivalent of **Auto-accept edits** or **Auto**, so they are not offered.
 
-Normal Muse sessions retain the CLI's standard workspace context behavior, including compatible
-personal instructions and skills it discovers on the machine. T3 Code's short-lived text-generation
-helpers disable foreign personal context and session logging so commit messages and thread titles do
-not inherit unrelated instructions or leave extra Muse histories.
+Muse can use T3 Code's tools. If Muse cannot reach them, the turn continues
+without them. Switching providers can pass conversation context as a handoff.
 
-T3 Code detects whether Muse has a stored Meta credential by inspecting only the shape of Muse's
-local auth record; it never reads a credential value into provider status or sends it to the browser.
+Muse skills do not appear in the composer's `$` menu. Muse still loads them
+itself. Manage them with `muse skills` on the host.
+
+Forking a Muse conversation starts a new session with a copy of the conversation
+context. Conversation rewind is unavailable.
+
+Install Muse and sign in on the host; in-app installation and sign-in are not
+available. Updates can run from **Settings → Providers** when T3 Code recognizes
+the Muse launcher; otherwise update Muse on that host manually.
+
+To stop using Muse in an environment, disable it in **Settings → Providers**.
+This keeps the host's Muse login, thread history, and workspace files.

@@ -2,26 +2,10 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-/**
- * Dependency-graph guards for the mobile source tree (audit #13).
- *
- * No circular imports, checked once per platform the way Metro resolves
- *    modules (`<name>.<platform>.*` before `<name>.native.*` before the
- *    generic file). A cycle can hide behind platform resolution: a `.tsx`
- *    base importing a component whose `.android.tsx` variant type-imports
- *    back into the base is acyclic on iOS but circular on Android.
- *    Dynamic `import("...")` calls are excluded from this rule on purpose:
- *    they are the deliberate async escape hatch (e.g. composer-draft cleanup
- *    reaching `lib/attachmentUpload`), and Metro resolves them after both
- *    modules have initialized, so they cannot create an initialization cycle.
- *
- * Runs in CI as part of the `Test` job (`vp run --filter '!t3' test` picks up
- * the `@t3tools/mobile` package test task).
- */
+/** Dynamic imports cannot create Metro initialization cycles: they resolve after both modules initialize. */
 
 const SOURCE_ROOT = __dirname;
 
-/** Metro candidate order per platform (platform, then native, then generic). */
 const PLATFORM_EXTENSION_ORDER = {
   android: [".android.ts", ".android.tsx", ".native.ts", ".native.tsx", ".ts", ".tsx"],
   ios: [".ios.ts", ".ios.tsx", ".native.ts", ".native.tsx", ".ts", ".tsx"],
@@ -37,7 +21,6 @@ const isGraphFile = (filePath: string): boolean =>
   !filePath.includes("test-support") &&
   !filePath.endsWith(".d.ts");
 
-/** Files Metro would not even bundle for the other platform. */
 function isRelevantForPlatform(filePath: string, platform: Platform): boolean {
   const name = NodePath.basename(filePath);
   if (platform === "android") {
@@ -74,9 +57,7 @@ function resolveRelative(
           const resolved = NodePath.resolve(candidate);
           return resolved.startsWith(SOURCE_ROOT + NodePath.sep) ? resolved : null;
         }
-      } catch {
-        // Candidate does not exist; try the next one.
-      }
+      } catch {}
     }
   }
   return null;
@@ -104,11 +85,21 @@ function parseImports(source: string): ParsedImport[] {
   return parsed;
 }
 
+type Layer = "state" | "lib" | "components" | "native" | "features" | "other";
+
+function layerOf(relativePath: string): Layer {
+  const top = relativePath.split(NodePath.sep)[0]!;
+  if (top === "features") return "features";
+  return top === "state" || top === "lib" || top === "components" || top === "native"
+    ? (top as Layer)
+    : "other";
+}
+
 interface PlatformGraph {
   readonly platform: Platform;
   readonly files: ReadonlyArray<string>;
-  /** Static (type or value) import edges keyed by source file. */
   readonly staticEdges: ReadonlyMap<string, ReadonlyArray<string>>;
+  readonly crossLayerEdges: ReadonlySet<string>;
 }
 
 function buildPlatformGraph(platform: Platform): PlatformGraph {
@@ -117,6 +108,7 @@ function buildPlatformGraph(platform: Platform): PlatformGraph {
     .filter((file) => isRelevantForPlatform(file, platform))
     .sort();
   const staticEdges = new Map<string, string[]>();
+  const crossLayerEdges = new Set<string>();
   for (const file of files) {
     const targets = new Set<string>();
     for (const { specifier, isDynamic } of parseImports(NodeFS.readFileSync(file, "utf8"))) {
@@ -124,16 +116,28 @@ function buildPlatformGraph(platform: Platform): PlatformGraph {
       if (resolved === null || resolved === file) {
         continue;
       }
+      const from = NodePath.relative(SOURCE_ROOT, file);
+      const to = NodePath.relative(SOURCE_ROOT, resolved);
+      const fromLayer = layerOf(from);
+      const toLayer = layerOf(to);
+      const upward =
+        (fromLayer === "state" ||
+          fromLayer === "lib" ||
+          fromLayer === "components" ||
+          fromLayer === "native") &&
+        (toLayer === "features" || (fromLayer === "lib" && toLayer === "state"));
+      if (upward) {
+        crossLayerEdges.add(`${from} -> ${to}`);
+      }
       if (!isDynamic) {
         targets.add(resolved);
       }
     }
     staticEdges.set(file, [...targets]);
   }
-  return { platform, files, staticEdges };
+  return { platform, files, staticEdges, crossLayerEdges };
 }
 
-/** Tarjan strongly-connected components, iterative to bound stack depth. */
 function findCycles(graph: PlatformGraph): ReadonlyArray<ReadonlyArray<string>> {
   const index = new Map<string, number>();
   const low = new Map<string, number>();
@@ -199,7 +203,6 @@ const graphs = PLATFORMS.map(buildPlatformGraph);
 describe("mobile dependency graph", () => {
   it.each(PLATFORMS)("has no circular imports under %s resolution", (platform) => {
     const graph = graphs.find((candidate) => candidate.platform === platform)!;
-    // Missing sources must not make the cycle check pass vacuously.
     expect(graph.files.length).toBeGreaterThan(500);
     expect(findCycles(graph)).toEqual([]);
   });

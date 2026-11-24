@@ -1,33 +1,63 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { presentThreadShell } from "@t3tools/client-runtime/state/models";
+import { threadKey } from "@t3tools/client-runtime/state/entities";
+import { isThreadWorking as isSidebarThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
+import * as DateTime from "effect/DateTime";
+import { deriveActiveWorkStartedAt } from "../session-logic.ts";
+import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import {
-  applySidebarThreadDrop,
-  archiveSelectedThreadEntries,
+  shouldCreateNewThreadInCurrentProject,
   deleteSelectedThreadEntries,
   getFallbackThreadIdAfterDelete,
-  isSidebarThreadWorking,
-  resolveSidebarThreadStatus,
+  hasUnseenCompletion,
+  orderItemsByPreferredIds,
   pinOrderKeyBetween,
+  resolveSidebarSweepKeys,
+  resolveSidebarRowStatus,
+  resolveSidebarThreadStatus,
+  resolveThreadStatusPill,
+  resolveWindowTitleThreadStatus,
+  resolveWorkingStartedAt,
+  searchSidebarThreads,
+  shouldRecedeSidebarThread,
+  sortInboxThreadsByReturn,
+  resolveSidebarDropTarget,
   planSidebarThreadDrop,
-  sortThreadsForSidebar,
+  resolveSidebarReorderableThreadKeys,
+  sortPinnedThreadsForSidebar,
   sortScopedProjectsForSidebar,
+  sortSidebarV2ProjectGroups,
+  shouldNavigateAfterThreadPark,
+  type SidebarListItem,
+  type SidebarListMarker,
+  type SidebarSection,
+  resolveSidebarDropVerb,
+  groupSidebarThreadsByProject,
+  resolveSidebarFolderDot,
+  sidebarFolderExpansionKeys,
 } from "./Sidebar.logic";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
-  EnvironmentId,
-  OrchestrationLatestTurn,
-  ProjectId,
-  ProviderInstanceId,
-  ThreadId,
-} from "@t3tools/contracts";
+  sortActiveThreadsByOrderKey,
+  sortPinnedThreadsByOrderKey,
+} from "@t3tools/client-runtime/state/thread-sort";
+import { resolveProjectExpanded } from "../uiStateStore";
+import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 
 import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   type Project,
-  type SidebarThreadSummary,
   type Thread,
 } from "../types";
+import { makeThreadFixture, type ThreadFixtureOverrides } from "../test-fixtures";
+import {
+  completeSidebarRouteReveal,
+  pendingSidebarRouteReveal,
+  resolveSidebarRouteReveal,
+} from "./sidebar/routeReveal";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
 
@@ -107,50 +137,13 @@ describe("deleteSelectedThreadEntries", () => {
   });
 });
 
-describe("archiveSelectedThreadEntries", () => {
-  const entries = [{ threadKey: "one" }, { threadKey: "two" }, { threadKey: "three" }] as const;
-  const success = { _tag: "Success" } as const;
-  const failure = { _tag: "Failure" } as const;
-
-  it("stops at a mutation failure and retains prior successes", async () => {
-    const archive = vi.fn(async (entry: (typeof entries)[number], onArchived: () => void) => {
-      if (entry.threadKey === "two") return failure;
-      onArchived();
-      return success;
-    });
-    const outcome = await archiveSelectedThreadEntries({ entries, archive });
-
-    expect(archive).toHaveBeenCalledTimes(2);
-    expect(outcome).toEqual({
-      archivedThreadKeys: ["one"],
-      mutationFailure: failure,
-      followupFailures: [],
-    });
-  });
-
-  it("continues after a post-archive failure", async () => {
-    const archive = vi.fn(async (entry: (typeof entries)[number], onArchived: () => void) => {
-      onArchived();
-      return entry.threadKey === "two" ? failure : success;
-    });
-    const outcome = await archiveSelectedThreadEntries({ entries, archive });
-
-    expect(archive).toHaveBeenCalledTimes(3);
-    expect(outcome).toEqual({
-      archivedThreadKeys: ["one", "two", "three"],
-      mutationFailure: null,
-      followupFailures: [failure],
-    });
-  });
-});
-
-function makeLatestTurn(overrides?: {
+function makeLatestRun(overrides?: {
   completedAt?: string | null;
   startedAt?: string | null;
-}): OrchestrationLatestTurn {
+}): NonNullable<Thread["latestRun"]> {
   return {
-    turnId: "turn-1" as never,
-    state: "completed",
+    runId: "turn-1" as never,
+    status: "completed",
     assistantMessageId: null,
     requestedAt: "2026-03-09T10:00:00.000Z",
     startedAt:
@@ -160,277 +153,445 @@ function makeLatestTurn(overrides?: {
   };
 }
 
+describe("orderItemsByPreferredIds", () => {
+  it("resolves legacy preference aliases without materializing project state", () => {
+    const ordered = orderItemsByPreferredIds({
+      items: [
+        { id: "physical-a", cwd: "/work/a" },
+        { id: "physical-b", cwd: "/work/b" },
+        { id: "physical-c", cwd: "/work/c" },
+      ],
+      preferredIds: ["legacy:/work/c", "legacy:/work/a"],
+      getId: (project) => project.id,
+      getPreferenceIds: (project) => [project.id, `legacy:${project.cwd}`],
+    });
+
+    expect(ordered.map((project) => project.id)).toEqual([
+      "physical-c",
+      "physical-a",
+      "physical-b",
+    ]);
+  });
+});
+
 describe("resolveSidebarThreadStatus", () => {
-  const session = {
-    threadId: ThreadId.make("thread-1"),
+  const runtime = {
     status: "running" as const,
-    providerName: "Codex",
+    activeRunId: null,
     providerInstanceId: ProviderInstanceId.make("codex"),
-    runtimeMode: DEFAULT_RUNTIME_MODE,
-    activeTurnId: "turn-1" as never,
+    providerName: "Codex",
     lastError: null,
     updatedAt: "2026-03-09T10:00:00.000Z",
   };
 
-  const idle = { hasPendingApprovals: false, hasPendingUserInput: false };
+  const idle = { hasPendingApprovals: false, hasPendingUserInput: false, runtime: null };
 
-  it("prioritizes approval over a running session", () => {
-    expect(resolveSidebarThreadStatus({ ...idle, hasPendingApprovals: true, session })).toBe(
-      "approval",
-    );
-  });
-
-  it("prioritizes awaiting input over a running session, below approval", () => {
-    expect(resolveSidebarThreadStatus({ ...idle, hasPendingUserInput: true, session })).toBe(
-      "input",
-    );
+  it("prioritizes awaiting input over a running runtime, below approval", () => {
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        hasPendingUserInput: true,
+        runtime,
+        blockedOnThreadWait: true,
+      }),
+    ).toBe("input");
     expect(
       resolveSidebarThreadStatus({
         ...idle,
         hasPendingApprovals: true,
         hasPendingUserInput: true,
-        session,
+        blockedOnThreadWait: true,
+        runtime,
       }),
     ).toBe("approval");
   });
-});
 
-describe("pinOrderKeyBetween", () => {
-  it("returns null for corrupt or out-of-order bounds instead of throwing", () => {
-    expect(pinOrderKeyBetween("z", "a")).toBeNull();
-    expect(pinOrderKeyBetween("A!", null)).toBeNull();
-    expect(pinOrderKeyBetween(null, "ma")).toBeNull();
-    expect(pinOrderKeyBetween("m", "m")).toBeNull();
-  });
-});
-
-describe("planSidebarThreadDrop", () => {
-  const pinnedKeysById = new Map<string, string | null>([
-    ["p1", "f"],
-    ["p2", "m"],
-    ["p3", "t"],
-  ]);
-  const activeKeysById = new Map<string, string | null>([
-    ["a1", "f"],
-    ["a2", "m"],
-    ["a3", "t"],
-  ]);
-  const plan = (
-    overrides: Partial<Omit<Parameters<typeof planSidebarThreadDrop>[0], "target">> & {
-      activeKey: string;
-      activeSection: "pinned" | "active" | "snoozed" | "settled";
-      target: Omit<Parameters<typeof planSidebarThreadDrop>[0]["target"], "activeOrder"> & {
-        activeOrder?: readonly string[];
-      };
-    },
-  ) =>
-    planSidebarThreadDrop({
-      pinnedOrder: ["p1", "p2", "p3"],
-      pinnedKeysById,
-      activeOrder: ["a1", "a2", "a3"],
-      activeKeysById,
-      ...overrides,
-      target: { activeOrder: [], ...overrides.target },
-    });
-
-  it("allows old-server pinned reordering while rejecting settlement", () => {
+  it("shows a waiting guest message as a Request, below the agent's own requests", () => {
+    expect(resolveSidebarThreadStatus({ ...idle, pendingGuestMessageCount: 1, runtime })).toBe(
+      "request",
+    );
     expect(
-      plan({
-        activeKey: "p1",
-        activeSection: "pinned",
-        supportsSettlement: false,
-        target: { section: "pinned", pinnedOrder: ["p2", "p1", "p3"] },
-      }).kind,
-    ).toBe("reorder-pinned");
-    expect(
-      plan({
-        activeKey: "p1",
-        activeSection: "pinned",
-        supportsSettlement: false,
-        target: { section: "settled", pinnedOrder: ["p2", "p3"] },
+      resolveSidebarThreadStatus({
+        ...idle,
+        hasPendingUserInput: true,
+        pendingGuestMessageCount: 1,
       }),
-    ).toEqual({ kind: "none" });
+    ).toBe("input");
   });
 
-  it.each([
-    { key: "p2", section: "pinned" as const, unpin: true, unsettle: false, unsnooze: false },
-    { key: "s1", section: "settled" as const, unpin: false, unsettle: true, unsnooze: false },
-    { key: "z1", section: "snoozed" as const, unpin: false, unsettle: false, unsnooze: true },
-  ])("moves a $section thread to the chosen Active slot", (source) => {
-    const order = ["a1", source.key, "a2", "a3"];
-    const result = plan({
-      activeKey: source.key,
-      activeSection: source.section,
-      target: { section: "active", pinnedOrder: [], activeOrder: order },
-    });
-    expect(result).toEqual({
-      kind: "move-active",
-      order,
-      assignments: [{ id: source.key, orderKey: expect.any(String) }],
-      unpin: source.unpin,
-      unsettle: source.unsettle,
-      unsnooze: source.unsnooze,
-    });
-    if (result.kind !== "move-active") return;
-    const key = result.assignments[0]!.orderKey;
-    expect(key > "f" && key < "m").toBe(true);
-  });
-
-  it.each([
-    { state: "pinned", activePinned: true, activeSettled: false },
-    { state: "settled", activePinned: false, activeSettled: true },
-    { state: "pinned and settled", activePinned: true, activeSettled: true },
-  ])("clears a snoozed thread's $state state before waking it into Active", (hiddenState) => {
+  it("keeps usage-limit stops Limited and visible until the thread recovers", () => {
+    const limited = {
+      ...runtime,
+      status: "failed" as const,
+      lastError: "Plan limit reached",
+      lastErrorClass: "usage_limit" as const,
+    };
+    expect(resolveSidebarThreadStatus({ ...idle, runtime: limited })).toBe("limited");
     expect(
-      plan({
-        activeKey: "z1",
-        activeSection: "snoozed",
-        activePinned: hiddenState.activePinned,
-        activeSettled: hiddenState.activeSettled,
-        target: {
-          section: "active",
-          pinnedOrder: ["p1", "p2", "p3"],
-          activeOrder: ["a1", "z1", "a2", "a3"],
+      resolveSidebarThreadStatus({ ...idle, runtime: { ...limited, status: "running" } }),
+    ).toBe("working");
+    expect(
+      resolveSidebarThreadStatus({ ...idle, runtime: { ...limited, status: "completed" } }),
+    ).toBe("ready");
+    expect(
+      shouldRecedeSidebarThread({
+        status: "limited",
+        isUnread: false,
+        isWoke: false,
+        isActive: false,
+        isSelected: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("reports worktree setup as preparing, and failed only while the latest run failed", () => {
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        runtime: { ...runtime, status: "preparing" as const },
+      }),
+    ).toBe("preparing");
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        runtime: { ...runtime, status: "failed" as const, lastError: "boom" },
+      }),
+    ).toBe("failed");
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        runtime: { ...runtime, status: "completed" as const, lastError: "persisted" },
+      }),
+    ).toBe("ready");
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        runtime: { ...runtime, status: "idle" as const, lastError: "persisted" },
+      }),
+    ).toBe("waiting");
+  });
+
+  it("titles the window with live work and requests only", () => {
+    const cases = [
+      [{ ...idle, hasPendingApprovals: true, runtime }, "Needs approval"],
+      [{ ...idle, hasPendingUserInput: true }, "Needs your input"],
+      [{ ...idle, runtime: { ...runtime, status: "preparing" as const } }, "Working"],
+      [{ ...idle, runtime }, "Working"],
+      [{ ...idle, runtime, pendingGuestMessageCount: 1 }, "Working"],
+      [{ ...idle, runtime, blockedOnThreadWait: true }, "Working"],
+      [{ ...idle, runtime: { ...runtime, status: "idle" as const } }, null],
+      [{ ...idle, runtime: { ...runtime, status: "failed" as const } }, null],
+      [{ ...idle, runtime: { ...runtime, status: "completed" as const } }, null],
+      [idle, null],
+    ] as const;
+    for (const [thread, title] of cases) {
+      expect(resolveWindowTitleThreadStatus(thread)).toBe(title);
+    }
+  });
+});
+
+describe("resolveSidebarRowStatus", () => {
+  const failedRuntime = {
+    status: "failed" as const,
+    activeRunId: null,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    providerName: "Codex",
+    lastError: "Provider turn failed.",
+    updatedAt: "2026-03-09T10:05:00.000Z",
+  };
+  const failed = {
+    hasActionableProposedPlan: false,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    interactionMode: "default" as const,
+    runtime: failedRuntime,
+    latestRun: { ...makeLatestRun(), status: "failed" as const },
+  };
+
+  it("settles a failure the user opened to ready, without showing Done", () => {
+    expect(resolveSidebarRowStatus({ ...failed, lastVisitedAt: undefined })).toBe("failed");
+
+    const opened = { ...failed, lastVisitedAt: "2026-03-09T10:06:00.000Z" };
+    expect(resolveSidebarRowStatus(opened)).toBe("ready");
+    expect(hasUnseenCompletion(opened)).toBe(false);
+    // A runtime failure without a failed run has no date, so a visit cannot settle it.
+    expect(resolveSidebarRowStatus({ ...opened, latestRun: null })).toBe("failed");
+  });
+
+  it("does not show a stopped run as an unseen completion", () => {
+    for (const status of ["interrupted", "cancelled"] as const) {
+      const stopped = {
+        ...failed,
+        runtime: { ...failedRuntime, status, lastError: null },
+        latestRun: { ...makeLatestRun(), status },
+        lastVisitedAt: "2026-03-09T10:01:00.000Z",
+      };
+      expect(hasUnseenCompletion(stopped)).toBe(false);
+      expect(resolveThreadStatusPill({ thread: stopped })).toBeNull();
+    }
+  });
+});
+
+describe("searchSidebarThreads", () => {
+  const searchThread = (id: string, title: string, latestUserMessageAt: string) => ({
+    environmentId: localEnvironmentId,
+    id: ThreadId.make(id),
+    title,
+    branch: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: latestUserMessageAt,
+    latestUserMessageAt,
+    opens: null,
+  });
+  const threads = [
+    searchThread("thread-1", "Fix workspace search", "2026-10-20T00:00:00.000Z"),
+    searchThread("thread-2", "Review providers", "2026-10-22T00:00:00.000Z"),
+    searchThread("thread-3", "WORKTREE cleanup", "2026-09-01T00:00:00.000Z"),
+    searchThread("thread-4", "Homework notes", "2026-10-22T00:00:00.000Z"),
+  ];
+  const now = Date.parse("2026-10-23T00:00:00.000Z");
+  const contentKeys = (...ids: ReadonlyArray<string>) =>
+    new Set(
+      ids.map((id) =>
+        threadSearchMatchKey({ environmentId: localEnvironmentId, threadId: ThreadId.make(id) }),
+      ),
+    );
+
+  it("ranks word matches by recent use, then lists message matches once", () => {
+    expect(searchSidebarThreads(threads, "work", contentKeys("thread-1", "thread-2"), now)).toEqual(
+      {
+        titleMatches: [threads[0], threads[2], threads[3]],
+        contentMatches: [threads[1]],
+      },
+    );
+  });
+});
+
+describe("resolveWorkingStartedAt", () => {
+  const runtime = {
+    status: "running" as const,
+    providerName: "Codex",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    activeRunId: RunId.make("turn-1"),
+    lastError: null,
+    updatedAt: "2026-03-09T10:02:00.000Z",
+  };
+
+  it("does not invent a start from activity updates when the newest run completed", () => {
+    expect(
+      resolveWorkingStartedAt({
+        latestRun: makeLatestRun(),
+        runtime,
+      }),
+    ).toBeNull();
+  });
+
+  it.each(["queued", "cancelled"] as const)(
+    "shares the detail timer when a newer run is %s",
+    (status) => {
+      const activityStartedAt = "2026-03-09T10:00:00.000Z";
+      const latestRun = {
+        ...makeLatestRun(),
+        runId: RunId.make("newer-run"),
+        status,
+        startedAt: null,
+        completedAt: status === "queued" ? null : "2026-03-09T10:05:00.000Z",
+      };
+      for (const updatedAt of ["2026-03-09T10:30:00.000Z", "2026-03-09T10:50:00.000Z"]) {
+        const activeRuntime = { ...runtime, updatedAt, activityStartedAt };
+        expect(resolveWorkingStartedAt({ latestRun, runtime: activeRuntime })).toBe(
+          activityStartedAt,
+        );
+        expect(deriveActiveWorkStartedAt(latestRun, activeRuntime, updatedAt)).toBe(
+          activityStartedAt,
+        );
+      }
+      expect(
+        deriveActiveWorkStartedAt(
+          latestRun,
+          { ...runtime, activityStartedAt: null },
+          "2026-03-09T10:50:00.000Z",
+        ),
+      ).toBeNull();
+    },
+  );
+});
+
+describe("resolveThreadStatusPill", () => {
+  const baseThread = {
+    hasActionableProposedPlan: false,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    interactionMode: "plan" as const,
+    latestRun: null,
+    lastVisitedAt: undefined,
+    runtime: {
+      status: "running" as const,
+      providerName: "Codex",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      activeRunId: "turn-1" as never,
+      lastError: null,
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    },
+  };
+
+  it("shows an active thread wait without a pulse and resumes Working when it ends", () => {
+    const blocked = { ...baseThread, blockedOnThreadWait: true };
+    expect(resolveSidebarThreadStatus(blocked)).toBe("waiting");
+    expect(resolveThreadStatusPill({ thread: blocked })).toMatchObject({
+      label: "Waiting",
+      pulse: false,
+    });
+
+    const resumed = { ...blocked, blockedOnThreadWait: false };
+    expect(resolveSidebarThreadStatus(resumed)).toBe("working");
+    expect(resolveThreadStatusPill({ thread: resumed })).toMatchObject({
+      label: "Working",
+      pulse: true,
+    });
+  });
+
+  it("shows waiting for an idle thread with pending background tasks", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          pendingBackgroundTasks: [
+            { taskId: "bg-1", description: "Watch build", kind: "monitor", awaited: true },
+          ],
+          runtime: {
+            ...baseThread.runtime,
+            status: "idle",
+            activeRunId: null,
+          },
         },
       }),
-    ).toEqual({
-      kind: "move-active",
-      order: ["a1", "z1", "a2", "a3"],
-      assignments: [{ id: "z1", orderKey: expect.any(String) }],
-      unpin: hiddenState.activePinned,
-      unsettle: hiddenState.activeSettled,
-      unsnooze: true,
+    ).toMatchObject({
+      label: "Waiting",
+      colorClass: "text-sidebar-muted-foreground",
+      dotClass: "bg-sidebar-muted-foreground",
+      pulse: false,
     });
   });
 
-  it("saves the first Active reorder, then moves only one key on subsequent drops", () => {
-    const rows = ["a1", "a2", "a3"].map((id, index) => ({
-      id,
-      createdAt: new Date(Date.UTC(2026, 8, 4, 12 - index)).toISOString(),
-      activeOrderKey: null as string | null,
-    }));
-    const firstOrder = ["a2", "a3", "a1"];
-    const first = plan({
-      activeKey: "a1",
-      activeSection: "active",
-      target: { section: "active", pinnedOrder: [], activeOrder: firstOrder },
-      activeKeysById: new Map(rows.map((row) => [row.id, row.activeOrderKey])),
-    });
-    expect(first.kind).toBe("move-active");
-    if (first.kind !== "move-active") return;
-    expect(first.unpin || first.unsettle || first.unsnooze).toBe(false);
-    const savedKeys = new Map(first.assignments.map(({ id, orderKey }) => [id, orderKey]));
-    const savedRows = rows.map((row) => ({
-      ...row,
-      activeOrderKey: savedKeys.get(row.id) ?? null,
-    }));
-    expect(sortThreadsForSidebar(savedRows).map((row) => row.id)).toEqual(firstOrder);
-
-    const secondOrder = ["a2", "a1", "a3"];
-    const second = plan({
-      activeKey: "a1",
-      activeSection: "active",
-      activeOrder: firstOrder,
-      activeKeysById: savedKeys,
-      target: { section: "active", pinnedOrder: [], activeOrder: secondOrder },
-    });
-    expect(second.kind).toBe("move-active");
-    if (second.kind !== "move-active") return;
-    expect(second.assignments).toEqual([{ id: "a1", orderKey: expect.any(String) }]);
-    const finalRows = savedRows.map((row) =>
-      row.id === "a1" ? { ...row, activeOrderKey: second.assignments[0]!.orderKey } : row,
-    );
-    expect(sortThreadsForSidebar(finalRows).map((row) => row.id)).toEqual(secondOrder);
+  it("shows plan ready when a settled plan turn has a proposed plan ready for follow-up", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          hasActionableProposedPlan: true,
+          latestRun: makeLatestRun(),
+          runtime: {
+            ...baseThread.runtime,
+            status: "completed",
+            activeRunId: null,
+          },
+        },
+      }),
+    ).toMatchObject({ label: "Plan Ready", pulse: false });
   });
 
-  it("requires Active ordering support only for the threads whose keys must change", () => {
-    const input = {
-      activeKey: "a3",
-      activeSection: "active" as const,
-      target: { section: "active" as const, pinnedOrder: [], activeOrder: ["a1", "a3", "a2"] },
-      activeReorderableKeys: new Set(["a3"]),
+  it("does not manufacture completed state without a client visit marker", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          latestRun: makeLatestRun(),
+          runtime: {
+            ...baseThread.runtime,
+            status: "completed",
+            activeRunId: null,
+          },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("shows completed when there is an unseen completion and no active blocker", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          interactionMode: "default",
+          latestRun: makeLatestRun(),
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+          runtime: {
+            ...baseThread.runtime,
+            status: "completed",
+            activeRunId: null,
+          },
+        },
+      }),
+    ).toMatchObject({ label: "Completed", pulse: false });
+  });
+
+  it("shows failed, not completed, when the unseen run failed", () => {
+    const failed = {
+      ...baseThread,
+      interactionMode: "default" as const,
+      latestRun: { ...makeLatestRun(), status: "failed" as const },
+      lastVisitedAt: "2026-03-09T10:04:00.000Z",
+      runtime: {
+        ...baseThread.runtime,
+        status: "failed" as const,
+        activeRunId: null,
+        lastError: "Provider turn failed.",
+      },
     };
-    expect(plan(input).kind).toBe("move-active");
-    expect(
-      plan({
-        ...input,
-        activeKeysById: new Map([
-          ["a1", null],
-          ["a2", "m"],
-          ["a3", "t"],
-        ]),
-      }),
-    ).toEqual({ kind: "none" });
-    expect(plan({ ...input, activeReorderableKeys: new Set() })).toEqual({ kind: "none" });
-  });
-
-  it.each([
-    {
-      activeKey: "a1",
-      activeSection: "active" as const,
-      order: ["p1", "p3", "a1", "p2"],
-    },
-    { activeKey: "p1", activeSection: "pinned" as const, order: ["p3", "p1", "p2"] },
-  ])("rejects $activeSection drops that require rewriting a disabled neighbor", (source) => {
-    expect(
-      plan({
-        activeKey: source.activeKey,
-        activeSection: source.activeSection,
-        target: { section: "pinned", pinnedOrder: source.order },
-        pinnedOrder: ["p1", "p3", "p2"],
-        pinnedKeysById: new Map([
-          ["p1", "f"],
-          ["p2", null],
-          ["p3", "t"],
-        ]),
-        reorderableKeys: new Set(["p1", "p3", source.activeKey]),
-      }),
-    ).toEqual({ kind: "none" });
-  });
-});
-
-describe("applySidebarThreadDrop", () => {
-  const createdAt = "2026-03-09T08:00:00.000Z";
-  const earlier = "2026-03-09T09:00:00.000Z";
-  const now = "2026-03-09T12:00:00.000Z";
-  const wakeAt = "2026-03-10T08:00:00.000Z";
-  const thread = (overrides: Partial<SidebarThreadSummary> = {}) => ({
-    id: ThreadId.make("dragged"),
-    title: "Keep this title",
-    createdAt,
-    updatedAt: earlier,
-    latestUserMessageAt: null,
-    latestTurn: null,
-    pinnedAt: null,
-    pinOrderKey: null,
-    activeOrderKey: null,
-    snoozedAt: null,
-    snoozedUntil: null,
-    settledAt: null,
-    settledOverride: null,
-    unsettledAt: null,
-    ...overrides,
-  });
-
-  it("clears underlying pinning and settlement when waking into Active", () => {
-    const source = thread({
-      pinnedAt: earlier,
-      pinOrderKey: "m",
-      snoozedAt: earlier,
-      snoozedUntil: wakeAt,
-      settledOverride: "settled",
-      settledAt: earlier,
+    expect(resolveThreadStatusPill({ thread: failed })).toMatchObject({
+      label: "Failed",
+      pulse: false,
     });
-    expect(applySidebarThreadDrop(source, "active", now)).toEqual({
-      ...source,
-      pinnedAt: null,
-      pinOrderKey: null,
-      snoozedAt: null,
-      snoozedUntil: null,
-      settledOverride: "active",
-      settledAt: null,
-      unsettledAt: now,
-    });
+    // The failure sends the thread to the inbox, so its pill must not say it is still waiting.
+    const watching = {
+      ...failed,
+      pendingBackgroundTasks: [
+        {
+          taskId: "pr-watch",
+          description: "Watching pull request #7",
+          kind: "monitor" as const,
+          awaited: true as const,
+        },
+      ],
+    };
+    expect(isSidebarThreadWorking(watching)).toBe(false);
+    expect(resolveThreadStatusPill({ thread: watching })).toMatchObject({ label: "Failed" });
+    // A run blocked on another thread is still waiting, as its sidebar row says.
+    const blocked = {
+      ...watching,
+      runtime: { ...failed.runtime, status: "running" as const },
+      blockedOnThreadWait: true,
+    };
+    expect(resolveSidebarThreadStatus(blocked)).toBe("waiting");
+    expect(resolveThreadStatusPill({ thread: blocked })).toMatchObject({ label: "Waiting" });
+  });
+
+  it("shows failed, not plan ready, when a plan run proposed a plan and then failed", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          hasActionableProposedPlan: true,
+          latestRun: { ...makeLatestRun(), status: "failed" },
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+          runtime: { ...baseThread.runtime, status: "failed", activeRunId: null },
+        },
+      }),
+    ).toMatchObject({ label: "Failed" });
+  });
+
+  it("drops the failed pill once the failure has been seen", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          interactionMode: "default",
+          latestRun: { ...makeLatestRun(), status: "failed" },
+          lastVisitedAt: "2026-03-09T10:06:00.000Z",
+          runtime: { ...baseThread.runtime, status: "failed", activeRunId: null },
+        },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -454,8 +615,8 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   };
 }
 
-function makeThread(overrides: Partial<Thread> = {}): Thread {
-  return {
+function makeThread(overrides: ThreadFixtureOverrides = {}): Thread {
+  return makeThreadFixture({
     id: ThreadId.make("thread-1"),
     environmentId: localEnvironmentId,
     projectId: ProjectId.make("project-1"),
@@ -467,7 +628,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     },
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
-    session: null,
+    runtime: null,
     messages: [],
     proposedPlans: [],
     createdAt: "2026-03-09T10:00:00.000Z",
@@ -476,52 +637,14 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     settledAt: null,
     deletedAt: null,
     updatedAt: "2026-03-09T10:00:00.000Z",
-    latestTurn: null,
+    latestRun: null,
     branch: null,
     worktreePath: null,
-    checkpoints: [],
-    pullRequests: [],
-    activities: [],
     ...overrides,
-  };
+  });
 }
 
 describe("getFallbackThreadIdAfterDelete", () => {
-  it("returns the top remaining thread in the deleted thread's project sidebar order", () => {
-    const fallbackThreadId = getFallbackThreadIdAfterDelete({
-      threads: [
-        makeThread({
-          id: ThreadId.make("thread-oldest"),
-          projectId: ProjectId.make("project-1"),
-          createdAt: "2026-03-09T10:00:00.000Z",
-          messages: [],
-        }),
-        makeThread({
-          id: ThreadId.make("thread-active"),
-          projectId: ProjectId.make("project-1"),
-          createdAt: "2026-03-09T10:05:00.000Z",
-          messages: [],
-        }),
-        makeThread({
-          id: ThreadId.make("thread-newest"),
-          projectId: ProjectId.make("project-1"),
-          createdAt: "2026-03-09T10:10:00.000Z",
-          messages: [],
-        }),
-        makeThread({
-          id: ThreadId.make("thread-other-project"),
-          projectId: ProjectId.make("project-2"),
-          createdAt: "2026-03-09T10:20:00.000Z",
-          messages: [],
-        }),
-      ],
-      deletedThreadId: ThreadId.make("thread-active"),
-      sortOrder: "created_at",
-    });
-
-    expect(fallbackThreadId).toBe(ThreadId.make("thread-newest"));
-  });
-
   it("skips other threads being deleted in the same action", () => {
     const fallbackThreadId = getFallbackThreadIdAfterDelete({
       threads: [
@@ -547,9 +670,73 @@ describe("getFallbackThreadIdAfterDelete", () => {
       deletedThreadId: ThreadId.make("thread-active"),
       deletedThreadIds: new Set([ThreadId.make("thread-active"), ThreadId.make("thread-newest")]),
       sortOrder: "created_at",
+      now: "2026-03-09T10:10:00.000Z",
+      delegatedUnderParent: new Set(),
     });
 
     expect(fallbackThreadId).toBe(ThreadId.make("thread-next"));
+  });
+
+  it.each([
+    [
+      "snoozed",
+      { snoozedUntil: "2099-01-01T00:00:00.000Z", snoozedAt: "2026-03-09T10:06:00.000Z" },
+    ],
+    ["delegated", { id: ThreadId.make("thread-delegated") }],
+    ["settled", { settledOverride: "settled", settledAt: "2026-03-09T10:06:00.000Z" }],
+    [
+      "side chat",
+      {
+        lineage: {
+          rootThreadId: ThreadId.make("thread-visible"),
+          parentThreadId: ThreadId.make("thread-visible"),
+          relationshipToParent: "fork",
+          sideChat: true,
+        },
+      },
+    ],
+    [
+      "subagent",
+      {
+        lineage: {
+          rootThreadId: ThreadId.make("thread-visible"),
+          parentThreadId: ThreadId.make("thread-visible"),
+          relationshipToParent: "subagent",
+        },
+      },
+    ],
+  ] as const)("skips a %s thread the sidebar does not list", (_state, parked) => {
+    const fallbackThreadId = getFallbackThreadIdAfterDelete({
+      threads: [
+        makeThread({
+          id: ThreadId.make("thread-visible"),
+          createdAt: "2026-03-09T10:01:00.000Z",
+          updatedAt: "2026-03-09T10:01:00.000Z",
+        }),
+        makeThread({
+          id: ThreadId.make("thread-parked"),
+          createdAt: "2026-03-09T10:02:00.000Z",
+          updatedAt: "2026-03-09T10:06:00.000Z",
+          ...parked,
+        }),
+        makeThread({
+          id: ThreadId.make("thread-active"),
+          createdAt: "2026-03-09T10:03:00.000Z",
+          updatedAt: "2026-03-09T10:03:00.000Z",
+        }),
+      ],
+      deletedThreadId: ThreadId.make("thread-active"),
+      sortOrder: "created_at",
+      now: "2026-03-09T10:10:00.000Z",
+      delegatedUnderParent: new Set([
+        threadKey({
+          environmentId: localEnvironmentId,
+          threadId: ThreadId.make("thread-delegated"),
+        }),
+      ]),
+    });
+
+    expect(fallbackThreadId).toBe(ThreadId.make("thread-visible"));
   });
 });
 
@@ -586,41 +773,693 @@ describe("sortScopedProjectsForSidebar", () => {
 
     expect(sorted.map((project) => project.title)).toEqual(["Remote project", "Local project"]);
   });
+
+  it("does not use archived threads as project activity", () => {
+    const projects = [
+      makeProject({
+        id: ProjectId.make("project-visible"),
+        title: "Visible project",
+        updatedAt: "2026-03-09T10:01:00.000Z",
+      }),
+      makeProject({
+        id: ProjectId.make("project-archived"),
+        title: "Archived-only project",
+        updatedAt: "2026-03-09T10:00:00.000Z",
+      }),
+    ];
+    const threads = [
+      makeThread({
+        id: ThreadId.make("thread-visible"),
+        projectId: ProjectId.make("project-visible"),
+        updatedAt: "2026-03-09T10:02:00.000Z",
+      }),
+      makeThread({
+        id: ThreadId.make("thread-archived"),
+        projectId: ProjectId.make("project-archived"),
+        updatedAt: "2026-03-09T10:10:00.000Z",
+        archivedAt: "2026-03-09T10:11:00.000Z",
+      }),
+    ];
+
+    const sorted = sortScopedProjectsForSidebar(projects, threads, "updated_at");
+
+    expect(sorted.map((project) => project.title)).toEqual([
+      "Visible project",
+      "Archived-only project",
+    ]);
+  });
+});
+
+describe("sortSidebarV2ProjectGroups", () => {
+  it("does not let a hidden subagent thread reorder projects", () => {
+    const olderProjectId = ProjectId.make("project-older");
+    const newerProjectId = ProjectId.make("project-newer");
+    const olderRootThreadId = ThreadId.make("thread-older-root");
+    const projects = [
+      {
+        ...makeProject({ id: olderProjectId, title: "A older project" }),
+        projectKey: "logical-older",
+        memberProjectRefs: [{ environmentId: localEnvironmentId, projectId: olderProjectId }],
+      },
+      {
+        ...makeProject({ id: newerProjectId, title: "Z newer project" }),
+        projectKey: "logical-newer",
+        memberProjectRefs: [{ environmentId: localEnvironmentId, projectId: newerProjectId }],
+      },
+    ];
+    const threads = [
+      makeThread({
+        id: olderRootThreadId,
+        projectId: olderProjectId,
+        updatedAt: "2026-03-09T10:01:00.000Z",
+      }),
+      makeThread({
+        id: ThreadId.make("thread-newer-root"),
+        projectId: newerProjectId,
+        updatedAt: "2026-03-09T10:05:00.000Z",
+      }),
+      makeThread({
+        id: ThreadId.make("thread-hidden-subagent"),
+        projectId: olderProjectId,
+        updatedAt: "2026-03-09T10:10:00.000Z",
+        lineage: {
+          rootThreadId: olderRootThreadId,
+          parentThreadId: olderRootThreadId,
+          relationshipToParent: "subagent",
+        },
+      }),
+    ];
+
+    expect(
+      sortSidebarV2ProjectGroups(projects, threads, "updated_at", new Set()).map(
+        (project) => project.projectKey,
+      ),
+    ).toEqual(["logical-newer", "logical-older"]);
+  });
+});
+
+describe("pinOrderKeyBetween", () => {
+  it("stays strictly ordered under repeated top insertion", () => {
+    let head: string | null = null;
+    const keys: string[] = [];
+    for (let i = 0; i < 100; i += 1) {
+      const key: string = pinOrderKeyBetween(null, head)!;
+      expect(key).not.toBeNull();
+      if (head !== null) expect(key < head).toBe(true);
+      keys.push(key);
+      head = key;
+    }
+    expect(new Set(keys).size).toBe(100);
+  });
+
+  it("stays strictly ordered under repeated middle insertion", () => {
+    let low = pinOrderKeyBetween(null, null)!;
+    let high = pinOrderKeyBetween(low, null)!;
+    for (let i = 0; i < 100; i += 1) {
+      const key: string = pinOrderKeyBetween(low, high)!;
+      expect(low < key && key < high).toBe(true);
+      if (i % 2 === 0) low = key;
+      else high = key;
+    }
+  });
+
+  it("returns null for corrupt or out-of-order bounds instead of throwing", () => {
+    expect(pinOrderKeyBetween("z", "a")).toBeNull();
+    expect(pinOrderKeyBetween("A!", null)).toBeNull();
+    expect(pinOrderKeyBetween(null, "ma")).toBeNull();
+    expect(pinOrderKeyBetween("m", "m")).toBeNull();
+  });
+});
+
+describe("sortPinnedThreadsForSidebar", () => {
+  const pinnable = (input: { id: string; createdAt: string; pinOrderKey?: string | null }) => ({
+    id: input.id,
+    createdAt: input.createdAt,
+    pinOrderKey: input.pinOrderKey ?? null,
+  });
+
+  it("sorts keyed threads by key ahead of keyless threads in creation order", () => {
+    const sorted = sortPinnedThreadsForSidebar([
+      pinnable({ id: "keyless-old", createdAt: "2026-03-09T08:00:00.000Z" }),
+      pinnable({ id: "second", createdAt: "2026-03-09T09:00:00.000Z", pinOrderKey: "t" }),
+      pinnable({ id: "keyless-new", createdAt: "2026-03-09T12:00:00.000Z" }),
+      pinnable({ id: "first", createdAt: "2026-03-09T07:00:00.000Z", pinOrderKey: "g" }),
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "first",
+      "second",
+      "keyless-new",
+      "keyless-old",
+    ]);
+  });
+
+  it("breaks equal keys by id so raced writes render identically everywhere", () => {
+    const sorted = sortPinnedThreadsForSidebar([
+      pinnable({ id: "b", createdAt: "2026-03-09T10:00:00.000Z", pinOrderKey: "m" }),
+      pinnable({ id: "a", createdAt: "2026-03-09T11:00:00.000Z", pinOrderKey: "m" }),
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("resolveSidebarSweepKeys", () => {
+  const ordered = ["a", "b", "c", "d", "blocked"];
+  const canSettle = (key: string) => key !== "blocked";
+
+  it("leaves out rows that cannot settle and rows that left the list", () => {
+    expect(resolveSidebarSweepKeys(ordered, "c", "blocked", canSettle)).toEqual(["c", "d"]);
+    expect(resolveSidebarSweepKeys(ordered, "gone", "a", canSettle)).toEqual([]);
+  });
+});
+
+describe("navigation after parking a thread", () => {
+  it.each([
+    ["settle", "settled", null, "thread", true],
+    ["settle", "active", null, "thread", false],
+    ["settle", "settled", null, "other-thread", false],
+    ["snooze", null, "2099-01-01T00:00:00.000Z", "thread", true],
+    ["snooze", null, null, "thread", false],
+    ["snooze", null, "2026-09-12T09:00:00.000Z", "thread", false],
+    ["snooze", null, "2099-01-01T00:00:00.000Z", "thread", false, true],
+    ["snooze", null, "2099-01-01T00:00:00.000Z", "other-thread", false],
+  ] as const)(
+    "%s with state %s / %s on %s navigates: %s",
+    (
+      action,
+      settledOverride,
+      snoozedUntil,
+      currentThreadKey,
+      expected,
+      hasPendingApprovals: boolean = false,
+    ) => {
+      expect(
+        shouldNavigateAfterThreadPark({
+          threadKey: "thread",
+          currentThreadKey,
+          action,
+          now: "2026-09-12T10:00:00.000Z",
+          thread: {
+            settledOverride,
+            snoozedUntil,
+            snoozedAt: null,
+            session: null,
+            latestTurn: null,
+            hasPendingApprovals,
+            hasPendingUserInput: false,
+          },
+        }),
+      ).toBe(expected);
+    },
+  );
+});
+
+describe("unseen completion with background work", () => {
+  it.each([
+    {
+      roster: "dev server",
+      task: { kind: "command" },
+      status: "ready",
+      receded: false,
+      pill: "Completed",
+    },
+    {
+      roster: "dev server watchdog",
+      task: { kind: "monitor" },
+      status: "ready",
+      receded: false,
+      pill: "Completed",
+    },
+    {
+      roster: "awaited command",
+      task: { kind: "command", awaited: true },
+      status: "waiting",
+      receded: true,
+      pill: "Waiting",
+    },
+  ] as const)("presents a completed thread with a $roster roster", (expected) => {
+    const thread = presentThreadShell(localEnvironmentId, {
+      ...makeThreadFixture().source,
+      latestRunId: RunId.make("run-background-completion"),
+      status: "completed",
+      latestRunCompletedAt: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
+      lastVisitedAt: DateTime.makeUnsafe("2026-06-20T00:59:00.000Z"),
+      pendingBackgroundTasks: [{ taskId: "background-work", ...expected.task }],
+    });
+    const status = resolveSidebarThreadStatus(thread);
+    const isUnread = hasUnseenCompletion(thread);
+
+    expect(isUnread).toBe(true);
+    expect(status).toBe(expected.status);
+    expect(
+      shouldRecedeSidebarThread({
+        status,
+        isUnread,
+        isWoke: false,
+        isActive: false,
+        isSelected: false,
+      }),
+    ).toBe(expected.receded);
+    expect(isSidebarThreadWorking(thread)).toBe(expected.receded);
+    expect(resolveThreadStatusPill({ thread })).toMatchObject({ label: expected.pill });
+  });
 });
 
 describe("Working shelf (beta)", () => {
-  const session = {
-    threadId: ThreadId.make("thread-1"),
+  const runtime = {
     status: "running" as const,
-    providerName: "Codex",
+    activeRunId: null,
     providerInstanceId: ProviderInstanceId.make("codex"),
-    runtimeMode: DEFAULT_RUNTIME_MODE,
-    activeTurnId: "turn-1" as never,
+    providerName: "Codex",
     lastError: null,
     updatedAt: "2026-03-09T10:00:00.000Z",
+  };
+  const backgroundTask = {
+    taskId: "bg-1",
+    description: "Watch build",
+    kind: "monitor" as const,
+    awaited: true as const,
   };
   const idle = {
     hasActionableProposedPlan: false,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     interactionMode: "default" as const,
-    latestTurn: makeLatestTurn(),
-    session: { ...session, status: "ready" as const },
+    latestRun: makeLatestRun(),
+    runtime: null,
+  };
+  const waiting = {
+    ...idle,
+    runtime: { ...runtime, status: "idle" as const },
+    pendingBackgroundTasks: [backgroundTask],
   };
 
-  it("keeps a ready plan in the inbox while background work runs", () => {
+  it("folds away running threads and threads waiting on background work only", () => {
+    expect(isSidebarThreadWorking({ ...idle, runtime })).toBe(true);
+    expect(isSidebarThreadWorking(waiting)).toBe(true);
+    expect(isSidebarThreadWorking(idle)).toBe(false);
+    expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingApprovals: true })).toBe(false);
+    expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingUserInput: true })).toBe(false);
     expect(
       isSidebarThreadWorking({
-        ...idle,
-        interactionMode: "plan",
-        hasActionableProposedPlan: true,
-        backgroundLiveness: "working",
+        ...waiting,
+        runtime: { ...runtime, status: "failed" as const, lastError: "boom" },
       }),
     ).toBe(false);
   });
 
+  it("keeps a ready plan in the inbox while background work runs", () => {
+    expect(
+      isSidebarThreadWorking({
+        ...waiting,
+        interactionMode: "plan",
+        hasActionableProposedPlan: true,
+      }),
+    ).toBe(false);
+  });
+
+  describe("sortInboxThreadsByReturn", () => {
+    const thread = (
+      id: string,
+      input: { createdAt: string; completedAt?: string | null; unsettledAt?: string },
+    ) => ({
+      id: ThreadId.make(id),
+      environmentId: localEnvironmentId,
+      createdAt: input.createdAt,
+      unsettledAt: input.unsettledAt ?? null,
+      latestRun:
+        input.completedAt === undefined
+          ? null
+          : { ...makeLatestRun({ completedAt: input.completedAt }), requestedAt: input.createdAt },
+    });
+
+    it("puts the thread that finished last on top, whatever its age", () => {
+      const sorted = sortInboxThreadsByReturn([
+        thread("new", { createdAt: "2026-03-09T11:00:00.000Z" }),
+        thread("old-finished-now", {
+          createdAt: "2026-03-01T09:00:00.000Z",
+          completedAt: "2026-03-09T12:00:00.000Z",
+        }),
+        thread("reopened", {
+          createdAt: "2026-03-02T09:00:00.000Z",
+          unsettledAt: "2026-03-09T11:30:00.000Z",
+        }),
+      ]);
+      expect(sorted.map((entry) => entry.id)).toEqual(["old-finished-now", "reopened", "new"]);
+    });
+
+    it("counts a return the server does not stamp, like an approval request", () => {
+      const waiting = thread("asks-approval", {
+        createdAt: "2026-03-09T09:00:00.000Z",
+        completedAt: null,
+      });
+      const finished = thread("finished", {
+        createdAt: "2026-03-09T09:30:00.000Z",
+        completedAt: "2026-03-09T11:00:00.000Z",
+      });
+      expect(sortInboxThreadsByReturn([finished, waiting]).map((entry) => entry.id)).toEqual([
+        "finished",
+        "asks-approval",
+      ]);
+      expect(
+        sortInboxThreadsByReturn([finished, waiting], (entry) =>
+          entry === waiting ? Date.parse("2026-03-09T11:05:00.000Z") : undefined,
+        ).map((entry) => entry.id),
+      ).toEqual(["asks-approval", "finished"]);
+    });
+  });
+
   describe("dragging", () => {
-    // Pinned p1 | Active a1 a2 | Working w1 | Settled s1
+    const marker = (name: SidebarListMarker): SidebarListItem => ({ kind: "marker", marker: name });
+    const row = (key: string, section: SidebarSection): SidebarListItem => ({
+      kind: "thread",
+      key,
+      section,
+    });
+    const items: readonly SidebarListItem[] = [
+      marker("pinned-header"),
+      row("p1", "pinned"),
+      marker("pinned-divider"),
+      row("a1", "active"),
+      row("a2", "active"),
+      marker("working-header"),
+      row("w1", "working"),
+      marker("settled-header"),
+      row("s1", "settled"),
+    ];
+
+    it("never drops into the Working shelf, and keeps it out of the inbox order", () => {
+      expect(resolveSidebarDropTarget(items, "a1", "w1")).toBeNull();
+      expect(resolveSidebarDropTarget(items, "p1", "a2")).toEqual({
+        section: "active",
+        pinnedOrder: [],
+        activeOrder: ["a1", "a2", "p1"],
+      });
+      expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+    });
+
+    it.each([
+      ["pinned", "p1"],
+      ["active", "a2"],
+      ["settled", "s1"],
+    ] as const)(
+      "does not move a Working thread into %s when its reference drag ends in the sidebar",
+      (section, overKey) => {
+        const target = resolveSidebarDropTarget(items, "w1", overKey);
+        expect(target?.section).toBe(section);
+        expect(
+          planSidebarThreadDrop({
+            activeKey: "w1",
+            activeSection: "working",
+            target: target!,
+            pinnedOrder: ["p1"],
+            pinnedKeysById: new Map([["p1", "m"]]),
+            activeOrder: ["a1", "a2"],
+            activeKeysById: new Map([
+              ["a1", "f"],
+              ["a2", "t"],
+            ]),
+            activeTimeOrdered: true,
+          }),
+        ).toEqual({ kind: "none" });
+      },
+    );
+
+    it("arranges the rows it can write when another row's server cannot store an order", () => {
+      const plan = planSidebarThreadDrop({
+        activeKey: "a2",
+        activeSection: "active",
+        target: {
+          section: "active",
+          pinnedOrder: [],
+          activeOrder: ["offline", "a2", "a1"],
+        },
+        pinnedOrder: [],
+        pinnedKeysById: new Map(),
+        activeOrder: ["offline", "a1", "a2"],
+        activeKeysById: new Map([
+          ["offline", null],
+          ["a1", null],
+          ["a2", null],
+        ]),
+        activeReorderableKeys: new Set(["a1", "a2"]),
+      });
+      expect(plan.kind).toBe("move-active");
+      if (plan.kind !== "move-active") return;
+      expect(plan.assignments.map(({ id }) => id)).toEqual(["a2", "a1"]);
+      const [a2, a1] = plan.assignments.map(({ orderKey }) => orderKey);
+      expect(a2! < a1!).toBe(true);
+
+      const above = planSidebarThreadDrop({
+        activeKey: "a2",
+        activeSection: "active",
+        target: { section: "active", pinnedOrder: [], activeOrder: ["a2", "offline"] },
+        pinnedOrder: [],
+        pinnedKeysById: new Map(),
+        activeOrder: ["offline", "a2"],
+        activeKeysById: new Map([
+          ["offline", "m"],
+          ["a2", "t"],
+        ]),
+        activeReorderableKeys: new Set(["a2"]),
+      });
+      expect(above.kind === "move-active" && above.assignments[0]!.orderKey < "m").toBe(true);
+    });
+
+    describe("reordering with cached offline configuration", () => {
+      const onlineEnvironmentId = EnvironmentId.make("online");
+      const offlineEnvironmentId = EnvironmentId.make("offline");
+      const capabilities = {
+        repositoryIdentity: true,
+        threadPinning: true,
+        threadPinReorder: true,
+        threadActiveReorder: true,
+      };
+      const config = (environmentId: EnvironmentId) => ({
+        environment: {
+          environmentId,
+          label: environmentId,
+          platform: { os: "linux" as const, arch: "x64" as const },
+          serverVersion: "0.1.1",
+          capabilities,
+        },
+      });
+      const serverConfigs = new Map([
+        [onlineEnvironmentId, config(onlineEnvironmentId)],
+        [offlineEnvironmentId, config(offlineEnvironmentId)],
+      ]);
+      const thread = (
+        id: string,
+        environmentId = onlineEnvironmentId,
+        key: string | null = null,
+      ) => ({
+        id: ThreadId.make(id),
+        environmentId,
+        createdAt: `2026-03-09T${id === "offline" ? "12" : id === "online" ? "11" : "10"}:00:00.000Z`,
+        activeOrderKey: key,
+        pinOrderKey: key,
+      });
+      const keyOf = (entry: ReturnType<typeof thread>) =>
+        scopedThreadKey(scopeThreadRef(entry.environmentId, entry.id));
+      const online = thread("online");
+      const offline = thread("offline", offlineEnvironmentId);
+      const membership = (connectedEnvironmentIds = [onlineEnvironmentId]) =>
+        resolveSidebarReorderableThreadKeys({
+          threads: [online, offline],
+          serverConfigs,
+          connectedEnvironmentIds,
+        });
+      const planDrop = (input: {
+        section: "active" | "pinned";
+        rows: ReturnType<typeof thread>[];
+        moved: ReturnType<typeof thread>;
+        order: ReturnType<typeof thread>[];
+        from?: "active" | "pinned";
+        connectedEnvironmentIds?: EnvironmentId[];
+      }) => {
+        const writable = resolveSidebarReorderableThreadKeys({
+          threads: input.rows,
+          serverConfigs,
+          connectedEnvironmentIds: input.connectedEnvironmentIds ?? [onlineEnvironmentId],
+        });
+        const sort = (rows: typeof input.rows) =>
+          input.section === "active"
+            ? sortActiveThreadsByOrderKey(rows)
+            : sortPinnedThreadsByOrderKey(rows);
+        const originalOrder = sort(input.rows).map(keyOf);
+        const targetOrder = input.order.map(keyOf);
+        const keysById = new Map(input.rows.map((entry) => [keyOf(entry), entry.activeOrderKey]));
+        const plan = planSidebarThreadDrop({
+          activeKey: keyOf(input.moved),
+          activeSection: input.from ?? input.section,
+          target: { section: input.section, pinnedOrder: targetOrder, activeOrder: targetOrder },
+          pinnedOrder: originalOrder,
+          activeOrder: originalOrder,
+          pinnedKeysById: keysById,
+          activeKeysById: keysById,
+          reorderableKeys: writable.draggableThreadKeys,
+          activeReorderableKeys: writable.activeReorderableThreadKeys,
+        });
+        const assignments =
+          plan.kind === "move-active" || plan.kind === "reorder-pinned"
+            ? plan.assignments
+            : plan.kind === "pin"
+              ? [
+                  ...plan.extraAssignments,
+                  ...(plan.orderKey === undefined
+                    ? []
+                    : [{ id: keyOf(input.moved), orderKey: plan.orderKey }]),
+                ]
+              : [];
+        const assignedKeys = new Map(assignments.map(({ id, orderKey }) => [id, orderKey]));
+        const actualOrder = sort(
+          input.rows.map((entry) => ({
+            ...entry,
+            activeOrderKey: assignedKeys.get(keyOf(entry)) ?? entry.activeOrderKey,
+            pinOrderKey: assignedKeys.get(keyOf(entry)) ?? entry.pinOrderKey,
+          })),
+        ).map(keyOf);
+
+        return { plan, assignments, actualOrder, targetOrder };
+      };
+
+      it("excludes cached capable offline rows from both writable sets", () => {
+        const writable = membership();
+
+        expect([...writable.draggableThreadKeys]).toEqual([keyOf(online)]);
+        expect([...writable.activeReorderableThreadKeys]).toEqual([keyOf(online)]);
+        expect(serverConfigs.has(offlineEnvironmentId)).toBe(true);
+      });
+
+      it("updates membership through disconnect, reconnect, and missing configuration", () => {
+        expect(membership([]).draggableThreadKeys.size).toBe(0);
+        const connected = membership([onlineEnvironmentId, offlineEnvironmentId]);
+        expect(connected.draggableThreadKeys.size).toBe(2);
+        expect(connected.activeReorderableThreadKeys.size).toBe(2);
+
+        const changed = resolveSidebarReorderableThreadKeys({
+          threads: [online, offline],
+          connectedEnvironmentIds: [onlineEnvironmentId, offlineEnvironmentId],
+          serverConfigs: new Map([[onlineEnvironmentId, config(onlineEnvironmentId)]]),
+        });
+        expect([...changed.draggableThreadKeys]).toEqual([keyOf(online)]);
+        expect([...changed.activeReorderableThreadKeys]).toEqual([keyOf(online)]);
+      });
+
+      it.each(["active", "pinned"] as const)(
+        "replans a disconnected drag source in %s",
+        (section) => {
+          const bound = thread("offline", offlineEnvironmentId, "m");
+          const moved = thread("online", onlineEnvironmentId, "t");
+          const input = { section, rows: [bound, moved], moved, order: [moved, bound] };
+          expect(planDrop(input).plan.kind).toBe(
+            section === "active" ? "move-active" : "reorder-pinned",
+          );
+
+          const disconnected = planDrop({ ...input, connectedEnvironmentIds: [] });
+
+          expect(disconnected.plan).toEqual({ kind: "none" });
+          expect(disconnected.assignments).toEqual([]);
+        },
+      );
+
+      it.each(["active", "pinned"] as const)("preserves a keyed offline bound in %s", (section) => {
+        const bound = thread("offline", offlineEnvironmentId, "m");
+        const moved = thread("online", onlineEnvironmentId, "t");
+        const result = planDrop({ section, rows: [bound, moved], moved, order: [moved, bound] });
+
+        expect(result.plan.kind).toBe(section === "active" ? "move-active" : "reorder-pinned");
+        expect(result.assignments.map(({ id }) => id)).toEqual([keyOf(moved)]);
+        expect(result.actualOrder).toEqual(result.targetOrder);
+      });
+
+      it.each(["active", "pinned"] as const)(
+        "rejects rebalancing a keyed offline bound in %s",
+        (section) => {
+          const bound = thread("offline", offlineEnvironmentId, "m");
+          const neighbor = thread("neighbor");
+          const result = planDrop({
+            section,
+            rows: [bound, online, neighbor],
+            moved: online,
+            order: [bound, neighbor, online],
+          });
+
+          expect(result.plan).toEqual({ kind: "none" });
+          expect(result.assignments).toEqual([]);
+        },
+      );
+
+      it.each(["active", "pinned"] as const)(
+        "rejects crossing the frozen keyless boundary in %s",
+        (section) => {
+          const bound = {
+            ...offline,
+            createdAt:
+              section === "active" ? "2026-03-09T12:00:00.000Z" : "2026-03-09T10:00:00.000Z",
+          };
+          const order = section === "active" ? [online, bound] : [bound, online];
+          const result = planDrop({ section, rows: [bound, online], moved: online, order });
+
+          expect(result.plan).toEqual({ kind: "none" });
+          expect(result.assignments).toEqual([]);
+        },
+      );
+
+      it.each(["active", "pinned"] as const)(
+        "allows realizable moves beside a frozen keyless row in %s",
+        (section) => {
+          const neighbor = thread("neighbor");
+          const order =
+            section === "active" ? [offline, neighbor, online] : [online, neighbor, offline];
+          const result = planDrop({
+            section,
+            rows: [offline, online, neighbor],
+            moved: online,
+            order,
+          });
+
+          expect(result.plan.kind).toBe(section === "active" ? "move-active" : "reorder-pinned");
+          expect(result.assignments.length).toBeGreaterThan(0);
+          expect(result.assignments.every(({ id }) => id !== keyOf(offline))).toBe(true);
+          expect(result.actualOrder).toEqual(result.targetOrder);
+        },
+      );
+
+      it.each(["active", "pinned"] as const)(
+        "checks fallback assignments to other rows at the %s boundary",
+        (section) => {
+          const neighbor = thread("neighbor");
+          const order =
+            section === "active" ? [neighbor, offline, online] : [online, offline, neighbor];
+          const result = planDrop({
+            section,
+            rows: [offline, online, neighbor],
+            moved: online,
+            order,
+          });
+
+          expect(result.plan).toEqual({ kind: "none" });
+        },
+      );
+
+      it.each(["active", "pinned"] as const)(
+        "rejects impossible pin/unpin placement across the %s boundary",
+        (section) => {
+          const order = section === "active" ? [online, offline] : [offline, online];
+          const result = planDrop({
+            section,
+            rows: [offline, online],
+            moved: online,
+            order,
+            from: section === "active" ? "pinned" : "active",
+          });
+
+          expect(result.plan).toEqual({ kind: "none" });
+        },
+      );
+    });
 
     it("only changes lifecycle when the inbox is time-ordered", () => {
       const base = {
@@ -657,68 +1496,211 @@ describe("Working shelf (beta)", () => {
         unsnooze: false,
       });
     });
+  });
+});
 
-    it("only pins when the pinned block is time-ordered (Aldo)", () => {
-      const base = {
-        pinnedOrder: ["p1", "p2"],
-        pinnedKeysById: new Map([
-          ["p1", "m"],
-          ["p2", "t"],
-        ]),
-        activeOrder: ["a1", "a2"],
-        activeKeysById: new Map<string, string | null>(),
-        activeTimeOrdered: true,
-        pinnedTimeOrdered: true,
-      };
-      // Arranging inside the block writes nothing.
-      expect(
-        planSidebarThreadDrop({
-          ...base,
-          activeKey: "p1",
-          activeSection: "pinned",
-          target: { section: "pinned", pinnedOrder: ["p2", "p1"], activeOrder: ["a1", "a2"] },
-        }),
-      ).toEqual({ kind: "none" });
-      // A thread dropped in is pinned, without an order key to write.
-      expect(
-        planSidebarThreadDrop({
-          ...base,
-          activeKey: "a1",
-          activeSection: "active",
-          target: { section: "pinned", pinnedOrder: ["p1", "a1", "p2"], activeOrder: ["a2"] },
-        }),
-      ).toEqual({ kind: "pin", order: null, orderKey: undefined, extraAssignments: [] });
-      // So is a pinned thread woken from its snooze by the drop.
-      expect(
-        planSidebarThreadDrop({
-          ...base,
-          activeKey: "z1",
-          activeSection: "snoozed",
-          activePinned: true,
-          target: {
-            section: "pinned",
-            pinnedOrder: ["z1", "p1", "p2"],
-            activeOrder: base.activeOrder,
-          },
-        }),
-      ).toEqual({ kind: "pin", order: null, orderKey: undefined, extraAssignments: [] });
-      // Settling and unpinning still work.
-      expect(
-        planSidebarThreadDrop({
-          ...base,
-          activeKey: "p1",
-          activeSection: "pinned",
-          target: { section: "settled", pinnedOrder: ["p2"], activeOrder: base.activeOrder },
-        }),
-      ).toEqual({ kind: "settle" });
-      expect(
-        planSidebarThreadDrop({
-          ...base,
-          activeKey: "p1",
-          activeSection: "pinned",
-          target: { section: "active", pinnedOrder: ["p2"], activeOrder: ["a1", "p1", "a2"] },
-        }),
-      ).toMatchObject({ kind: "move-active", order: null, unpin: true });
+describe("pendingSidebarRouteReveal", () => {
+  it("keeps a revealed thread settled across a mount that reads no route params", () => {
+    const reveal = { observedKey: null, pendingKey: null };
+    expect(pendingSidebarRouteReveal(reveal, "env:a1")).toBe("env:a1");
+    completeSidebarRouteReveal(reveal);
+
+    // Back from Settings: location commits before the thread match does.
+    expect(pendingSidebarRouteReveal(reveal, null)).toBeNull();
+    expect(pendingSidebarRouteReveal(reveal, "env:a1")).toBeNull();
+
+    expect(pendingSidebarRouteReveal(reveal, "env:b1")).toBe("env:b1");
+  });
+
+  it("keeps a pending reveal through a render without route params", () => {
+    const reveal = { observedKey: null, pendingKey: null };
+    pendingSidebarRouteReveal(reveal, "env:a1");
+    expect(pendingSidebarRouteReveal(reveal, null)).toBeNull();
+    expect(pendingSidebarRouteReveal(reveal, "env:a1")).toBe("env:a1");
+  });
+});
+
+describe("resolveSidebarRouteReveal", () => {
+  const scopedProjectKeys = new Set(["environment-test:project-scoped"]);
+  const hidden = makeThreadFixture({ projectId: ProjectId.make("project-other") });
+  const hiddenKey = "environment-test:thread-test";
+  const findThread = (key: string) => (key === hiddenKey ? hidden : undefined);
+
+  it("widens the scope for a newly opened thread the scope hides", () => {
+    expect(
+      resolveSidebarRouteReveal({
+        reveal: { observedKey: "environment-test:other", pendingKey: null },
+        routeKey: hiddenKey,
+        routeKeyInPlace: false,
+        isSearching: false,
+        scopedProjectKeys,
+        delegatedUnderParent: new Set(),
+        findThread,
+      }),
+    ).toEqual({ pendingKey: hiddenKey, widensScope: true });
+  });
+
+  it("never widens for a thread whose reveal already completed", () => {
+    // A remount's once-per-mount scroll must keep the scope the user chose.
+    expect(
+      resolveSidebarRouteReveal({
+        reveal: { observedKey: hiddenKey, pendingKey: null },
+        routeKey: hiddenKey,
+        routeKeyInPlace: false,
+        isSearching: false,
+        scopedProjectKeys,
+        delegatedUnderParent: new Set(),
+        findThread,
+      }),
+    ).toEqual({ pendingKey: null, widensScope: false });
+  });
+
+  it("widens again for a thread reopened before the thread between them listed its row", () => {
+    // The user scoped away from the open thread, then went to a thread whose row
+    // never mounted, then came back.
+    const reveal = { observedKey: hiddenKey, pendingKey: null };
+    const resolve = (routeKey: string) =>
+      resolveSidebarRouteReveal({
+        reveal,
+        routeKey,
+        routeKeyInPlace: false,
+        isSearching: false,
+        scopedProjectKeys,
+        delegatedUnderParent: new Set(),
+        findThread,
+      });
+    resolve("environment-test:unlisted");
+    expect(resolve(hiddenKey)).toEqual({ pendingKey: hiddenKey, widensScope: true });
+  });
+
+  it("holds a pending reveal without widening while searching", () => {
+    expect(
+      resolveSidebarRouteReveal({
+        reveal: { observedKey: hiddenKey, pendingKey: hiddenKey },
+        routeKey: hiddenKey,
+        routeKeyInPlace: false,
+        isSearching: true,
+        scopedProjectKeys,
+        delegatedUnderParent: new Set(),
+        findThread,
+      }),
+    ).toEqual({ pendingKey: hiddenKey, widensScope: false });
+  });
+});
+
+describe("sidebarFolderExpansionKeys", () => {
+  it("honors a collapse the legacy sidebar saved under a member's cwd", () => {
+    const keys = sidebarFolderExpansionKeys({
+      projectKey: "github.com/pingdotgg/t3code",
+      memberProjects: [{ physicalProjectKey: "local:/code/t3code", workspaceRoot: "/code/t3code" }],
     });
+    const cwdKey = keys.at(-1)!;
+
+    expect(resolveProjectExpanded({}, keys)).toBe(true);
+    expect(resolveProjectExpanded({ [cwdKey]: false }, keys)).toBe(false);
+    expect(resolveProjectExpanded({ [keys[0]!]: true, [cwdKey]: false }, keys)).toBe(true);
+  });
+});
+
+describe("groupSidebarThreadsByProject", () => {
+  it("puts each thread in its project's folder and drops empty projects unless kept", () => {
+    const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+    const t3code = ProjectId.make("t3code");
+    const t3codeRemote = ProjectId.make("t3code-remote");
+    const fleet = ProjectId.make("fleet");
+    const thread = (id: string, environmentId: EnvironmentId, projectId: ProjectId) => ({
+      id,
+      environmentId,
+      projectId,
+    });
+    const groups = [
+      {
+        projectKey: "t3code",
+        memberProjectRefs: [
+          { environmentId: localEnvironmentId, projectId: t3code },
+          { environmentId: remoteEnvironmentId, projectId: t3codeRemote },
+        ],
+      },
+      {
+        projectKey: "fleet",
+        memberProjectRefs: [{ environmentId: localEnvironmentId, projectId: fleet }],
+      },
+      {
+        projectKey: "notes",
+        memberProjectRefs: [
+          { environmentId: localEnvironmentId, projectId: ProjectId.make("notes") },
+        ],
+      },
+    ];
+
+    const threads = [
+      thread("a", localEnvironmentId, t3code),
+      thread("orphan", localEnvironmentId, ProjectId.make("deleted")),
+      thread("b", remoteEnvironmentId, t3codeRemote),
+    ];
+    const summarize = (keepEmpty: (group: (typeof groups)[number]) => boolean) =>
+      groupSidebarThreadsByProject(groups, threads, keepEmpty).map((folder) => ({
+        projectKey: folder.group.projectKey,
+        threads: folder.threads.map((entry) => entry.id),
+      }));
+
+    expect(summarize(() => true)).toEqual([
+      { projectKey: "t3code", threads: ["a", "b"] },
+      { projectKey: "fleet", threads: [] },
+      { projectKey: "notes", threads: [] },
+    ]);
+    expect(summarize(() => false)).toEqual([{ projectKey: "t3code", threads: ["a", "b"] }]);
+    // A pinned project keeps its empty folder while other empty projects drop out.
+    expect(summarize((group) => group.projectKey === "fleet")).toEqual([
+      { projectKey: "t3code", threads: ["a", "b"] },
+      { projectKey: "fleet", threads: [] },
+    ]);
+  });
+});
+
+describe("resolveSidebarFolderDot", () => {
+  it("flags the most urgent hidden thread and stays quiet otherwise", () => {
+    const idle = {
+      hasActionableProposedPlan: false,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      interactionMode: "default" as const,
+      latestRun: makeLatestRun(),
+      lastVisitedAt: "2026-03-09T10:06:00.000Z",
+      runtime: null,
+    };
+    const runtime = {
+      status: "running" as const,
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: "Codex",
+      lastError: null,
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    };
+    const working = { ...idle, runtime };
+    const unread = { ...idle, lastVisitedAt: "2026-03-09T10:04:00.000Z" };
+    const limited = {
+      ...idle,
+      runtime: { ...runtime, status: "failed" as const, lastErrorClass: "usage_limit" as const },
+    };
+
+    expect(resolveSidebarFolderDot([idle])).toBeNull();
+    // A waiting thread stays quiet even with an unread completion, like its row.
+    expect(
+      resolveSidebarFolderDot([{ ...unread, runtime: { ...runtime, status: "idle" as const } }]),
+    ).toBeNull();
+    expect(resolveSidebarFolderDot([idle, working])).toBe("working");
+    expect(resolveSidebarFolderDot([working, unread])).toBe("unread");
+    expect(resolveSidebarFolderDot([unread, limited])).toBe("attention");
+  });
+});
+
+describe("shouldCreateNewThreadInCurrentProject", () => {
+  it("opens the picker when several projects are open, or only archived ones exist", () => {
+    expect(shouldCreateNewThreadInCurrentProject(false, 2, 3)).toBe(false);
+    expect(shouldCreateNewThreadInCurrentProject(false, 0, 2)).toBe(false);
+    expect(shouldCreateNewThreadInCurrentProject(false, 1, 3)).toBe(true);
+    expect(shouldCreateNewThreadInCurrentProject(false, 0, 0)).toBe(true);
+    expect(shouldCreateNewThreadInCurrentProject(true, 2, 2)).toBe(true);
   });
 });

@@ -1,38 +1,35 @@
 import type { DesktopAppBranding } from "@t3tools/contracts";
-import { formatAppDisplayName } from "./branding.logic";
+import {
+  formatAppDisplayName,
+  resolveHostedAppChannelLabel,
+  resolveWebAppStageLabel,
+} from "./branding.logic";
 
 function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
   if (typeof window === "undefined") {
     return null;
   }
 
-  return window.desktopBridge?.getAppBranding?.() ?? null;
+  return window.desktopBridge?.getAppBranding() ?? null;
 }
 
 const injectedDesktopAppBranding = readInjectedDesktopAppBranding();
 const hostedAppChannel = import.meta.env.VITE_HOSTED_APP_CHANNEL?.trim().toLowerCase();
 
-// Managed DevPC and Aldo cloud builds ship under the Aldo product brand. Read
-// the flags directly rather than via their modules so branding stays import-free.
-const managedDevPcBuild =
-  import.meta.env.VITE_DEVPC_MANAGED === "1" || import.meta.env.VITE_ALDO_CLOUD === "1";
-
-/** Aldo builds show the Aldo mark; compare this, not the (rewritten) name strings. */
-export const APP_IS_ALDO = managedDevPcBuild;
-
 export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;
-export const HOSTED_APP_CHANNEL_LABEL =
-  HOSTED_APP_CHANNEL === "nightly" ? "Nightly" : HOSTED_APP_CHANNEL === "latest" ? "Latest" : null;
-export const APP_BASE_NAME =
-  injectedDesktopAppBranding?.baseName ?? (managedDevPcBuild ? "Aldo" : "T3 Code");
+export const HOSTED_APP_CHANNEL_LABEL = resolveHostedAppChannelLabel(HOSTED_APP_CHANNEL);
+export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
 export const APP_STAGE_LABEL =
   injectedDesktopAppBranding?.stageLabel ??
-  HOSTED_APP_CHANNEL_LABEL ??
-  // "Latest" renders as the bare base name, which is how the managed product
-  // presents itself: "Aldo", no stage suffix.
-  (managedDevPcBuild ? "Latest" : import.meta.env.DEV ? "Dev" : "Alpha");
+  resolveWebAppStageLabel({
+    hostedAppChannel: HOSTED_APP_CHANNEL,
+    development: import.meta.env.DEV,
+  });
 export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
+export const DESKTOP_DOWNLOAD_URL = "https://t3.codes/download";
+// Redirects to the App Store or Google Play to match the phone that opens it.
+export const MOBILE_APP_URL = "https://t3.codes/mobile";
