@@ -1258,6 +1258,7 @@ const makeWsRpcLayer = (
                 }),
             threadResumeCompletionMarker: true,
             threadProviderContinuation: true,
+            threadModelHandoff: true,
             threadSnapshotPagination: true,
             reasoningMessages: true,
             ...(scratchWorkspaceRoot === undefined ? {} : { scratchWorkspaceRoot }),
