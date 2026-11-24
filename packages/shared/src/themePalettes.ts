@@ -978,6 +978,10 @@ export const PRISM_THEME: ThemeDefinition = {
     terminalSelection: "oklch(0.88 0.05 262)",
     terminalScrollbar: "oklch(0.84 0.008 255)",
     terminalScrollbarHover: "oklch(0.76 0.01 255)",
+    searchMatchBackground: "#ffde8b",
+    searchMatchForeground: "#21180a",
+    searchMatchActiveBackground: "#eea52b",
+    searchMatchActiveForeground: "#21180a",
   },
   variants: {
     dark: {
@@ -1038,6 +1042,10 @@ export const PRISM_THEME: ThemeDefinition = {
       terminalSelection: "oklch(0.34 0.07 250)",
       terminalScrollbar: "oklch(0.34 0.014 262)",
       terminalScrollbarHover: "oklch(0.44 0.016 260)",
+      searchMatchBackground: "#8c6c1f",
+      searchMatchForeground: "#f5f5f5",
+      searchMatchActiveBackground: "#eea52b",
+      searchMatchActiveForeground: "#21180a",
     },
   },
   sidebarArtwork: true,
