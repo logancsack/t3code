@@ -21,6 +21,7 @@ import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { aldoOrgInitials, aldoOrgManages, type AldoOrg } from "./organization.logic";
 import type { AldoJoining } from "./orgJoining.logic";
+import { aldoSettingsOpensOnList } from "./settings.logic";
 import { settingsOrg, settingsOrgJoining } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 
@@ -37,7 +38,14 @@ export function useLoadedOrg(): { readonly org: AldoOrg | null; readonly fallbac
   const navigate = useNavigate();
   const { data: org, error } = useSettingsResource(settingsOrg);
   useEffect(() => {
-    if (org === null) void navigate({ to: "/settings", replace: true });
+    // Straight to where Settings opens: a redirect from "/settings" while this page is still
+    // mounted leaves the router rendering a match it has already let go of.
+    if (org === null) {
+      void navigate({
+        to: aldoSettingsOpensOnList() ? "/settings" : "/settings/agents",
+        replace: true,
+      });
+    }
   }, [navigate, org]);
   if (org) return { org, fallback: null };
   const fallback =
