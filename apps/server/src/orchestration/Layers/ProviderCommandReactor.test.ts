@@ -4430,16 +4430,6 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await harness.runEffect(harness.drainTurnStarts);
-    expect(harness.startSession).toHaveBeenCalledTimes(2);
-    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
-      fresh: true,
-      modelSelection: { instanceId: "claudeAgent", model: "claude-opus-4-6" },
-    });
-    expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
-    expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
-      input: expect.stringContaining("user: first"),
-    });
     await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.turn.start",
@@ -4461,6 +4451,14 @@ describe("ProviderCommandReactor", () => {
       }),
     );
     await harness.runEffect(harness.drainTurnStarts);
+    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+      fresh: true,
+      modelSelection: { instanceId: "claudeAgent", model: "claude-opus-4-6" },
+    });
+    expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
+    expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+      input: expect.stringContaining("user: first"),
+    });
     expect(harness.startSession).toHaveBeenCalledTimes(2);
     expect(harness.sendTurn).toHaveBeenCalledTimes(3);
     expect(
@@ -4468,6 +4466,55 @@ describe("ProviderCommandReactor", () => {
         (a) => a.kind === "provider.turn.start.failed",
       ),
     ).toBe(false);
+  });
+
+  it("reports a refused named model without starting a substitute", async () => {
+    const harness = await createHarness();
+    const at = "2026-01-01T00:00:00.000Z";
+    const start = (id: string, modelSelection?: ModelSelection) =>
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(id),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId(id),
+          role: "user",
+          text: "Keep the plan awaiting approval",
+          attachments: [],
+        },
+        ...(modelSelection ? { modelSelection } : {}),
+        runtimeMode: "approval-required",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        createdAt: at,
+      });
+    await harness.runEffect(start("first-codex"));
+    await harness.runEffect(harness.drainTurnStarts);
+    harness.startSession.mockImplementationOnce(
+      () =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "claudeAgent",
+            method: "startSession",
+            detail: "unknown model claude-fable-5-2",
+          }),
+        ) as never,
+    );
+    await harness.runEffect(
+      start("refused-fable", {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5-2",
+      }),
+    );
+    await harness.runEffect(harness.drainTurnStarts);
+    expect(harness.startSession).toHaveBeenCalledTimes(2);
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    expect(
+      (await harness.readModel()).threads[0]?.activities.find(
+        (a) => a.kind === "provider.turn.start.failed",
+      ),
+    ).toMatchObject({
+      payload: { detail: expect.stringContaining("unknown model claude-fable-5-2") },
+    });
   });
 
   it("starts a fresh provider after the existing session has stopped", async () => {
