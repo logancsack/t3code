@@ -2238,6 +2238,25 @@ export const OrchestrationV2LatestVisibleMessageSummary = Schema.Struct({
 export type OrchestrationV2LatestVisibleMessageSummary =
   typeof OrchestrationV2LatestVisibleMessageSummary.Type;
 
+/**
+ * What a running thread is doing right now. Only a managed workspace reports it; it is held in
+ * memory, never stored, and gone when the run settles.
+ */
+export const OrchestrationV2ThreadLiveWork = Schema.Struct({
+  kind: Schema.Literals(["thinking", "tool", "writing"]),
+  startedAt: Schema.DateTimeUtc,
+  /** The tool call under way, without its output or file bodies. */
+  tool: Schema.NullOr(OrchestrationV2TurnItem),
+  plan: Schema.NullOr(
+    Schema.Struct({
+      step: TrimmedNonEmptyString,
+      completedSteps: NonNegativeInt,
+      totalSteps: NonNegativeInt,
+    }),
+  ),
+});
+export type OrchestrationV2ThreadLiveWork = typeof OrchestrationV2ThreadLiveWork.Type;
+
 export const OrchestrationV2ThreadShell = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -2321,6 +2340,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
     ),
   ),
   lastTitleRegeneration: Schema.optional(Schema.NullOr(OrchestrationV2LastTitleRegeneration)),
+  liveWork: Schema.optional(OrchestrationV2ThreadLiveWork),
   deletedAt: Schema.NullOr(Schema.DateTimeUtc),
 });
 export type OrchestrationV2ThreadShell = typeof OrchestrationV2ThreadShell.Type;
@@ -2950,6 +2970,13 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
         completedAt: Schema.DateTimeUtcFromString,
       })),
     ),
+  ),
+  liveWork: Schema.optional(
+    OrchestrationV2ThreadLiveWork.mapFields((fields) => ({
+      ...fields,
+      startedAt: Schema.DateTimeUtcFromString,
+      tool: Schema.NullOr(OrchestrationV2TurnItemJson),
+    })),
   ),
   deletedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 }));

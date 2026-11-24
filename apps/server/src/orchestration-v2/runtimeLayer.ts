@@ -49,6 +49,7 @@ import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
 import * as TurnInstructions from "../managedDevPc/TurnInstructions.ts";
+import * as ManagedThreadLiveWork from "../managedDevPc/ThreadLiveWork.ts";
 import * as ManagedTurnLivenessWatchdog from "../managedDevPc/TurnLivenessWatchdog.ts";
 import { layerThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
@@ -423,6 +424,7 @@ export const layerProduction = Layer.mergeAll(
   ManagedTurnLivenessWatchdog.layer.pipe(
     Layer.provide(Layer.merge(layerThreadManagementProvided, layerOrchestratorProvided)),
   ),
+  ManagedThreadLiveWork.layer.pipe(Layer.provide(layerOrchestratorProvided)),
   layerProviderContinuationWorkerProvided,
   layerAgentSessionScannerProvided,
   layerAgentSessionImporterProvided,

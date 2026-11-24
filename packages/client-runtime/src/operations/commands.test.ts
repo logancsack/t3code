@@ -175,13 +175,17 @@ describe("V2 environment commands", () => {
         ...supervisor,
         session: yield* SubscriptionRef.make(Option.none<RpcSession.RpcSession>()),
       });
-      const queued: OrchestrationV2Command[] = [];
-      setOrchestrationCommandDispatchOverride(async ({ command, environmentId, primary }) => {
-        queued.push(command);
-        expect(environmentId).toBe("environment-1");
-        expect(primary).toBe(true);
-        return { sequence: 0 };
-      });
+      const queued: unknown[] = [];
+      setOrchestrationCommandDispatchOverride(
+        async ({ command, launch, environmentId, primary }) => {
+          queued.push(
+            command ?? { launched: launch.threadId, message: launch.initialMessage?.text },
+          );
+          expect(environmentId).toBe("environment-1");
+          expect(primary).toBe(true);
+          return { sequence: 0 };
+        },
+      );
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => setOrchestrationCommandDispatchOverride(null)),
       );
@@ -191,9 +195,36 @@ describe("V2 environment commands", () => {
         threadId: ThreadId.make("thread-1"),
       }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, asleep));
 
+      const launched = yield* startThreadTurn({
+        commandId: CommandId.make("launched-while-asleep"),
+        threadId: v2ThreadId,
+        message: {
+          messageId: MessageId.make("message-while-asleep"),
+          role: "user",
+          text: "First message",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        bootstrap: {
+          createThread: {
+            projectId: ProjectId.make("project-1"),
+            title: "Thread",
+            modelSelection: v2Projection.thread.modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-06-20T00:00:00.000Z",
+          },
+        },
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, asleep));
+
       expect(result).toEqual({ sequence: 0 });
+      expect(launched).toEqual({ sequence: 0 });
       expect(queued).toEqual([
         { type: "thread.archive", commandId: "queued-while-asleep", threadId: "thread-1" },
+        { launched: v2ThreadId, message: "First message" },
       ]);
       expect(commands).toEqual([]);
     }).pipe(Effect.provide(layerTestRandom)),

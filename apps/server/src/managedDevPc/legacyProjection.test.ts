@@ -46,6 +46,37 @@ const running = (overrides: Partial<OrchestrationV2ThreadShell> = {}) =>
   });
 
 describe("legacyThreadShell", () => {
+  it("says what a running thread is doing now, when the workspace tracks it", () => {
+    expect(running()).not.toHaveProperty("currentWork");
+    const plan = { step: "Run the tests", completedSteps: 1, totalSteps: 3 };
+    expect(
+      running({
+        liveWork: {
+          kind: "tool",
+          startedAt: at(-2_000),
+          tool: {
+            id: "tool-1",
+            type: "command_execution",
+            input: "bun run test",
+            status: "running",
+            title: null,
+            runId: run,
+            startedAt: at(-2_000),
+            updatedAt: at(-2_000),
+          } as never,
+          plan,
+        },
+      }),
+    ).toMatchObject({
+      currentWork: {
+        kind: "tool",
+        startedAt: DateTime.formatIso(at(-2_000)),
+        activity: { kind: "tool.updated", payload: { detail: "bun run test" } },
+      },
+      planProgress: plan,
+    });
+  });
+
   it("reports a run as the turn Aldo reads, with the run id as the turn id", () => {
     expect(running()).toMatchObject({
       latestTurn: { turnId: run, state: "running", completedAt: null },

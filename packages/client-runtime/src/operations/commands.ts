@@ -14,6 +14,7 @@ import {
   type ModelSelection,
   type NodeId,
   type OrchestrationV2Command,
+  type OrchestrationV2ThreadLaunchInput,
   type OrchestrationV2CreationSource,
   type PlanId,
   type ProjectId,
@@ -296,12 +297,18 @@ const allocateCommandId = Effect.fn("EnvironmentCommands.allocateCommandId")(fun
 
 type DispatchResult = EnvironmentRpcSuccess<typeof ORCHESTRATION_V2_WS_METHODS.dispatchCommand>;
 
-/** Resolves null to send the command over the environment's own connection. */
-export type OrchestrationCommandDispatchOverride = (input: {
-  readonly command: OrchestrationV2Command;
-  readonly environmentId: string;
-  readonly primary: boolean;
-}) => Promise<DispatchResult | null>;
+type HostDispatch =
+  | { readonly command: OrchestrationV2Command; readonly launch?: undefined }
+  | {
+      /** A thread's first message, which the socket sends as `launchThread`. */
+      readonly launch: OrchestrationV2ThreadLaunchInput & { readonly threadId: ThreadId };
+      readonly command?: undefined;
+    };
+
+/** Resolves null to send over the environment's own connection. */
+export type OrchestrationCommandDispatchOverride = (
+  input: HostDispatch & { readonly environmentId: string; readonly primary: boolean },
+) => Promise<DispatchResult | null>;
 
 let dispatchOverride: OrchestrationCommandDispatchOverride | null = null;
 
@@ -312,26 +319,30 @@ export function setOrchestrationCommandDispatchOverride(
   dispatchOverride = override;
 }
 
-const dispatch = Effect.fnUntraced(function* (command: OrchestrationV2Command) {
+const dispatchViaHost = Effect.fnUntraced(function* (input: HostDispatch) {
   const override = dispatchOverride;
-  if (override !== null) {
-    const { target } = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-    const overridden = yield* Effect.tryPromise({
-      try: () =>
-        override({
-          command,
-          environmentId: target.environmentId,
-          primary: target._tag === "PrimaryConnectionTarget",
-        }),
-      catch: (cause) =>
-        new EnvironmentRpcUnavailableError({
-          environmentId: target.environmentId,
-          message: cause instanceof Error ? cause.message : "Host command dispatch failed.",
-        }),
-    });
-    if (overridden !== null) return overridden;
-  }
-  return yield* requestWhenConnected(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, command);
+  if (override === null) return null;
+  const { target } = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  return yield* Effect.tryPromise({
+    try: () =>
+      override({
+        ...input,
+        environmentId: target.environmentId,
+        primary: target._tag === "PrimaryConnectionTarget",
+      }),
+    catch: (cause) =>
+      new EnvironmentRpcUnavailableError({
+        environmentId: target.environmentId,
+        message: cause instanceof Error ? cause.message : "Host command dispatch failed.",
+      }),
+  });
+});
+
+const dispatch = Effect.fnUntraced(function* (command: OrchestrationV2Command) {
+  return (
+    (yield* dispatchViaHost({ command })) ??
+    (yield* requestWhenConnected(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, command))
+  );
 });
 
 // The socket can close after the server accepted the frame but before it answered.
@@ -349,7 +360,10 @@ const dispatchMessage = Effect.fn("EnvironmentCommands.dispatchMessage")(functio
   resendAfterSocketLoss: boolean,
 ) {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-  const attempt = dispatch(command).pipe(
+  const overSocket = requestWhenConnected(
+    ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+    command,
+  ).pipe(
     Effect.timeoutOrElse({
       duration: MESSAGE_DISPATCH_TIMEOUT,
       orElse: () =>
@@ -365,6 +379,10 @@ const dispatchMessage = Effect.fn("EnvironmentCommands.dispatchMessage")(functio
         ),
     }),
   );
+  // A host that takes the message may spend minutes waking the machine; only the socket is timed.
+  const attempt = Effect.gen(function* () {
+    return (yield* dispatchViaHost({ command })) ?? (yield* overSocket);
+  });
   if (!resendAfterSocketLoss) return yield* attempt;
   for (let resends = 0; ; resends += 1) {
     const attemptSession = yield* SubscriptionRef.get(supervisor.session);
@@ -833,7 +851,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
                 ? {}
                 : { branch: bootstrap.branch }),
             };
-    return yield* request(ORCHESTRATION_V2_WS_METHODS.launchThread, {
+    const launch = {
       commandId,
       creationSource: input.creationSource ?? "web",
       threadId: input.threadId,
@@ -851,7 +869,11 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ...(context ? { context } : {}),
         attachments,
       },
-    });
+    };
+    return (
+      (yield* dispatchViaHost({ launch })) ??
+      (yield* request(ORCHESTRATION_V2_WS_METHODS.launchThread, launch))
+    );
   }
 
   const requestedMode = input.dispatchMode ?? "auto";

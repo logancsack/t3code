@@ -38,6 +38,7 @@ import { THREAD_HISTORY_SNAPSHOT_ROW_LIMIT } from "../orchestration-v2/threadHis
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ThreadLiveWork from "./ThreadLiveWork.ts";
 import * as TurnInstructions from "./TurnInstructions.ts";
 import type {
   LegacyCommand,
@@ -249,6 +250,7 @@ const unavailable = (cause: unknown) => new ManagedDevPcUnavailableError({ cause
 
 export const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
+  const { withLiveWork } = yield* ThreadLiveWork.ThreadLiveWork;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const turnInstructions = yield* TurnInstructions.TurnInstructions;
@@ -279,7 +281,7 @@ export const make = Effect.gen(function* () {
       ...archived.threads,
       ...archived.archivedThreads,
     ]) {
-      byId.set(thread.id, thread);
+      byId.set(thread.id, withLiveWork(thread));
     }
     return {
       snapshotSequence: Math.max(active.snapshotSequence, archived.snapshotSequence),

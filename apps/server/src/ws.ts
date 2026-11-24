@@ -120,6 +120,7 @@ import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
+import * as ThreadLiveWork from "./managedDevPc/ThreadLiveWork.ts";
 import * as ThreadViewers from "./orchestration-v2/ThreadViewers.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
@@ -1155,6 +1156,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const projects = yield* ProjectStore.ProjectStoreV2;
     const projectService = yield* ProjectService.ProjectService;
     const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
+    const { withLiveWork } = yield* ThreadLiveWork.ThreadLiveWork;
     let subagentThreadIds = new Set<string>();
     const filterSubagentTranscript = (stored: ApplicationStoredEvent) =>
       shouldPublishShellApplicationEvent(stored, subagentThreadIds);
@@ -1196,6 +1198,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       return {
         snapshot: {
           ...forSubscriber.snapshot,
+          threads: forSubscriber.snapshot.threads.map(withLiveWork),
           projects: enriched.projects,
         } as OrchestrationV2ShellSnapshot,
         resolvedRepositoryIdentityRoots: enriched.resolvedRepositoryIdentityRoots,
@@ -1260,7 +1263,10 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
               batchedShells === null
                 ? yield* threadManagement.getThreadShell(threadId)
                 : (batchedShells.get(threadId) ?? null);
-            return shellStreamItemFromThreadShell({ stored, shell });
+            return shellStreamItemFromThreadShell({
+              stored,
+              shell: shell === null ? null : withLiveWork(shell),
+            });
           }),
         { concurrency: 8 },
       );

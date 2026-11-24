@@ -147,7 +147,40 @@ export function mapThreadShell(thread: V1ThreadShell): OrchestrationV2ThreadShel
     itemCount: 0,
     visibleItemCount: 0,
     lastVisitedAt: null,
+    ...(status === "running" ? liveWork(thread) : {}),
     deletedAt: null,
+  };
+}
+
+function liveWork(thread: V1ThreadShell): Pick<OrchestrationV2ThreadShell, "liveWork"> {
+  const work = thread.currentWork ?? null;
+  const plan = thread.planProgress ?? null;
+  if (work === null && plan === null) return {};
+  // The call is mapped as the thread's own history maps it, so both word it alike.
+  const tool =
+    work?.activity == null
+      ? undefined
+      : mapThreadProjection({
+          ...thread,
+          deletedAt: null,
+          messages: [],
+          activities: [work.activity],
+          checkpoints: [],
+        }).turnItems.find(
+          (item) => item.type === "command_execution" || item.type === "dynamic_tool",
+        );
+  return {
+    liveWork: {
+      kind: work?.kind ?? "tool",
+      startedAt: at(
+        work?.startedAt ??
+          thread.latestTurn?.startedAt ??
+          thread.latestTurn?.requestedAt ??
+          thread.updatedAt,
+      ),
+      tool: tool ?? null,
+      plan,
+    },
   };
 }
 

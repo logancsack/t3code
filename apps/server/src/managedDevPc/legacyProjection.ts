@@ -140,6 +140,20 @@ export function legacyThreadShell(shell: OrchestrationV2ThreadShell) {
     hasPendingUserInput: pending !== null && pending.kind === "user_input",
     hasActionableProposedPlan: shell.hasActionableProposedPlan,
     ...(backgroundLiveness === null ? {} : { backgroundLiveness }),
+    ...legacyLiveWork(shell.liveWork),
+  };
+}
+
+/** The first model's `currentWork` and `planProgress`, which Aldo's Home reads for a live line. */
+function legacyLiveWork(work: OrchestrationV2ThreadShell["liveWork"]) {
+  if (work === undefined) return {};
+  return {
+    currentWork: {
+      kind: work.kind,
+      startedAt: iso(work.startedAt),
+      activity: work.tool === null ? null : (itemActivities(work.tool, new Map())[0] ?? null),
+    },
+    planProgress: work.plan,
   };
 }
 export type LegacyThreadShell = ReturnType<typeof legacyThreadShell>;

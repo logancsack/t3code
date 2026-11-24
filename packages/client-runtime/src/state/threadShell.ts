@@ -255,6 +255,7 @@ function sameApartFromStreaming(
         itemCount: after.itemCount,
         visibleItemCount: after.visibleItemCount,
         latestVisibleMessage: after.latestVisibleMessage,
+        ...(after.liveWork === undefined ? {} : { liveWork: after.liveWork }),
       },
       after,
     )

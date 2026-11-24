@@ -192,6 +192,25 @@ export const V1ThreadShell = Schema.Struct({
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
   hasActionableProposedPlan: Schema.Boolean,
+  /** Aldo's machines say what a running turn does now; neither is stored. */
+  planProgress: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        step: TrimmedNonEmptyString,
+        completedSteps: NonNegativeInt,
+        totalSteps: NonNegativeInt,
+      }),
+    ),
+  ),
+  currentWork: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        kind: Schema.Literals(["thinking", "tool", "writing"]),
+        startedAt: IsoDateTime,
+        activity: Schema.NullOr(V1Activity),
+      }),
+    ),
+  ),
 });
 export type V1ThreadShell = typeof V1ThreadShell.Type;
 

@@ -10,6 +10,7 @@ import {
   ThreadId,
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -220,6 +221,44 @@ describe("a generation-1 machine's captured thread list", () => {
       },
     ]);
     expect(snapshot.projects.map((entry) => entry.title)).toEqual(["Redacted project"]);
+  });
+
+  it("carries what a running turn is doing now, and its plan's step", () => {
+    const thread = shellCapture.threads[0]!;
+    const startedAt = "2026-10-27T12:00:05.000Z";
+    const [mapped] = mapShellSnapshot(
+      decodeShell({
+        ...shellCapture,
+        threads: [
+          {
+            ...thread,
+            planProgress: { step: "Run the tests", completedSteps: 1, totalSteps: 3 },
+            currentWork: {
+              kind: "tool",
+              startedAt,
+              activity: {
+                id: "activity-1",
+                tone: "tool",
+                kind: "tool.updated",
+                summary: "Ran command",
+                payload: { itemType: "command_execution", data: { command: "bun run test" } },
+                turnId: thread.latestTurn.turnId,
+                createdAt: startedAt,
+              },
+            },
+          },
+        ],
+      }),
+    ).threads;
+    validShell({ ...snapshot, threads: [mapped] });
+    expect(mapped?.liveWork).toMatchObject({
+      kind: "tool",
+      startedAt: DateTime.makeUnsafe(startedAt),
+      tool: { type: "command_execution", input: "bun run test", status: "running" },
+      plan: { step: "Run the tests", completedSteps: 1, totalSteps: 3 },
+    });
+    // The capture itself was taken while its turn was thinking.
+    expect(snapshot.threads[0]?.liveWork).toMatchObject({ kind: "thinking", tool: null });
   });
 
   it("maps list updates", () => {
