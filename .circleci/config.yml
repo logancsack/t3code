@@ -148,6 +148,8 @@ jobs:
 
   build:
     executor: node
+    # The client's build peaks near 4 GB even on two threads; medium's 4 GB killed it.
+    resource_class: medium+
     steps:
       - in-scope:
           flags: SCOPE_SERVER SCOPE_CLIENT
@@ -162,8 +164,7 @@ jobs:
             T3CODE_WEB_SOURCEMAP: "0"
           command: |
             if [ "$SCOPE_CLIENT" = 0 ]; then echo "Nothing the client's build reads changed."; exit 0; fi
-            # The bundler sizes its thread pool by the host's cores, not this machine's 2,
-            # and each thread's share of the graph took the build past 4 GB.
+            # The bundler sizes its thread pool by the host's cores, and memory grows with it.
             taskset -c 0,1 vp build
       - run:
           name: Keep the home screen's JavaScript within its budget
