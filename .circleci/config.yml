@@ -18,6 +18,12 @@ executors:
     docker:
       - image: cimg/node:26.13.1
     resource_class: medium
+  # A virtual machine, for what a container lacks: an IPv6 loopback, which the
+  # server's socket tests listen on.
+  vm:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: medium
 
 commands:
   in-scope:
@@ -139,11 +145,15 @@ jobs:
 
   # apps/server sets `fileParallelism: false`, so its files run one at a time.
   test-server:
-    executor: node
+    executor: vm
     steps:
       - in-scope:
           flags: SCOPE_SERVER
       - setup
+      - run:
+          name: Install the Chromium the preview tests drive
+          working_directory: apps/server
+          command: vp exec playwright-core install --only-shell --with-deps chromium
       - run:
           name: Test
           command: vp run --filter t3 test
