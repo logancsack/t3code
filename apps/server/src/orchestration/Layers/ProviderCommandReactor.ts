@@ -631,20 +631,21 @@ const make = Effect.gen(function* () {
         : thread.modelSelection.instanceId;
     const desiredModelSelection = requestedModelSelection ?? thread.modelSelection;
     const desiredInstanceId = desiredModelSelection.instanceId;
-    yield* providerService.getInstanceInfo(currentInstanceId).pipe(
-      Effect.mapError(
-        () =>
-          new ProviderAdapterRequestError({
-            provider: providerErrorLabelFromInstanceHint({
-              instanceId: String(currentInstanceId),
-              modelSelectionInstanceId: String(thread.modelSelection.instanceId),
-              sessionProvider: thread.session?.providerName ?? undefined,
+    if (!options?.fresh)
+      yield* providerService.getInstanceInfo(currentInstanceId).pipe(
+        Effect.mapError(
+          () =>
+            new ProviderAdapterRequestError({
+              provider: providerErrorLabelFromInstanceHint({
+                instanceId: String(currentInstanceId),
+                modelSelectionInstanceId: String(thread.modelSelection.instanceId),
+                sessionProvider: thread.session?.providerName ?? undefined,
+              }),
+              method: "thread.turn.start",
+              detail: `Thread '${threadId}' references unknown provider instance '${currentInstanceId}'. The instance is not configured in this build.`,
             }),
-            method: "thread.turn.start",
-            detail: `Thread '${threadId}' references unknown provider instance '${currentInstanceId}'. The instance is not configured in this build.`,
-          }),
-      ),
-    );
+        ),
+      );
     const desiredInfo = yield* providerService.getInstanceInfo(desiredInstanceId).pipe(
       Effect.mapError(
         () =>
@@ -750,7 +751,10 @@ const make = Effect.gen(function* () {
       });
 
     if (options?.fresh) {
-      if (activeSession) yield* providerService.stopSession({ threadId });
+      if (activeSession)
+        yield* providerService
+          .stopSession({ threadId })
+          .pipe(Effect.catchTag("ProviderUnsupportedError", () => Effect.void));
       const session = yield* startProviderSession();
       yield* bindSessionToThread(session);
       return session.threadId;
@@ -855,12 +859,15 @@ const make = Effect.gen(function* () {
     const desired = input.modelSelection ?? thread.modelSelection;
     let handoff = false;
     if (previousInstance !== undefined) {
-      const previous = yield* providerService.getInstanceInfo(previousInstance);
+      const previous = yield* providerService
+        .getInstanceInfo(previousInstance)
+        .pipe(Effect.catchTag("ProviderUnsupportedError", () => Effect.succeed(undefined)));
       const next = yield* providerService.getInstanceInfo(desired.instanceId);
       const capabilities = yield* providerService.getCapabilities(desired.instanceId);
       const modelChanged = desired.model !== (active?.model ?? thread.modelSelection.model);
       const providers = yield* providerRegistry.getProviders;
       handoff =
+        previous === undefined ||
         previous.driverKind !== next.driverKind ||
         previous.continuationIdentity.continuationKey !==
           next.continuationIdentity.continuationKey ||
@@ -2059,11 +2066,21 @@ const make = Effect.gen(function* () {
           return;
         }
         const cachedModelSelection = threadModelSelections.get(event.payload.threadId);
-        const resume = ensureSessionForThread(
-          event.payload.threadId,
-          event.occurredAt,
-          cachedModelSelection !== undefined ? { modelSelection: cachedModelSelection } : {},
-        );
+        const sessions = yield* providerService.listSessions();
+        const active = sessions.find((session) => session.threadId === event.payload.threadId);
+        const instanceId = active?.providerInstanceId ?? thread.session.providerInstanceId;
+        const modelSelection =
+          cachedModelSelection?.instanceId === instanceId
+            ? cachedModelSelection
+            : active?.model && active.providerInstanceId
+              ? { instanceId: active.providerInstanceId, model: active.model }
+              : undefined;
+        // After a restart only the saved binding may identify the old provider.
+        // Leave it intact until the next turn can seed any pending handoff.
+        if (modelSelection === undefined) return;
+        const resume = ensureSessionForThread(event.payload.threadId, event.occurredAt, {
+          modelSelection,
+        });
         yield* thread.worktreePath
           ? withWorkspaceLease(path.resolve(thread.worktreePath), resume)
           : resume;

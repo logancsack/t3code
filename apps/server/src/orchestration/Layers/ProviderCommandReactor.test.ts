@@ -52,6 +52,7 @@ import { TextGenerationError } from "@t3tools/contracts";
 import {
   ProviderAdapterRequestError,
   ProviderWorkspaceMissingError,
+  ProviderUnsupportedError,
   type ProviderServiceError,
 } from "../../provider/Errors.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
@@ -187,6 +188,7 @@ describe("ProviderCommandReactor", () => {
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
     readonly unreadableHistory?: boolean;
+    readonly removedInstanceIds?: ReadonlySet<ProviderInstanceId>;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
     readonly turnStartBeforeStart?: boolean;
@@ -397,6 +399,9 @@ describe("ProviderCommandReactor", () => {
         }),
       assertConversationRollbackSupported: () => unsupported(),
       getInstanceInfo: (instanceId) => {
+        if (input?.removedInstanceIds?.has(instanceId)) {
+          return Effect.fail(new ProviderUnsupportedError({ provider: instanceId }));
+        }
         const raw = String(instanceId);
         const driverKind = ProviderDriverKind.make(
           raw.startsWith("claude")
@@ -4014,6 +4019,16 @@ describe("ProviderCommandReactor", () => {
       },
     });
     const now = "2026-01-01T00:00:00.000Z";
+    harness.runtimeSessions.push({
+      threadId: ThreadId.make("thread-1"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-4-6",
+      status: "ready",
+      runtimeMode: "full-access",
+      createdAt: now,
+      updatedAt: now,
+    });
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -4024,6 +4039,7 @@ describe("ProviderCommandReactor", () => {
           threadId: ThreadId.make("thread-1"),
           status: "ready",
           providerName: "claudeAgent",
+          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
           runtimeMode: "full-access",
           activeTurnId: null,
           lastError: null,
@@ -4634,6 +4650,169 @@ describe("ProviderCommandReactor", () => {
       expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
         modelSelection: next,
         input: expect.stringContaining("Keep the existing plan unapproved."),
+      });
+    },
+  );
+
+  it.each([true, false])(
+    "replays context when the source instance was removed (active: %s)",
+    async (active) => {
+      const removedInstanceIds = new Set<ProviderInstanceId>();
+      const harness = await createHarness({ removedInstanceIds });
+      const threadId = ThreadId.make("thread-1");
+      const dispatch = (id: string, modelSelection: ModelSelection) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(id),
+          threadId,
+          message: { messageId: asMessageId(id), role: "user", text: id, attachments: [] },
+          modelSelection,
+          runtimeMode: "approval-required",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          createdAt:
+            id === "original-task" ? "2026-01-01T00:00:01.000Z" : "2026-01-01T00:00:02.000Z",
+        });
+      await harness.runEffect(
+        dispatch("original-task", {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        }),
+      );
+      await harness.runEffect(harness.drainTurnStarts);
+      removedInstanceIds.add(ProviderInstanceId.make("codex"));
+      if (!active) harness.runtimeSessions.length = 0;
+      else
+        harness.stopSession.mockImplementationOnce(
+          () => Effect.fail(new ProviderUnsupportedError({ provider: "codex" })) as never,
+        );
+      const next = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5-2",
+      };
+      await harness.runEffect(dispatch("explicit-replacement", next));
+      await harness.runEffect(harness.drainTurnStarts);
+      expect(harness.startSession).toHaveBeenCalledTimes(2);
+      expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+        fresh: true,
+        modelSelection: next,
+      });
+      expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
+      expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+        modelSelection: next,
+        input: expect.stringContaining("original-task"),
+      });
+      expect(
+        (await harness.readModel()).threads[0]?.activities.some(
+          (a) => a.kind === "provider.turn.start.failed",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([false, true])(
+    "preserves a pending handoff across a runtime mode change after restart (active: %s)",
+    async (active) => {
+      const threadId = ThreadId.make("thread-1");
+      const next = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5-2",
+      };
+      const harness = await createHarness({
+        beforeStart: [
+          {
+            type: "thread.message.user.append",
+            commandId: CommandId.make("prior-message"),
+            threadId,
+            message: {
+              messageId: asMessageId("original-task"),
+              text: "Keep this plan unapproved.",
+              attachments: [],
+            },
+            createdAt: "2026-01-01T00:00:01.000Z",
+          },
+          {
+            type: "thread.session.set",
+            commandId: CommandId.make("saved-codex-binding"),
+            threadId,
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "codex",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              runtimeMode: "approval-required",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-01-01T00:00:01.000Z",
+            },
+            createdAt: "2026-01-01T00:00:01.000Z",
+          },
+        ],
+      });
+      if (active)
+        harness.runtimeSessions.push({
+          threadId,
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+          status: "ready",
+          runtimeMode: "approval-required",
+          resumeCursor: { opaque: "existing-codex-session" },
+          createdAt: "2026-01-01T00:00:01.000Z",
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        });
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("save-pending-model"),
+          threadId,
+          modelSelection: next,
+        }),
+      );
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.runtime-mode.set",
+          commandId: CommandId.make("change-mode-before-handoff"),
+          threadId,
+          runtimeMode: "full-access",
+          createdAt: "2026-01-01T00:00:02.000Z",
+        }),
+      );
+      await harness.drain();
+      expect(harness.startSession).toHaveBeenCalledTimes(active ? 1 : 0);
+      if (active)
+        expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+          modelSelection: { instanceId: "codex", model: "gpt-5-codex" },
+          runtimeMode: "full-access",
+          resumeCursor: { opaque: "existing-codex-session" },
+        });
+      expect((await harness.readModel()).threads[0]?.session?.providerInstanceId).toBe("codex");
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("send-after-mode"),
+          threadId,
+          message: {
+            messageId: asMessageId("send-after-mode"),
+            role: "user",
+            text: "Continue here",
+            attachments: [],
+          },
+          modelSelection: next,
+          runtimeMode: "full-access",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          createdAt: "2026-01-01T00:00:03.000Z",
+        }),
+      );
+      await harness.runEffect(harness.drainTurnStarts);
+      expect(harness.startSession).toHaveBeenCalledTimes(active ? 2 : 1);
+      expect(harness.startSession.mock.calls.at(-1)?.[1]).toMatchObject({
+        fresh: true,
+        modelSelection: next,
+        runtimeMode: "full-access",
+      });
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+        modelSelection: next,
+        input: expect.stringContaining("Keep this plan unapproved."),
       });
     },
   );
