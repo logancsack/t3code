@@ -171,15 +171,30 @@ it.each([false, true])(
   },
 );
 
-it("keeps follow-ups on their existing model and supports a server without model routing", async () => {
-  expect(
-    await host.dispatch!({ environmentId: "aldo-machine", command: command(false), primary: true }),
-  ).toEqual({ sequence: 0 });
+it.each([false, true])(
+  "preserves explicit=%s on follow-ups without first-turn routing",
+  async (explicit) => {
+    host.explicit = explicit;
+    const followup = command(false);
+    expect(
+      await host.dispatch!({ environmentId: "aldo-machine", command: followup, primary: true }),
+    ).toEqual({ sequence: 0 });
+    expect(host.hold).toHaveBeenCalledWith(
+      "aldo-machine",
+      { ...followup, aldoModelExplicit: explicit },
+      null,
+      true,
+    );
+  },
+);
+
+it.each([false, true])("supports a server without model routing (first=%s)", async (first) => {
   host.routes = false;
+  const original = command(first);
   expect(
-    await host.dispatch!({ environmentId: "aldo-machine", command: command(true), primary: true }),
+    await host.dispatch!({ environmentId: "aldo-machine", command: original, primary: true }),
   ).toEqual({ sequence: 0 });
-  expect(host.hold).toHaveBeenCalledTimes(2);
+  expect(host.hold).toHaveBeenCalledWith("aldo-machine", original, null, true);
 });
 
 it("routes an implementation thread's bootstrap while preserving its source plan", async () => {
