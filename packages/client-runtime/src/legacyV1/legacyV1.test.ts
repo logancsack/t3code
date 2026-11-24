@@ -219,6 +219,9 @@ describe("a generation-1 machine's captured thread list", () => {
         title: "Redacted thread",
         status: "running",
         activeRunId: shellCapture.threads[0]?.latestTurn.turnId,
+        // The sidebar counts a working thread's time from here.
+        latestRunStartedAt: DateTime.makeUnsafe(shellCapture.threads[0]!.latestTurn.startedAt),
+        latestRunCompletedAt: null,
         pendingRuntimeRequest: null,
       },
     ]);

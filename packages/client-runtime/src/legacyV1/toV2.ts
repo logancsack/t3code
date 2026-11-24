@@ -131,6 +131,13 @@ export function mapThreadShell(thread: V1ThreadShell): OrchestrationV2ThreadShel
     ...threadFields(thread),
     latestRunId: runId,
     activeRunId: status === "running" ? runId : null,
+    ...(thread.latestTurn === null
+      ? {}
+      : {
+          latestRunRequestedAt: at(thread.latestTurn.requestedAt),
+          latestRunStartedAt: atOrNull(thread.latestTurn.startedAt),
+          latestRunCompletedAt: atOrNull(thread.latestTurn.completedAt),
+        }),
     status,
     ...(thread.session?.lastError ? { lastError: thread.session.lastError } : {}),
     pendingRuntimeRequest:
