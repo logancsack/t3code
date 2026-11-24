@@ -280,7 +280,7 @@ export function aldoSharesByTurn(
 }
 
 /** "https://www.opentable.com/r/x" → "opentable.com". */
-export function aldoSiteOf(url: string | null | undefined): string | null {
+function aldoSiteOf(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
     const parsed = new URL(url.trim());
@@ -866,7 +866,7 @@ const RECAP_PHRASES = 3;
  * count once; commands only when there's nothing else to say. Null when
  * none of the steps could be put in words.
  */
-export function aldoWorkRecap(entries: ReadonlyArray<Entry>): string | null {
+function aldoWorkRecap(entries: ReadonlyArray<Entry>): string | null {
   const steps = aldoStepsInOrder(entries).filter((s): s is AldoStep => s !== null);
   if (steps.length === 0) return null;
   const order: AldoStepKind[] = [];

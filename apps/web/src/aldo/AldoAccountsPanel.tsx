@@ -9,8 +9,6 @@ import { AldoBrandTile } from "./AldoBrandTile";
 import { useAldoAccounts } from "./useAldoAccounts";
 import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";
 
-export { ALDO_ACCOUNT_SPECS };
-
 export function AldoAccountButton(props: {
   readonly kind: AldoAccountKind;
   readonly account: AldoAccount | undefined;

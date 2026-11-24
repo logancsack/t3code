@@ -254,6 +254,7 @@ import { assistantCitationNavigation } from "../../lib/assistantCitationNavigati
 import { Button } from "../ui/button";
 import { useManagedPolicy } from "../../state/managedPolicy";
 import { hasProviderSetup } from "./ProviderStatusBanner";
+import { isProviderInstanceSendReady } from "../../providerInstances";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import { isVideoAttachment, type SessionPhase, type Thread } from "../../types";
@@ -944,12 +945,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     lockedInstanceId:
       activeThread?.runtime?.providerInstanceId ?? activeThreadModelSelection?.instanceId,
   });
+  // Aldo: a machine has no CLI to sign in from, so an expired sign-in blocks sending until it is reconnected.
+  const authenticationRequiredInstanceId =
+    isAldoCloud && !isProviderInstanceSendReady(selectedProviderEntry)
+      ? selectedProviderEntry?.instanceId
+      : undefined;
   const noProviderAvailable =
-    selectedProviderEntry === undefined && multipleModelSelections === null;
+    (selectedProviderEntry === undefined || authenticationRequiredInstanceId !== undefined) &&
+    multipleModelSelections === null;
   const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??
+      authenticationRequiredInstanceId ??
       (lockedProvider === null
         ? providerInstanceEntries.find((entry) => hasProviderSetup(entry.snapshot))?.instanceId
         : undefined))

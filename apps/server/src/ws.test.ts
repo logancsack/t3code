@@ -139,6 +139,7 @@ import * as SourceControlRepositoryService from "./sourceControl/SourceControlRe
 import * as SourceControlSignIn from "./sourceControl/SourceControlSignIn.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
+import * as ThreadLiveWork from "./managedDevPc/ThreadLiveWork.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -292,6 +293,7 @@ it.effect("runs editor, remote open target and direct endpoint discovery side by
 
 const ReplayTestLayer = OrchestrationEventStore.layer.pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
+  Layer.provideMerge(ThreadLiveWork.layerOff),
 );
 
 const resumeSkipsUnknownTypes = (scope: "thread" | "shell") =>
@@ -887,6 +889,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(DatabaseStorage.DatabaseStorage)({}),
   Layer.mock(TerminalManager.TerminalManager)({}),
   Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+  ThreadLiveWork.layerOff,
   Layer.mock(ThreadManagement.ThreadManagementService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
   Layer.mock(UsageService.UsageService)({}),

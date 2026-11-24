@@ -79,7 +79,7 @@ function wordedInput(input: unknown): unknown {
  * A tool call as the list words it: no output or file bodies, and times fixed at its start so an
  * update that only adds output leaves it equal.
  */
-export function bareToolItem(item: ToolItem, startedAt: LiveWork["startedAt"]): ToolItem {
+function bareToolItem(item: ToolItem, startedAt: LiveWork["startedAt"]): ToolItem {
   const fixed = { startedAt, updatedAt: startedAt, completedAt: null };
   switch (item.type) {
     case "command_execution": {
@@ -215,17 +215,21 @@ export function makeTracker() {
 }
 
 /** Adds what a thread is doing to its shell. Anything but a managed workspace adds nothing. */
-export class ThreadLiveWork extends Context.Reference<{
-  readonly withLiveWork: (shell: OrchestrationV2ThreadShell) => OrchestrationV2ThreadShell;
-}>("t3/managedDevPc/ThreadLiveWork", {
-  defaultValue: () => ({ withLiveWork: (shell) => shell }),
-}) {}
+export class ThreadLiveWork extends Context.Service<
+  ThreadLiveWork,
+  {
+    readonly withLiveWork: (shell: OrchestrationV2ThreadShell) => OrchestrationV2ThreadShell;
+  }
+>()("t3/managedDevPc/ThreadLiveWork") {}
+
+/** For harnesses that are not a managed workspace. */
+export const layerOff = Layer.succeed(ThreadLiveWork, { withLiveWork: (shell) => shell });
 
 export const layer = Layer.effect(
   ThreadLiveWork,
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
-    if (!config.managedDevPc) return ThreadLiveWork.defaultValue();
+    if (!config.managedDevPc) return { withLiveWork: (shell) => shell };
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const tracker = makeTracker();
     yield* forkParked(

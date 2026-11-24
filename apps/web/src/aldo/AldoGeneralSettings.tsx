@@ -57,26 +57,29 @@ export function AldoGeneralBasics(props: { readonly sendShortcutRow: ReactNode }
 }
 
 /** Settings → Appearance's Layout in Aldo: the simple rail or every thread. */
-export function AldoLayoutRow() {
+export function AldoLayoutSection() {
   const simple = useAldoSimpleMode();
   return (
-    <SettingsRow
-      {...searchableSetting("aldo-simple-mode")}
-      description="Simple shows Aldo, what needs you and your Library. Full adds every thread and the developer tools."
-      control={
-        <ToggleGroup
-          aria-label="Layout"
-          variant="segmented"
-          value={[simple ? "simple" : "full"]}
-          onValueChange={(next) => {
-            if (next[0] === "simple" || next[0] === "full") setAldoSimpleMode(next[0] === "simple");
-          }}
-        >
-          <Toggle value="simple">Simple</Toggle>
-          <Toggle value="full">Full</Toggle>
-        </ToggleGroup>
-      }
-    />
+    <SettingsSection title="Layout" hideTitle>
+      <SettingsRow
+        {...searchableSetting("aldo-simple-mode")}
+        description="Simple shows Aldo, what needs you and your Library. Full adds every thread and the developer tools."
+        control={
+          <ToggleGroup
+            aria-label="Layout"
+            variant="segmented"
+            value={[simple ? "simple" : "full"]}
+            onValueChange={(next) => {
+              if (next[0] === "simple" || next[0] === "full")
+                setAldoSimpleMode(next[0] === "simple");
+            }}
+          >
+            <Toggle value="simple">Simple</Toggle>
+            <Toggle value="full">Full</Toggle>
+          </ToggleGroup>
+        }
+      />
+    </SettingsSection>
   );
 }
 

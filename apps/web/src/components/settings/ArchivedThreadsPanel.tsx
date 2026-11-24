@@ -12,6 +12,8 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { isAldoCloud } from "../../aldo/api";
+import { ALDO_ARCHIVE_EMPTY } from "../../aldo/AldoEmptyStates";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { readLocalApi } from "../../localApi";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
@@ -235,7 +237,8 @@ export function ArchivedThreadsPanel() {
             description={
               isLoadingArchive
                 ? gt("Checking connected environments.")
-                : (archiveError ?? gt("Archived threads will appear here."))
+                : (archiveError ??
+                  (isAldoCloud ? ALDO_ARCHIVE_EMPTY : gt("Archived threads will appear here.")))
             }
           />
         </SettingsSection>

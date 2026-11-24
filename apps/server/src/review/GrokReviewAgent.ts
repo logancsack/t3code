@@ -19,10 +19,10 @@ import { toJsonSchemaObject } from "@t3tools/provider-core/server/textGeneration
 import { GROK_REVIEW_SENSITIVE_PATH_GLOBS } from "./GrokReviewPrivacy.ts";
 
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
-export const GROK_AGENT_TIMEOUT_MS = 3 * 60 * 1_000;
+const GROK_AGENT_TIMEOUT_MS = 3 * 60 * 1_000;
 // Grok Build intermittently fails a prompt it handles on the next sample, so retryable
 // failures get a fresh subprocess. The caller's deadline bounds retries, not attempts alone.
-export const GROK_AGENT_MAX_ATTEMPTS = 3;
+const GROK_AGENT_MAX_ATTEMPTS = 3;
 /** Never start an attempt that cannot plausibly finish before the deadline. */
 export const GROK_AGENT_MIN_ATTEMPT_MS = 40 * 1_000;
 const GROK_AGENT_RETRY_BASE_DELAY_MS = 1_500;

@@ -95,7 +95,7 @@ const PERSONALIZATION = {
  * phone's bar). Pages that aren't in the nav have one too, so none opens on a
  * bare section.
  */
-export const ALDO_SETTINGS_PAGES: Readonly<
+const ALDO_SETTINGS_PAGES: Readonly<
   Record<string, { readonly title: string; readonly intro: string }>
 > = {
   "/settings/account": {
@@ -319,7 +319,7 @@ export function aldoSettingsRedirect(location: {
  * worktrees and logs that Aldo's machines don't keep. Aldo connects each
  * thread's machine itself, so T3's Connections page is its own connections.
  */
-export const ALDO_HIDDEN_SETTINGS_PATHS: ReadonlySet<string> = new Set([
+const ALDO_HIDDEN_SETTINGS_PATHS: ReadonlySet<string> = new Set([
   "/settings/snap-shot",
   "/settings/storage",
   // Its pages moved (aldoSettingsRedirect).

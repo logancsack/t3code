@@ -2257,6 +2257,13 @@ export const OrchestrationV2ThreadLiveWork = Schema.Struct({
 });
 export type OrchestrationV2ThreadLiveWork = typeof OrchestrationV2ThreadLiveWork.Type;
 
+// Live work is a hint over a turn-item union that grows; a value this build cannot read (an older
+// or newer shape) is dropped instead of failing the whole shell.
+const lenientLiveWork = <S extends Schema.Top>(schema: S) =>
+  Schema.optional(
+    Schema.UndefinedOr(schema).pipe(Schema.catchDecoding(() => Effect.succeedSome(undefined))),
+  );
+
 export const OrchestrationV2ThreadShell = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -2340,7 +2347,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
     ),
   ),
   lastTitleRegeneration: Schema.optional(Schema.NullOr(OrchestrationV2LastTitleRegeneration)),
-  liveWork: Schema.optional(OrchestrationV2ThreadLiveWork),
+  liveWork: lenientLiveWork(OrchestrationV2ThreadLiveWork),
   deletedAt: Schema.NullOr(Schema.DateTimeUtc),
 });
 export type OrchestrationV2ThreadShell = typeof OrchestrationV2ThreadShell.Type;
@@ -2971,7 +2978,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
       })),
     ),
   ),
-  liveWork: Schema.optional(
+  liveWork: lenientLiveWork(
     OrchestrationV2ThreadLiveWork.mapFields((fields) => ({
       ...fields,
       startedAt: Schema.DateTimeUtcFromString,

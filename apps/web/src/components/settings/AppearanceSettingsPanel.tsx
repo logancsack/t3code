@@ -19,6 +19,8 @@ import {
   type SidebarStageBackdropVariant,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
+import { isAldoCloud } from "../../aldo/api";
+import { AldoLayoutSection } from "../../aldo/AldoGeneralSettings";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
@@ -166,6 +168,8 @@ export function AppearanceSettingsPanel() {
           />
         </div>
       </SettingsSection>
+
+      {isAldoCloud ? <AldoLayoutSection /> : null}
 
       <SettingsSection id="appearance-interface" title={gt("Interface")}>
         <SettingsRow

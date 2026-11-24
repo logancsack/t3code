@@ -19,8 +19,8 @@ export const MAX_REVIEW_IMPACT_CHARS = 350;
 export const MAX_REVIEW_SUGGESTION_CHARS = 500;
 export const MAX_REVIEW_VERIFICATION_CHARS = 350;
 export const MAX_REVIEW_LIST_ENTRY_CHARS = 300;
-export const MAX_REVIEW_DELEGATION_CHARS = 800;
-export const MAX_REVIEW_DELEGATION_PATHS = 8;
+const MAX_REVIEW_DELEGATION_CHARS = 800;
+const MAX_REVIEW_DELEGATION_PATHS = 8;
 export const GROK_REVIEW_FINDINGS_OMITTED_LIMITATION =
   "Some model-proposed findings were omitted because they were malformed or exceeded the report limit.";
 
@@ -277,7 +277,7 @@ function findingLocation(finding: GrokReviewFinding): string {
   return `${finding.path}:${finding.startLine}`;
 }
 
-export function renderGrokReviewMarkdown(input: {
+function renderGrokReviewMarkdown(input: {
   readonly status: GrokReviewStatus;
   readonly summary: string;
   readonly findings: ReadonlyArray<GrokReviewFinding>;

@@ -34,7 +34,7 @@ export interface TurnLivenessOptions {
   readonly maxAutoRetries: number;
 }
 
-export const DEFAULT_OPTIONS: TurnLivenessOptions = {
+const DEFAULT_OPTIONS: TurnLivenessOptions = {
   silenceMs: 10 * 60_000,
   resumeGraceMs: 90_000,
   maxAutoRetries: 2,
@@ -73,7 +73,7 @@ type Shell = Pick<
  * Whether a silent thread is waiting on its model. A person asked to approve or answer, a tool
  * still running and background work may all take as long as they take.
  */
-export function waitsOnModel(
+function waitsOnModel(
   shell: Shell,
   items: ReadonlyArray<Pick<OrchestrationV2TurnItem, "type" | "status">>,
 ): boolean {

@@ -1,11 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - a build check that runs on plain Node, with no Effect runtime.
 /**
- * Fails when the JavaScript the home screen downloads, gzipped, grows past its
- * budget. Reads a finished Aldo cloud build (`VITE_ALDO_CLOUD=1 vp build`):
- * the scripts index.html loads, and the route chunks the router loads before
- * the home screen first renders, each with every chunk they import.
- *
- *   node scripts/check-first-screen-size.ts [dist]
+ * Fails when the gzipped JavaScript the home screen downloads grows past its budget. Reads a
+ * finished Aldo cloud build: `node scripts/check-first-screen-size.ts [dist]`.
  */
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";

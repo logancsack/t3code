@@ -54,7 +54,7 @@ import {
   managedThreadNeedsTerminalization,
 } from "./legacyProjection.ts";
 
-export const MANAGED_DEVPC_DRAIN_DETAIL =
+const MANAGED_DEVPC_DRAIN_DETAIL =
   "The agent run was stopped because the workspace is being paused. The run is complete with an infrastructure interruption; the original request remains available to retry after resume.";
 
 /** Reads could not be answered now; the caller tries again. */
@@ -248,7 +248,7 @@ export class ManagedDevPc extends Context.Service<
 
 const unavailable = (cause: unknown) => new ManagedDevPcUnavailableError({ cause });
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const { withLiveWork } = yield* ThreadLiveWork.ThreadLiveWork;
   const projects = yield* ProjectStore.ProjectStoreV2;

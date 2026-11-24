@@ -30,7 +30,7 @@ export class GrokReviewService extends Context.Service<
   }
 >()("t3/review/GrokReviewService") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const review = yield* ReviewService.ReviewService;
   const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const services = yield* Effect.context<ProviderCodeReviewServices>();

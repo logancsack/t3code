@@ -525,7 +525,7 @@ export function legacyTurnPage(input: {
   };
 }
 
-export function hasRunningManagedTurn(threads: ReadonlyArray<LegacyThreadShell>): boolean {
+function hasRunningManagedTurn(threads: ReadonlyArray<LegacyThreadShell>): boolean {
   return threads.some(
     (thread) =>
       thread.latestTurn?.state === "running" &&
@@ -541,7 +541,7 @@ export function hasRunningManagedTurn(threads: ReadonlyArray<LegacyThreadShell>)
 export const QUEUED_TURN_START_FUTURE_SKEW_MS = 2 * 60_000;
 
 /** An accepted message stays work until a turn adopts it or a failed start rejects it. */
-export function hasQueuedManagedTurnStart(
+function hasQueuedManagedTurnStart(
   threads: ReadonlyArray<LegacyThreadShell>,
   nowMs: number,
 ): boolean {
@@ -567,7 +567,7 @@ export function hasQueuedManagedTurnStart(
 }
 
 /** A provider session mid-boot is about to run a turn; that is agent work too. */
-export function hasStartingManagedSession(threads: ReadonlyArray<LegacyThreadShell>): boolean {
+function hasStartingManagedSession(threads: ReadonlyArray<LegacyThreadShell>): boolean {
   return threads.some((thread) => thread.session?.status === "starting");
 }
 
@@ -576,7 +576,7 @@ export function hasStartingManagedSession(threads: ReadonlyArray<LegacyThreadShe
  * reported apart so the platform holds the workspace under its own bounded policy instead of
  * forever for a forgotten background shell.
  */
-export function managedBackgroundWork(
+function managedBackgroundWork(
   threads: ReadonlyArray<LegacyThreadShell>,
 ): "working" | "monitoring" | null {
   let monitoring = false;
@@ -588,7 +588,7 @@ export function managedBackgroundWork(
 }
 
 /** Work blocked on the human: safe to pause under, yet not "nothing to do". */
-export function hasPendingManagedWork(threads: ReadonlyArray<LegacyThreadShell>): boolean {
+function hasPendingManagedWork(threads: ReadonlyArray<LegacyThreadShell>): boolean {
   return threads.some(
     (thread) =>
       thread.hasPendingApprovals || thread.hasPendingUserInput || thread.hasActionableProposedPlan,

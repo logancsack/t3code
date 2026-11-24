@@ -5,6 +5,8 @@ import {
 import { msg, T, useMessages } from "gt-react";
 import { ShieldIcon } from "lucide-react";
 import { memo, use } from "react";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoApprovalSentence } from "../../aldo/approvalWords";
 import { type PendingApproval } from "../../session-logic";
 import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -75,7 +77,11 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
       }
     >
       <div className="ms-7.5 flex min-w-0 flex-col gap-1 pb-1 text-xs">
-        {approval.appName ? (
+        {isAldoCloud ? (
+          <span className="text-foreground">
+            {aldoApprovalSentence(approval.requestKind, approval.appName)}
+          </span>
+        ) : approval.appName ? (
           <span className="text-muted-foreground wrap-anywhere">{approval.appName}</span>
         ) : null}
         {approval.reason ? (

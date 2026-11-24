@@ -1369,7 +1369,7 @@ export const layerPullRequestsToolkit = toolkitRegistration(
 
 const layerIssuesToolkit = toolkitRegistration(IssuesToolkit, IssuesHandlers.layer);
 
-export const layerReviewToolkit = toolkitRegistration(ReviewToolkit, ReviewHandlers.layer);
+const layerReviewToolkit = toolkitRegistration(ReviewToolkit, ReviewHandlers.layer);
 
 const layerDeviceStandardToolkitRegistration = toolkitRegistration(
   DeviceStandardToolkit,

@@ -1,24 +1,14 @@
-// Aldo's settings frame: the way back to threads at the head of the nav (with
-// the Esc that already leaves), each page's name and what it's for at its top,
-// and on a phone a bar with "Settings" back to the list and Done back to the
-// threads (AldoSettingsHome is the list).
+// Aldo's settings frame: each page's name and what it's for at its top, and on
+// a phone a bar with "Settings" back to the list and Done back to the threads
+// (AldoSettingsHome is the list).
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useSettingsSearchTargetId } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
-import { Kbd } from "../components/ui/kbd";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "../components/ui/sidebar";
 import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
-import { isElectron } from "../env";
-import { cn } from "../lib/utils";
 import { aldoSettingsPage, aldoSettingsParent } from "./settings.logic";
 
 declare module "@tanstack/react-router" {
@@ -26,41 +16,6 @@ declare module "@tanstack/react-router" {
     /** Opened from the phone's list of settings, which is the entry before it. */
     aldoFromSettingsList?: boolean;
   }
-}
-
-/**
- * The nav's first row: back to the thread you came from. In the desktop app
- * it's the titlebar too, so it drags the window and clears macOS's controls.
- */
-export function AldoSettingsBackBar() {
-  const navigateToMainApp = useNavigateToMainApp();
-  const { isMobile, setOpenMobile } = useSidebar();
-  return (
-    <div
-      className={cn(
-        "flex h-[var(--workspace-topbar-height)] shrink-0 items-center px-2",
-        isElectron && "drag-region md:ps-[var(--workspace-controls-left)]",
-      )}
-    >
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            className="font-medium text-sidebar-foreground"
-            onClick={() => {
-              if (isMobile) setOpenMobile(false);
-              void navigateToMainApp();
-            }}
-          >
-            <ArrowLeftIcon />
-            <span className="flex-1 truncate">Back to threads</span>
-            <Kbd aria-hidden="true" className="max-md:hidden">
-              Esc
-            </Kbd>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
-    </div>
-  );
 }
 
 /**

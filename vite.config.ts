@@ -64,7 +64,6 @@ const ALDO_PRODUCT_FILES = [
   "apps/web/src/aldo/**",
   "apps/web/src/landingDemo/**",
   "apps/web/src/prismGlass.ts",
-  "apps/web/src/components/GitHubRepositoryBrowser.tsx",
   "apps/web/src/components/RightPanelTabs.aldo.dom.test.tsx",
   "apps/web/src/components/settings/AuthConnectorDialog.tsx",
   "apps/web/src/components/settings/authConnectorMethods.ts",

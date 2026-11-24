@@ -503,6 +503,17 @@ describe("thread open stats", () => {
     const opens = { openedAt: 1, score: 1, picks: [{ query: "upl", at: 1 }] };
     expect(decode({ ...shell, opens }).opens).toEqual(opens);
     expect(decode({ ...shell, opens: { openedAt: "2026-10-01", score: 1 } }).opens).toBeNull();
+    const liveWork = {
+      kind: "thinking",
+      startedAt: "2026-10-01T00:00:00.000Z",
+      tool: null,
+      plan: null,
+    };
+    expect(decode({ ...shell, liveWork }).liveWork?.kind).toBe("thinking");
+    expect(
+      decode({ ...shell, liveWork: { ...liveWork, tool: { type: "from_a_newer_server" } } })
+        .liveWork,
+    ).toBeUndefined();
   });
 });
 

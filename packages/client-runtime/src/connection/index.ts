@@ -20,8 +20,6 @@ export * as EnvironmentSupervisor from "./supervisor.ts";
 export * as Wakeups from "./wakeups.ts";
 
 export {
-  isLegacyOrchestration,
-  isLegacyOrchestrationDescriptor,
   LegacyOrchestrationSupport,
   orchestrationProtocolCompatibilityError,
 } from "./compatibility.ts";
