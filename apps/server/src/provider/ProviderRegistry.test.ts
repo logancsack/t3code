@@ -1239,6 +1239,37 @@ it.layer(
       );
     });
 
+    it("keeps a managed machine's verified Codex state through an inconclusive check", () => {
+      const ready = {
+        instanceId: ProviderInstanceId.make("codex"),
+        driver: ProviderDriverKind.make("codex"),
+        status: "ready",
+        enabled: true,
+        installed: true,
+        auth: { status: "authenticated" },
+        checkedAt: "2026-04-14T00:00:00.000Z",
+        version: "0.130.0",
+        models: [],
+        slashCommands: [],
+        skills: [],
+      } as const satisfies ServerProvider;
+      const timedOut = {
+        ...ready,
+        status: "error",
+        auth: { status: "unknown" },
+        checkedAt: "2026-04-14T00:01:00.000Z",
+        version: null,
+        message: "Timed out while checking Codex app-server provider status.",
+      } as const satisfies ServerProvider;
+      const signedOut = { ...timedOut, auth: { status: "unauthenticated" } } as const;
+      const merge = ProviderRegistry.mergeProviderSnapshot;
+
+      assert.deepStrictEqual(merge(ready, timedOut, { keepReadyCodex: true }), ready);
+      assert.strictEqual(merge(ready, timedOut).status, "error");
+      assert.strictEqual(merge(ready, signedOut, { keepReadyCodex: true }).status, "error");
+      assert.strictEqual(merge(timedOut, timedOut, { keepReadyCodex: true }).status, "error");
+    });
+
     it("preserves previously discovered provider models when a refresh returns none", () => {
       const previousProvider = {
         instanceId: ProviderInstanceId.make("cursor"),

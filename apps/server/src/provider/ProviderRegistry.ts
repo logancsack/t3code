@@ -337,6 +337,40 @@ const retainsReadyCatalog = (
     (previousProvider.modelsRetained === true &&
       previousProvider.checkedAt === nextProvider.checkedAt));
 
+/** Aldo: an inconclusive Codex check on a managed machine keeps the last verified state. */
+const carryReadyCodex = (
+  previousProvider: ServerProvider,
+  nextProvider: ServerProvider,
+): ServerProvider | undefined => {
+  if (
+    nextProvider.driver !== ProviderDriverKind.make("codex") ||
+    !previousProvider.enabled ||
+    !previousProvider.installed ||
+    previousProvider.status !== "ready" ||
+    !nextProvider.enabled ||
+    !nextProvider.installed ||
+    nextProvider.status === "ready" ||
+    nextProvider.auth.status !== "unknown"
+  ) {
+    return undefined;
+  }
+  const { message: _message, versionAdvisory: _advisory, ...next } = nextProvider;
+  return {
+    ...next,
+    version: previousProvider.version,
+    status: previousProvider.status,
+    auth: previousProvider.auth,
+    checkedAt: previousProvider.checkedAt,
+    models: previousProvider.models,
+    slashCommands: previousProvider.slashCommands,
+    skills: previousProvider.skills,
+    ...(previousProvider.versionAdvisory
+      ? { versionAdvisory: previousProvider.versionAdvisory }
+      : {}),
+    ...(previousProvider.message ? { message: previousProvider.message } : {}),
+  };
+};
+
 /** A managed machine's host installs and pins the CLIs, so its clients are offered no update. */
 export const withoutProviderUpdate = (provider: ServerProvider): ServerProvider =>
   provider.versionAdvisory
@@ -353,11 +387,15 @@ export const withoutProviderUpdate = (provider: ServerProvider): ServerProvider 
 
 export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
-  nextProvider: ServerProvider,
+  uncheckedProvider: ServerProvider,
+  options?: { readonly keepReadyCodex?: boolean | undefined },
 ): ServerProvider => {
   if (!previousProvider) {
-    return nextProvider;
+    return uncheckedProvider;
   }
+  const nextProvider =
+    (options?.keepReadyCodex ? carryReadyCodex(previousProvider, uncheckedProvider) : undefined) ??
+    uncheckedProvider;
   const savedAccount = carrySavedAntigravityAccount(previousProvider, nextProvider);
   const { message: _uncheckedMessage, ...nextWithoutMessage } = nextProvider;
   const models = mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models);
@@ -635,7 +673,9 @@ export const layer = Layer.effect(
               key,
               options?.replace === true
                 ? provider
-                : mergeProviderSnapshot(mergedProviders.get(key), provider),
+                : mergeProviderSnapshot(mergedProviders.get(key), provider, {
+                    keepReadyCodex: config.managedDevPc,
+                  }),
             );
           }
 
