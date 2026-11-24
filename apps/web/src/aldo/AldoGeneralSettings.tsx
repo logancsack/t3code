@@ -13,7 +13,7 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { AldoInterestChips } from "./AldoInterestChips";
-import { AldoSettingsFold } from "./AldoSettingsShell";
+import { AldoSettingsFold } from "./AldoSettingsFold";
 import { saveAldoOnboarding, useAldoOnboardingState } from "./onboarding";
 import { setAldoPreloadSettings, useAldoPreloadSettings } from "./preloadSettings";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
