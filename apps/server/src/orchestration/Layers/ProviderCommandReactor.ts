@@ -3,6 +3,7 @@ import { parseTurnInstructions } from "../turnInstructions.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
   type ChatAttachment,
+  getProviderAttachmentLimitError,
   CommandId,
   EventId,
   type MessageId,
@@ -897,6 +898,7 @@ const make = Effect.gen(function* () {
         .pipe(Effect.map(Option.getOrUndefined));
       if (!detail) return yield* Effect.die(new Error("Continuation history is missing."));
       if (
+        input.continuation &&
         detail.messages.some(
           (message) => message.role === "user" && message.createdAt > input.createdAt,
         )
@@ -919,6 +921,19 @@ const make = Effect.gen(function* () {
             .map((attachment) => [attachment.id, attachment]),
         ).values(),
       ];
+      // Reserve the current message first, then replay the most recent files
+      // that fit a single provider request. Every file stays in the transcript.
+      const pendingAttachments = input.attachments ?? [];
+      const pendingIds = new Set(pendingAttachments.map((attachment) => attachment.id));
+      const replay: ChatAttachment[] = [];
+      for (const attachment of continuationAttachments.toReversed()) {
+        if (pendingIds.has(attachment.id)) continue;
+        if (!getProviderAttachmentLimitError([...pendingAttachments, ...replay, attachment])) {
+          replay.unshift(attachment);
+        }
+      }
+      const omittedAttachments = continuationAttachments.length - replay.length;
+      continuationAttachments = replay;
       const transcript = history
         .map(
           (message) =>
@@ -954,7 +969,19 @@ const make = Effect.gen(function* () {
         (transcript.length + decisions.length <= 80000
           ? `${transcript}\n\nRecorded decisions: ${decisions}`
           : `Original brief (read its full text in the transcript if abbreviated):\n${history.find((message) => message.role === "user")?.text.slice(0, 16000) ?? ""}\n\nRecent context:\n${transcript.slice(-24000)}`) +
+        (omittedAttachments > 0
+          ? `\n\n${omittedAttachments} prior attachments were not replayed to stay within provider request limits; their full metadata is in the transcript above. Read those files from the workspace as needed.`
+          : "") +
         "\n\nContinuation:\n";
+    }
+    const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
+    const attachmentError = getProviderAttachmentLimitError(normalizedAttachments);
+    if (attachmentError) {
+      return yield* new ProviderAdapterValidationError({
+        provider: desired.instanceId,
+        operation: "thread.turn.start",
+        issue: attachmentError,
+      });
     }
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
@@ -965,7 +992,6 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
     const baseInput = toNonEmptyProviderInput(continuationContext + input.messageText);
     // Adapters can interpret slash input as native command arguments. Optional
     // prompt context must not become part of those arguments.

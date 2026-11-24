@@ -442,6 +442,23 @@ describe("resolveComposerProviderSelection", () => {
     ).toBe(importedEntry.instanceId);
   });
 
+  it.each([undefined, false, true])(
+    "only unlocks a started thread when handoffs are advertised (%s)",
+    (threadModelHandoff) => {
+      const current = entry("codex");
+      const thread = importedThread(current.instanceId);
+      expect(
+        deriveLockedProvider({
+          thread,
+          selectedProvider: current.instanceId,
+          threadProvider: current.instanceId,
+          providers: [current.snapshot],
+          threadModelHandoff,
+        }),
+      ).toBe(threadModelHandoff === true ? null : "codex");
+    },
+  );
+
   it("keeps the session driver authoritative over instance and draft selections", () => {
     const selected = entry("claudeAgent", "claude_work");
     const sessionEntry = entry("ollama", "local_models");
@@ -615,6 +632,21 @@ describe("getStartedThreadModelChangeBlockReason", () => {
           instanceId: ProviderInstanceId.make("grok"),
           model: "grok-other",
         },
+      }),
+    ).toBeNull();
+  });
+
+  it("allows a new-thread-only provider on a handoff-capable server", () => {
+    expect(
+      getStartedThreadModelChangeBlockReason({
+        providers,
+        hasStartedSession: true,
+        threadModelHandoff: true,
+        currentModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-6.1-sol",
+        },
+        nextModelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
       }),
     ).toBeNull();
   });

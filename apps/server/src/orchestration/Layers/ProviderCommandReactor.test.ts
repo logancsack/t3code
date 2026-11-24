@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+import { ProviderSendTurnInput } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -4387,7 +4389,6 @@ describe("ProviderCommandReactor", () => {
 
   it("switches Codex to Claude with prior context and serializes duplicate switches", async () => {
     const harness = await createHarness();
-    const now = "2026-01-01T00:00:00.000Z";
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -4402,7 +4403,7 @@ describe("ProviderCommandReactor", () => {
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
-        createdAt: now,
+        createdAt: "2026-01-01T00:00:01.000Z",
       }),
     );
 
@@ -4426,7 +4427,7 @@ describe("ProviderCommandReactor", () => {
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
-        createdAt: now,
+        createdAt: "2026-01-01T00:00:02.000Z",
       }),
     );
 
@@ -4447,7 +4448,7 @@ describe("ProviderCommandReactor", () => {
         },
         runtimeMode: "approval-required",
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        createdAt: now,
+        createdAt: "2026-01-01T00:00:03.000Z",
       }),
     );
     await harness.runEffect(harness.drainTurnStarts);
@@ -4467,6 +4468,76 @@ describe("ProviderCommandReactor", () => {
       ),
     ).toBe(false);
   });
+
+  it.each(["file", "image"] as const)(
+    "bounds historical %s replay and reserves the pending attachments",
+    async (type) => {
+      const harness = await createHarness();
+      const attachment = (id: string) => ({
+        type,
+        id,
+        name: `${id}.${type === "image" ? "png" : "txt"}`,
+        mimeType: type === "image" ? "image/png" : "text/plain",
+        sizeBytes: type === "image" ? 8 * 1024 * 1024 : 1,
+      });
+      const start = (
+        id: string,
+        attachments: ReturnType<typeof attachment>[],
+        at: string,
+        switched = false,
+      ) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(id),
+          threadId: ThreadId.make("thread-1"),
+          message: { messageId: asMessageId(id), role: "user", text: id, attachments },
+          ...(switched
+            ? {
+                modelSelection: {
+                  instanceId: ProviderInstanceId.make("claudeAgent"),
+                  model: "claude-fable-5-2",
+                },
+              }
+            : {}),
+          runtimeMode: "approval-required",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          createdAt: at,
+        });
+      for (let i = 0; i < 3; i++) {
+        await harness.runEffect(
+          start(
+            `history-${i}`,
+            Array.from({ length: type === "image" ? 5 : 60 }, (_, n) =>
+              attachment(`history-${i}-${n}`),
+            ),
+            `2026-01-01T00:00:0${i + 1}.000Z`,
+          ),
+        );
+        await harness.runEffect(harness.drainTurnStarts);
+      }
+      const pending = [attachment("history-2-0"), attachment("pending")];
+      await harness.runEffect(start("handoff", pending, "2026-01-01T00:00:04.000Z", true));
+      await harness.runEffect(harness.drainTurnStarts);
+      const sent = harness.sendTurn.mock.calls.at(-1)?.[0];
+      expect(sent?.modelSelection).toMatchObject({
+        instanceId: "claudeAgent",
+        model: "claude-fable-5-2",
+      });
+      expect(() => Schema.decodeUnknownSync(ProviderSendTurnInput)(sent)).not.toThrow();
+      expect(sent?.attachments).toHaveLength(type === "image" ? 10 : 100);
+      expect(sent?.attachments?.slice(-2)).toEqual(pending);
+      expect(new Set(sent?.attachments?.map((a) => a.id)).size).toBe(sent?.attachments?.length);
+      expect(sent?.input).toContain("prior attachments were not replayed");
+      const transcript = NodeFS.readFileSync(
+        NodePath.join(harness.stateDir, "continuations", "thread-1-handoff.txt"),
+        "utf8",
+      );
+      expect(transcript).toContain("history-0-0");
+      expect(transcript).toContain("history-2-0");
+      expect(harness.sendTurn).toHaveBeenCalledTimes(4);
+      expect(harness.startSession).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("reports a refused named model without starting a substitute", async () => {
     const harness = await createHarness();

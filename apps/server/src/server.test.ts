@@ -5380,6 +5380,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.isUndefined(response.shellRevealInFileManager);
       assert.isUndefined(response.shellRevealInFileManagerKind);
       assert.equal(response.threadResumeCompletionMarker, true);
+      assert.equal(response.threadModelHandoff, true);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

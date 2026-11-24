@@ -609,6 +609,8 @@ export const ServerConfig = Schema.Struct({
   /** Whether thread subscriptions can emit an opt-in catch-up completion marker. */
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
   threadProviderContinuation: Schema.optionalKey(Schema.Boolean),
+  /** Whether existing threads can switch models through a fresh context-seeded session. */
+  threadModelHandoff: Schema.optionalKey(Schema.Boolean),
   /**
    * Whether thread detail reads accept a turn window (`turnLimit`/
    * `beforeCursor`) and return `page` metadata. Clients must not send window

@@ -2726,7 +2726,9 @@ export default function ChatView(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProjectDefaultModelSelection?.instanceId ??
     null;
+  const threadModelHandoff = serverConfig?.threadModelHandoff === true;
   const lockedProvider = deriveLockedProvider({
+    threadModelHandoff,
     thread: activeThread,
     selectedProvider: selectedProviderByThreadId,
     threadProvider,
@@ -9838,6 +9840,7 @@ export default function ChatView(props: ChatViewProps) {
         return null;
       }
       const reason = getStartedThreadModelChangeBlockReason({
+        threadModelHandoff,
         providers: providerStatuses,
         hasStartedSession: activeThread.session !== null,
         currentModelSelection: activeThread.modelSelection,
@@ -9846,7 +9849,7 @@ export default function ChatView(props: ChatViewProps) {
       });
       return reason ? `${reason.description} Start a new thread to use this model.` : null;
     },
-    [activeThread, providerStatuses],
+    [activeThread, providerStatuses, threadModelHandoff],
   );
 
   const onProviderModelSelect = useCallback(
@@ -9893,6 +9896,7 @@ export default function ChatView(props: ChatViewProps) {
         model: resolvedModel,
       };
       const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
+        threadModelHandoff,
         providers: providerStatuses,
         hasStartedSession: activeThread.session !== null,
         currentModelSelection: activeThread.modelSelection,
@@ -9923,6 +9927,7 @@ export default function ChatView(props: ChatViewProps) {
     [
       activeThread,
       handleRuntimeModeChange,
+      threadModelHandoff,
       lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
