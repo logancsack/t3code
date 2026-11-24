@@ -4531,12 +4531,13 @@ describe("ProviderCommandReactor", () => {
       const pending = [attachment("history-2-0"), attachment("pending")];
       await harness.runEffect(start("handoff", pending, "2026-01-01T00:00:04.000Z", true));
       await harness.runEffect(harness.drainTurnStarts);
-      const sent = harness.sendTurn.mock.calls.at(-1)?.[0];
+      const sent = Schema.decodeUnknownSync(ProviderSendTurnInput)(
+        harness.sendTurn.mock.calls.at(-1)?.[0],
+      );
       expect(sent?.modelSelection).toMatchObject({
         instanceId: "claudeAgent",
         model: "claude-fable-5-2",
       });
-      expect(() => Schema.decodeUnknownSync(ProviderSendTurnInput)(sent)).not.toThrow();
       expect(sent?.attachments).toHaveLength(type === "image" ? 10 : 100);
       expect(sent?.attachments?.slice(-2)).toEqual(pending);
       expect(new Set(sent?.attachments?.map((a) => a.id)).size).toBe(sent?.attachments?.length);
