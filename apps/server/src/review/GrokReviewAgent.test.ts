@@ -67,14 +67,11 @@ it.effect("runs Grok headlessly with medium effort and strict untrusted-code bou
         '  printf "%s\\n" "grok 0.2.112"',
         "  exit 0",
         "fi",
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         `: > ${JSON.stringify(argsLog)}`,
         'previous=""',
         'for argument in "$@"; do',
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         `  printf "%s\\n" "$argument" >> ${JSON.stringify(argsLog)}`,
         '  if [ "$previous" = "--prompt-file" ]; then',
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         `    cp "$argument" ${JSON.stringify(promptLog)}`,
         "  fi",
         '  previous="$argument"',
