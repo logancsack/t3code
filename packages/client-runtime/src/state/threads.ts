@@ -1175,6 +1175,43 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     );
   yield* Effect.forkScoped(followThread());
 
+  // The cached content is already showing. A host's remote copy refreshes it without waiting for
+  // a sleeping machine, and never replaces what a live stream delivered.
+  if (cache.refreshThread !== undefined) {
+    yield* cache.refreshThread(environmentId, threadId, initialSequence || null).pipe(
+      Effect.flatMap((copy) =>
+        applyLock.withPermits(1)(
+          Effect.gen(function* () {
+            if (Option.isNone(copy)) return;
+            const snapshot = copy.value;
+            const connection = yield* SubscriptionRef.get(supervisor.state);
+            const current = yield* SubscriptionRef.get(state);
+            const sequence = yield* SubscriptionRef.get(lastSequence);
+            if (
+              connection.phase === "connected" ||
+              current.status === "deleted" ||
+              snapshot.projection.thread.id !== threadId ||
+              snapshot.snapshotSequence < sequence ||
+              (snapshot.snapshotSequence === sequence && Option.isSome(current.data))
+            )
+              return;
+            yield* applyItemLocked({ kind: "snapshot", ...snapshot });
+            yield* SubscriptionRef.update(state, (latest) => ({
+              ...latest,
+              status: statusWithoutLiveData(latest.data),
+              error: Option.none(),
+            }));
+            yield* remember;
+            // The copy can hold a pending interaction, which the settled-only live path never saves.
+            yield* Effect.uninterruptible(persist(snapshot));
+          }),
+        ),
+      ),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+  }
+
   return state;
 });
 

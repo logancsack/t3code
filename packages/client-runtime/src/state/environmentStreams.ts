@@ -19,17 +19,21 @@ export function runStreamInEnvironment<A, E, R>(
   );
 }
 
-export function followStreamInEnvironment<A, E, R>(
+/** `whileDormant` is followed instead while the environment is dormant (`EnvironmentRegistry.followStream`). */
+export function followStreamInEnvironment<A, E, R, E2 = never, R2 = never>(
   environmentId: EnvironmentIdType,
   stream: Stream.Stream<A, E, R>,
+  whileDormant?: Stream.Stream<A, E2, R2>,
 ): Stream.Stream<
   A,
-  E,
-  EnvironmentRegistry.EnvironmentRegistry | Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor>
+  E | E2,
+  | EnvironmentRegistry.EnvironmentRegistry
+  | Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor>
+  | R2
 > {
   return Stream.unwrap(
     EnvironmentRegistry.EnvironmentRegistry.pipe(
-      Effect.map((registry) => registry.followStream(environmentId, stream)),
+      Effect.map((registry) => registry.followStream(environmentId, stream, whileDormant)),
     ),
   );
 }

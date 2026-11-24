@@ -95,6 +95,8 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
 
+  const prepareSocketUrl = auth.prepareWebSocketUrl ?? Effect.succeed;
+
   return Effect.fn("clientRuntime.connection.broker.primary")(function* (
     target: PrimaryConnectionTarget,
   ) {
@@ -104,7 +106,9 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
         environmentId: target.environmentId,
         label: target.label,
         httpBaseUrl: target.httpBaseUrl,
-        socketUrl: primarySocketUrl(target, presentation.metadata, yield* readClientOwnerParams),
+        socketUrl: yield* prepareSocketUrl(
+          primarySocketUrl(target, presentation.metadata, yield* readClientOwnerParams),
+        ),
         httpAuthorization: null,
         target,
       } satisfies PreparedConnection;
@@ -119,6 +123,7 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
     });
     return {
       ...authorized,
+      socketUrl: yield* prepareSocketUrl(authorized.socketUrl),
       target,
     } satisfies PreparedConnection;
   });
@@ -127,6 +132,7 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
 const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")(function* () {
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+  const gateway = yield* Effect.serviceOption(ClientCapabilities.PlatformEnvironmentGateway);
 
   return Effect.fn("clientRuntime.connection.broker.bearer")(function* (
     entry: ConnectionCatalogEntry & { readonly target: BearerConnectionTarget },
@@ -150,6 +156,22 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
         expected: target.environmentId,
         actual: profile.environmentId,
       });
+    }
+    if (Option.isSome(gateway)) {
+      const dynamic = yield* gateway.value.prepare({
+        connectionId: target.connectionId,
+        environmentId: target.environmentId,
+      });
+      if (Option.isSome(dynamic)) {
+        const authorized = yield* remote.authorizeBearer({
+          expectedEnvironmentId: target.environmentId,
+          httpBaseUrl: dynamic.value.httpBaseUrl,
+          wsBaseUrl: dynamic.value.wsBaseUrl,
+          bearerToken: dynamic.value.bearerToken,
+          connectionMethod: "direct",
+        });
+        return { ...authorized, target } satisfies PreparedConnection;
+      }
     }
     if (profile.authorization === "t3-connect") {
       const authorized = yield* remote.authorizeDpop({

@@ -47,6 +47,7 @@ import {
   interruptThreadTurn,
   revertThreadCheckpoint,
   resumeThreadQueue,
+  setOrchestrationCommandDispatchOverride,
   startThreadTurn,
 } from "./commands.ts";
 
@@ -163,6 +164,38 @@ describe("V2 environment commands", () => {
         { type: "queued-run.start", commandId: "send-selected", threadId, runId: "selected" },
         { type: "queue.resume", commandId: "resume-queue", threadId },
       ]);
+    }).pipe(Effect.provide(layerTestRandom)),
+  );
+
+  it.effect("sends a command through the host override while the environment is asleep", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+      const asleep = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        ...supervisor,
+        session: yield* SubscriptionRef.make(Option.none<RpcSession.RpcSession>()),
+      });
+      const queued: OrchestrationV2Command[] = [];
+      setOrchestrationCommandDispatchOverride(async ({ command, environmentId, primary }) => {
+        queued.push(command);
+        expect(environmentId).toBe("environment-1");
+        expect(primary).toBe(true);
+        return { sequence: 0 };
+      });
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => setOrchestrationCommandDispatchOverride(null)),
+      );
+
+      const result = yield* archiveThread({
+        commandId: CommandId.make("queued-while-asleep"),
+        threadId: ThreadId.make("thread-1"),
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, asleep));
+
+      expect(result).toEqual({ sequence: 0 });
+      expect(queued).toEqual([
+        { type: "thread.archive", commandId: "queued-while-asleep", threadId: "thread-1" },
+      ]);
+      expect(commands).toEqual([]);
     }).pipe(Effect.provide(layerTestRandom)),
   );
 

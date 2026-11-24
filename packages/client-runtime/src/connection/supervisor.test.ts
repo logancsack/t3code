@@ -948,6 +948,67 @@ describe("EnvironmentSupervisor", () => {
       }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect(
+    "keeps a dormant connection asleep through activations until the platform retries it",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          prepare: (attempt) =>
+            attempt === 1
+              ? Effect.fail(
+                  new ConnectionBlockedError({
+                    reason: "dormant",
+                    detail: "Its computer is asleep.",
+                  }),
+                )
+              : Effect.succeed(PREPARED_CONNECTION),
+        });
+        // A relay environment: a primary one is never parked offline.
+        const supervisor = yield* EnvironmentSupervisor.make(RELAY_ENTRY, {
+          initiallyDesired: true,
+        }).pipe(Effect.provide(harness.dependencies));
+
+        yield* awaitState(supervisor.state, (state) => state.phase === "blocked");
+        yield* harness.wake("application-active");
+        yield* harness.wake("application-active-probe");
+        yield* harness.wake("application-active-long");
+        yield* harness.wake("network-changed");
+        yield* harness.setNetworkStatus("offline");
+        yield* awaitState(supervisor.state, (state) => state.phase === "offline");
+        yield* harness.setNetworkStatus("online");
+        yield* awaitState(
+          supervisor.state,
+          (state) => state.phase === "blocked" && state.network === "online",
+        );
+        for (let tick = 0; tick < 10; tick++) {
+          yield* Effect.yieldNow;
+        }
+        expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+        expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("blocked");
+
+        yield* supervisor.retryNow;
+        yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+        expect(yield* Ref.get(harness.prepareCount)).toBe(2);
+      }),
+  );
+
+  it.effect("makes one attempt for a connect sent before its loop first ran", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ prepare: () => Effect.fail(blocked()) });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY).pipe(
+        Effect.provide(harness.dependencies),
+      );
+      yield* supervisor.connect;
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "blocked");
+      for (let tick = 0; tick < 10; tick++) {
+        yield* Effect.yieldNow;
+      }
+
+      expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+    }),
+  );
+
   it.effect("retries a blocked connection when platform credentials change", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

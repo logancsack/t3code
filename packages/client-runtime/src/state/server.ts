@@ -529,6 +529,28 @@ function sameCacheValue(previous: unknown, next: unknown): boolean {
   );
 }
 
+const loadCachedServerConfig = Effect.fn("EnvironmentServerConfigState.loadCached")(function* (
+  environmentId: EnvironmentId,
+) {
+  const cache = yield* Persistence.EnvironmentCacheStore;
+  const cachedConfig = yield* cache.loadServerConfig(environmentId).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Could not load cached server configuration.").pipe(
+        Effect.annotateLogs({
+          environmentId,
+          ...safeErrorLogAttributes(error),
+        }),
+        Effect.as(Option.none<ServerConfig>()),
+      ),
+    ),
+  );
+  return Option.map(cachedConfig, (cached): ServerConfigProjection => ({
+    config: withoutEnvironmentThemes(cached),
+    latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
+    source: "cache",
+  }));
+});
+
 export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
   function* (
     subscription: ServerConfigSubscriptionOptions,
@@ -538,24 +560,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
     const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
     const cache = yield* Persistence.EnvironmentCacheStore;
     const environmentId = supervisor.target.environmentId;
-    const cachedConfig = yield* cache.loadServerConfig(environmentId).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Could not load cached server configuration.").pipe(
-          Effect.annotateLogs({
-            environmentId,
-            ...safeErrorLogAttributes(error),
-          }),
-          Effect.as(Option.none<ServerConfig>()),
-        ),
-      ),
-    );
-    const state = yield* SubscriptionRef.make<Option.Option<ServerConfigProjection>>(
-      Option.map(cachedConfig, (cached) => ({
-        config: withoutEnvironmentThemes(cached),
-        latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
-        source: "cache" as const,
-      })),
-    );
+    const state = yield* SubscriptionRef.make(yield* loadCachedServerConfig(environmentId));
     const persistence = yield* Queue.sliding<ServerConfig>(1);
     const pendingPersistence = yield* Ref.make<Option.Option<ServerConfig>>(Option.none());
     let lastPersisted: ServerConfig | undefined;
@@ -672,22 +677,23 @@ function serverConfigStateChanges(
   subscription: ServerConfigSubscriptionOptions,
   machineCatalogs: Stream.Stream<ReadonlyArray<FetchedMachineCatalog>>,
 ) {
+  const present = <E, R>(projections: Stream.Stream<Option.Option<ServerConfigProjection>, E, R>) =>
+    projections.pipe(
+      Stream.filterMap((projection) =>
+        Option.match(projection, {
+          onNone: () => Result.failVoid,
+          onSome: (value) => Result.succeed(value),
+        }),
+      ),
+    );
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(
       makeEnvironmentServerConfigState(subscription, machineCatalogs).pipe(
-        Effect.map((state) =>
-          SubscriptionRef.changes(state).pipe(
-            Stream.filterMap((projection) =>
-              Option.match(projection, {
-                onNone: () => Result.failVoid,
-                onSome: (value) => Result.succeed(value),
-              }),
-            ),
-          ),
-        ),
+        Effect.map((state) => present(SubscriptionRef.changes(state))),
       ),
     ),
+    present(Stream.fromEffect(loadCachedServerConfig(environmentId))),
   );
 }
 

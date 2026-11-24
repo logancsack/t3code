@@ -62,7 +62,8 @@ export class PrimaryEnvironmentAuth extends Context.Service<
   PrimaryEnvironmentAuth,
   {
     readonly bearerToken: Effect.Effect<Option.Option<string>, ConnectionAttemptError>;
-    readonly prepareWebSocketUrl: (
+    /** Lets a host that proxies the primary socket rewrite or authorize its URL per attempt. */
+    readonly prepareWebSocketUrl?: (
       socketUrl: string,
     ) => Effect.Effect<string, ConnectionAttemptError>;
   }

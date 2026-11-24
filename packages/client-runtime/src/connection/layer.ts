@@ -71,9 +71,28 @@ export const watchDiscoveredCompatibility = Effect.fn("connection.watchDiscovere
   },
 );
 
-export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
+const layerConnectionStartup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+    const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
+    yield* watchDiscoveredCompatibility().pipe(Effect.forkScoped);
+    yield* registry.start;
+    const asleep = platformSource.asleep;
+    yield* platformSource.registrations.pipe(
+      Stream.runForEach((registrations) =>
+        asleep === undefined
+          ? registry.reconcilePlatform(registrations)
+          : asleep.pipe(Effect.flatMap((ids) => registry.reconcilePlatform(registrations, ids))),
+      ),
+      Effect.forkScoped,
+    );
+  }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
+);
+
+/** The connection layer over a caller's own RPC sessions (a browser-local demo, say). */
+export function makeLayer<R>(layerRpcSession: Layer.Layer<RpcSession.RpcSessionFactory, never, R>) {
   const layerDriver = ConnectionDriver.layer.pipe(
-    Layer.provide(Layer.mergeAll(ConnectionResolver.layer, RpcSession.layer(options))),
+    Layer.provide(Layer.mergeAll(ConnectionResolver.layer, layerRpcSession)),
   );
   const layerRegistry = EnvironmentRegistry.layer.pipe(Layer.provide(layerDriver));
   const layerOnboarding = ConnectionOnboarding.layer.pipe(Layer.provide(layerRegistry));
@@ -83,22 +102,14 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
     layerOnboarding,
     ConnectionResolver.layer,
   );
-  const layerConnectionStartup = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-      const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
-      yield* watchDiscoveredCompatibility().pipe(Effect.forkScoped);
-      yield* registry.start;
-      yield* platformSource.registrations.pipe(
-        Stream.runForEach(registry.reconcilePlatform),
-        Effect.forkScoped,
-      );
-    }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
-  );
   return layerConnectionStartup.pipe(
     Layer.provideMerge(layerConnectionServices),
     Layer.provideMerge(RemoteEnvironmentAuthorization.layer),
   );
+}
+
+export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
+  return makeLayer(RpcSession.layer(options));
 }
 
 export const layer = layerWithOptions({});

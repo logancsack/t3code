@@ -126,6 +126,9 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   readonly resumeCache?: NonNullable<Parameters<typeof makeEnvironmentThreadState>[1]>;
   readonly loadCached?: ReturnType<Persistence.EnvironmentCacheStore["Service"]["loadThread"]>;
   readonly saveThread?: Persistence.EnvironmentCacheStore["Service"]["saveThread"];
+  readonly refreshThread?: NonNullable<
+    Persistence.EnvironmentCacheStore["Service"]["refreshThread"]
+  >;
   readonly historyPaging?: "enabled" | "no-http" | "no-controller";
   readonly socketSnapshots?: true;
   readonly initialConfig?: Effect.Effect<object>;
@@ -243,6 +246,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
       Ref.update(savedThreads, (current) => [...current, thread]).pipe(
         Effect.andThen(options?.saveThread?.(environmentId, thread) ?? Effect.void),
       ),
+    ...(options?.refreshThread === undefined ? {} : { refreshThread: options.refreshThread }),
     removeThread: (_environmentId, threadId) =>
       Ref.update(removedThreads, (current) => [...current, threadId]),
     loadServerConfig: () => Effect.succeedNone,
@@ -548,6 +552,46 @@ describe("EnvironmentThreads", () => {
         expect(yield* Ref.get(h.loaderCalls)).toBe(1);
         expect(yield* SubscriptionRef.get(h.subscriptionCount)).toBe(1);
       }),
+  );
+
+  it.effect("refreshes cached content from the host's newer copy while disconnected", () =>
+    Effect.gen(function* () {
+      const copy = yield* Deferred.make<Option.Option<OrchestrationV2ThreadDetailSnapshot>>();
+      const afterSequences: Array<number | null> = [];
+      const h = yield* makeHarness({
+        cached: BASE_PROJECTION,
+        refreshThread: (_environmentId, _threadId, afterSequence) => {
+          afterSequences.push(afterSequence);
+          return Deferred.await(copy);
+        },
+      });
+      yield* awaitThreadState(
+        h.observed,
+        (value) => Option.getOrNull(value.data)?.thread.title === BASE_PROJECTION.thread.title,
+      );
+
+      yield* Deferred.succeed(
+        copy,
+        Option.some({
+          snapshotSequence: CACHED_SNAPSHOT_SEQUENCE + 2,
+          projection: {
+            ...BASE_PROJECTION,
+            thread: { ...BASE_PROJECTION.thread, title: "Host copy" },
+          },
+        }),
+      );
+      // Not live: nothing is connected.
+      yield* awaitThreadState(
+        h.observed,
+        (value) =>
+          value.status === "cached" && Option.getOrNull(value.data)?.thread.title === "Host copy",
+      );
+
+      expect(afterSequences).toEqual([CACHED_SNAPSHOT_SEQUENCE]);
+      expect((yield* Ref.get(h.savedThreads)).map((saved) => saved.snapshotSequence)).toEqual([
+        CACHED_SNAPSHOT_SEQUENCE + 2,
+      ]);
+    }),
   );
 
   it.effect("flushes newer data after an older background write completes", () =>

@@ -14,6 +14,7 @@ import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import {
   BearerConnectionCredential,
+  BearerConnectionProfile,
   type ConnectionCatalogEntry,
   SshConnectionProfile,
   type ConnectionCredential,
@@ -21,6 +22,7 @@ import {
 } from "./catalog.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import {
+  BearerConnectionTarget,
   ConnectionTransientError,
   PrimaryConnectionTarget,
   SshConnectionTarget,
@@ -60,6 +62,8 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly authorizeBearer?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeBearer"];
   readonly authorizeDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpop"];
   readonly primaryBearerToken?: string;
+  readonly prepareWebSocketUrl?: ClientCapabilities.PrimaryEnvironmentAuth["Service"]["prepareWebSocketUrl"];
+  readonly preparePlatform?: ClientCapabilities.PlatformEnvironmentGateway["Service"]["prepare"];
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
   readonly descriptorProtocolVersion?: number | null | undefined;
 }) => {
@@ -155,8 +159,17 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
       ClientCapabilities.PrimaryEnvironmentAuth,
       ClientCapabilities.PrimaryEnvironmentAuth.of({
         bearerToken: Effect.succeed(Option.fromNullishOr(options?.primaryBearerToken)),
+        ...(options?.prepareWebSocketUrl === undefined
+          ? {}
+          : { prepareWebSocketUrl: options.prepareWebSocketUrl }),
       }),
     ),
+    options?.preparePlatform === undefined
+      ? Layer.empty
+      : Layer.succeed(
+          ClientCapabilities.PlatformEnvironmentGateway,
+          ClientCapabilities.PlatformEnvironmentGateway.of({ prepare: options.preparePlatform }),
+        ),
     Layer.succeed(
       ClientCapabilities.ClientPresentation,
       ClientCapabilities.ClientPresentation.of({
@@ -218,6 +231,73 @@ describe("ConnectionResolver", () => {
           capabilities: { repositoryIdentity: true },
         },
       });
+    }),
+  );
+
+  it.effect("lets the host prepare the primary socket URL", () =>
+    Effect.gen(function* () {
+      const preparedUrls = yield* Ref.make<ReadonlyArray<string>>([]);
+      const layerBroker = yield* makeDependencies({
+        prepareWebSocketUrl: (socketUrl) =>
+          Ref.update(preparedUrls, (urls) => [...urls, socketUrl]).pipe(
+            Effect.as("ws://127.0.0.1:3777/ws?gatewayTicket=managed"),
+          ),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
+      const target = new PrimaryConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Primary",
+        httpBaseUrl: "http://127.0.0.1:3777",
+        wsBaseUrl: "ws://127.0.0.1:3777",
+      });
+
+      const prepared = yield* broker.prepare(catalogEntry(target));
+
+      expect(prepared.socketUrl).toContain("ws://127.0.0.1:3777/ws?gatewayTicket=managed");
+      expect(yield* Ref.get(preparedUrls)).toEqual([
+        "ws://127.0.0.1:3777/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct",
+      ]);
+    }),
+  );
+
+  it.effect("connects a platform bearer environment where its gateway says it is", () =>
+    Effect.gen(function* () {
+      const authorized = yield* Ref.make<ReadonlyArray<{ url: string; token: string }>>([]);
+      const target = new BearerConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Sandbox",
+        connectionId: "sandbox-1",
+      });
+      const profile = new BearerConnectionProfile({
+        connectionId: "sandbox-1",
+        environmentId: ENVIRONMENT_ID,
+        label: "Sandbox",
+        httpBaseUrl: "https://stale.example.test",
+        wsBaseUrl: "wss://stale.example.test",
+      });
+      const layerBroker = yield* makeDependencies({
+        // No stored credential: the gateway supplies the address and the token.
+        preparePlatform: () => Effect.succeedSome({ ...ENDPOINT, bearerToken: "woken" }),
+        authorizeBearer: (input) =>
+          Ref.update(authorized, (calls) => [
+            ...calls,
+            { url: input.httpBaseUrl, token: input.bearerToken },
+          ]).pipe(
+            Effect.as({
+              environmentId: input.expectedEnvironmentId,
+              label: "Sandbox",
+              httpBaseUrl: input.httpBaseUrl,
+              socketUrl: "wss://environment.example.test/ws?wsTicket=bearer",
+              httpAuthorization: { _tag: "Bearer" as const, token: input.bearerToken },
+            }),
+          ),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
+
+      const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
+
+      expect(prepared.httpBaseUrl).toBe(ENDPOINT.httpBaseUrl);
+      expect(yield* Ref.get(authorized)).toEqual([{ url: ENDPOINT.httpBaseUrl, token: "woken" }]);
     }),
   );
 

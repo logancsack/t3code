@@ -178,13 +178,11 @@ interface LiveShell {
   readonly origin: Persistence.ShellCacheOrigin | undefined;
 }
 
-export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
-  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+const loadCachedShell = Effect.fn("EnvironmentShellState.loadCached")(function* (
+  environmentId: EnvironmentId,
+) {
   const cache = yield* Persistence.EnvironmentCacheStore;
-  const snapshotLoader = yield* ShellSnapshotLoader.ShellSnapshotLoader;
-  const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
-  const environmentId = supervisor.target.environmentId;
-  const cached = yield* cache.loadShell(environmentId).pipe(
+  return yield* cache.loadShell(environmentId).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Could not load cached environment shell.").pipe(
         Effect.annotateLogs({
@@ -195,10 +193,20 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       ),
     ),
   );
+});
+
+const cachedShellRows = (cached: Option.Option<Persistence.CachedShellSnapshot>) =>
+  Option.map(cached, ({ origin: _origin, ...rows }) => withoutDeferredPullRequests(rows));
+
+export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  const cache = yield* Persistence.EnvironmentCacheStore;
+  const snapshotLoader = yield* ShellSnapshotLoader.ShellSnapshotLoader;
+  const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
+  const environmentId = supervisor.target.environmentId;
+  const cached = yield* loadCachedShell(environmentId);
   const cachedOrigin = Option.isSome(cached) ? cached.value.origin : undefined;
-  const cachedSnapshot = Option.map(cached, ({ origin: _origin, ...rows }) =>
-    withoutDeferredPullRequests(rows),
-  );
+  const cachedSnapshot = cachedShellRows(cached);
   const state = yield* SubscriptionRef.make<EnvironmentShellState>({
     ...EMPTY_SHELL_STATE,
     snapshot: cachedSnapshot,
@@ -753,6 +761,14 @@ function shellStateChanges(environmentId: EnvironmentId) {
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(makeEnvironmentShellState().pipe(Effect.map(SubscriptionRef.changes))),
+    Stream.fromEffect(
+      loadCachedShell(environmentId).pipe(
+        Effect.map((cached): EnvironmentShellState => {
+          const snapshot = cachedShellRows(cached);
+          return { ...EMPTY_SHELL_STATE, snapshot, status: shellStatusForSnapshot(snapshot) };
+        }),
+      ),
+    ),
   );
 }
 

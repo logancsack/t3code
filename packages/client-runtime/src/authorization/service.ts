@@ -62,11 +62,6 @@ export interface AuthorizedRemoteEnvironment {
   readonly descriptor?: ExecutionEnvironmentDescriptor;
 }
 
-/** A bearer authorization, with the descriptor it validated so callers need not fetch it again. */
-export interface AuthorizedBearerEnvironment extends AuthorizedRemoteEnvironment {
-  readonly descriptor: ExecutionEnvironmentDescriptor;
-}
-
 export interface AuthorizedRemoteHttpEnvironment {
   readonly environmentId: EnvironmentId;
   readonly label: string;
@@ -83,7 +78,7 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly wsBaseUrl: string;
       readonly bearerToken: string;
       readonly connectionMethod: ClientConnectionMethod;
-    }) => Effect.Effect<AuthorizedBearerEnvironment, ConnectionAttemptError>;
+    }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
     readonly authorizeDpop: (input: {
       readonly expectedEnvironmentId: EnvironmentId;
       /**
@@ -280,7 +275,6 @@ export const make = Effect.gen(function* () {
           _tag: "Bearer" as const,
           token: input.bearerToken,
         },
-        descriptor,
       };
     },
   );

@@ -109,7 +109,7 @@ export class EnvironmentCacheStore extends Context.Service<
       threadId: ThreadId,
       afterSequence: number | null,
     ) => Effect.Effect<
-      Option.Option<OrchestrationThreadDetailSnapshot>,
+      Option.Option<OrchestrationV2ThreadDetailSnapshot>,
       ConnectionPersistenceError
     >;
     readonly saveThread: (

@@ -1171,6 +1171,30 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     ),
   );
 
+  // Only the platform knows when an asleep machine is up, and it says so with retryNow or
+  // connect/disconnect, so returning to the app or a network change does not ask it again.
+  const waitForPlatformSignal = Effect.fnUntraced(function* (dormant: SupervisorConnectionState) {
+    for (;;) {
+      const next = yield* Queue.take(signals);
+      if (next._tag === "NetworkChanged") {
+        const current = yield* Ref.get(intent);
+        yield* setState(
+          current.network === "offline"
+            ? offlineState(current, dormant.generation, dormant.attempt, dormant.lastFailure)
+            : { ...dormant, desired: current.desired, network: current.network },
+        );
+        continue;
+      }
+      if (
+        next._tag === "BetterRouteAvailable" ||
+        (next._tag === "Wakeup" && ConnectionWakeups.resetsRetryBackoff(next.reason))
+      ) {
+        continue;
+      }
+      return;
+    }
+  });
+
   const run = Effect.fnUntraced(function* () {
     let failureCount = 0;
     // Approval waits count as attempts but not toward backoff, so a later outage starts low.
@@ -1186,6 +1210,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     };
     let replacing = false;
 
+    // The first pass reads the intent a `connect` before it set. Left queued, that signal
+    // would start a second attempt once a blocked first one ended.
+    yield* Queue.clear(signals);
     for (;;) {
       const retryRequested = yield* Ref.getAndSet(resetRetryState, false);
       if (retryRequested) {
@@ -1262,7 +1289,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       }
       if (error._tag === "ConnectionBlockedError") {
         const blockedIntent = yield* Ref.get(intent);
-        yield* setState({
+        const blockedState: SupervisorConnectionState = {
           desired: blockedIntent.desired,
           network: blockedIntent.network,
           phase: "blocked",
@@ -1272,7 +1299,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           lastFailure: error,
           retryAt: null,
           refusedRouteIds: NO_REFUSED_ROUTES,
-        });
+        };
+        yield* setState(blockedState);
+        if (error.reason === "dormant") {
+          yield* waitForPlatformSignal(blockedState);
+          continue;
+        }
         const applicationActivated = yield* waitForSignal;
         if (applicationActivated) {
           resetRetryLadder();

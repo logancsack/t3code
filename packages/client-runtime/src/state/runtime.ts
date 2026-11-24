@@ -22,7 +22,11 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
-import type { ConnectionAttemptError, SupervisorConnectionState } from "../connection/model.ts";
+import {
+  DORMANT_CONNECTION_STATE,
+  type ConnectionAttemptError,
+  type SupervisorConnectionState,
+} from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import {
   type EnvironmentRpcInput,
@@ -684,6 +688,7 @@ function environmentConnectionAtoms<R, ER>(
             ),
           ),
         ),
+        Stream.succeed<EnvironmentConnection>([DORMANT_CONNECTION_STATE, Option.none()]),
       ),
       { initialValue: null },
     ),
@@ -952,7 +957,12 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
     return runtime
       .atom(
         Stream.suspend(() =>
-          followStreamInEnvironment(target.environmentId, options.subscribe(target.input)),
+          // A dormant environment has nothing to send, and subscribing must not start it.
+          followStreamInEnvironment(
+            target.environmentId,
+            options.subscribe(target.input),
+            Stream.empty,
+          ),
         ).pipe(options.completeWhen ? Stream.takeUntil(options.completeWhen) : (stream) => stream),
       )
       .pipe(Atom.setIdleTTL(idleTtlMs), Atom.withLabel(label(key)));

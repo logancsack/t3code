@@ -42,10 +42,12 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import {
+  type EnvironmentRpcSuccess,
   EnvironmentRpcUnavailableError,
   getInitialServerConfig,
   isRpcClientError,
   request,
+  requestWhenConnected,
 } from "../rpc/client.ts";
 
 interface CommandMetadata {
@@ -292,8 +294,45 @@ const allocateCommandId = Effect.fn("EnvironmentCommands.allocateCommandId")(fun
   return CommandId.make(yield* random.uuidV4());
 });
 
-const dispatch = (command: OrchestrationV2Command) =>
-  request(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, command);
+type DispatchResult = EnvironmentRpcSuccess<typeof ORCHESTRATION_V2_WS_METHODS.dispatchCommand>;
+
+/** Resolves null to send the command over the environment's own connection. */
+export type OrchestrationCommandDispatchOverride = (input: {
+  readonly command: OrchestrationV2Command;
+  readonly environmentId: string;
+  readonly primary: boolean;
+}) => Promise<DispatchResult | null>;
+
+let dispatchOverride: OrchestrationCommandDispatchOverride | null = null;
+
+/** The host transport for commands to an environment its platform keeps asleep. */
+export function setOrchestrationCommandDispatchOverride(
+  override: OrchestrationCommandDispatchOverride | null,
+): void {
+  dispatchOverride = override;
+}
+
+const dispatch = Effect.fnUntraced(function* (command: OrchestrationV2Command) {
+  const override = dispatchOverride;
+  if (override !== null) {
+    const { target } = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const overridden = yield* Effect.tryPromise({
+      try: () =>
+        override({
+          command,
+          environmentId: target.environmentId,
+          primary: target._tag === "PrimaryConnectionTarget",
+        }),
+      catch: (cause) =>
+        new EnvironmentRpcUnavailableError({
+          environmentId: target.environmentId,
+          message: cause instanceof Error ? cause.message : "Host command dispatch failed.",
+        }),
+    });
+    if (overridden !== null) return overridden;
+  }
+  return yield* requestWhenConnected(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, command);
+});
 
 // The socket can close after the server accepted the frame but before it answered.
 // The server replays an accepted commandId from its receipt, so the same command

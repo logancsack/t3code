@@ -246,6 +246,35 @@ export const requestGuarded = Effect.fnUntraced(function* <TTag extends Environm
   return yield* requestInSession(yield* currentSession(), tag, input);
 });
 
+const STOPPED_PHASES: ReadonlyArray<string> = ["available", "offline", "blocked"];
+
+/**
+ * `request`, except that a primary environment still reconnecting waits for its session instead
+ * of failing, so a command sent while its host wakes it is delivered.
+ */
+export const requestWhenConnected = Effect.fnUntraced(function* <
+  TTag extends Exclude<EnvironmentUnaryRpcTag, ClientGuardedRpcTag>,
+>(tag: TTag, input: EnvironmentRpcInput<TTag>) {
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  const reconnecting =
+    Option.isNone(yield* SubscriptionRef.get(supervisor.session)) &&
+    supervisor.target._tag === "PrimaryConnectionTarget" &&
+    !STOPPED_PHASES.includes((yield* SubscriptionRef.get(supervisor.state)).phase);
+  if (reconnecting) {
+    yield* Effect.raceFirst(
+      SubscriptionRef.changes(supervisor.session).pipe(
+        Stream.filter(Option.isSome),
+        Stream.runHead,
+      ),
+      SubscriptionRef.changes(supervisor.state).pipe(
+        Stream.filter((state) => STOPPED_PHASES.includes(state.phase)),
+        Stream.runHead,
+      ),
+    );
+  }
+  return yield* requestGuarded(tag, input);
+});
+
 export function runStreamGuarded<TTag extends EnvironmentStreamCommandRpcTag>(
   tag: TTag,
   input: EnvironmentRpcInput<TTag>,

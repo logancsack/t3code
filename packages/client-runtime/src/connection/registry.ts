@@ -100,6 +100,11 @@ export class EnvironmentRegistry extends Context.Service<
       ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>
     >;
     readonly networkStatus: SubscriptionRef.SubscriptionRef<NetworkStatus>;
+    /**
+     * Platform environments the host reported asleep (`reconcilePlatform`) that nothing has
+     * started. `run` and the like start one.
+     */
+    readonly dormant: SubscriptionRef.SubscriptionRef<ReadonlySet<EnvironmentId>>;
     readonly start: Effect.Effect<void>;
     /**
      * Succeeds with `false` and changes nothing when the environment is
@@ -117,8 +122,10 @@ export class EnvironmentRegistry extends Context.Service<
     readonly assertKnownAddress: (
       route: ConnectionRoute,
     ) => Effect.Effect<void, ConnectionBlockedError>;
+    /** Nothing starts for the `asleep` environments until something needs one. */
     readonly reconcilePlatform: (
       registrations: ReadonlyArray<PlatformConnectionRegistration>,
+      asleep?: ReadonlySet<EnvironmentId>,
     ) => Effect.Effect<void>;
     readonly remove: (
       environmentId: EnvironmentId,
@@ -195,10 +202,15 @@ export class EnvironmentRegistry extends Context.Service<
       E | EnvironmentNotRegisteredError,
       Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor>
     >;
-    readonly followStream: <A, E, R>(
+    /**
+     * A dormant environment follows `whileDormant` instead, when given, until it starts.
+     * Following one without it starts it.
+     */
+    readonly followStream: <A, E, R, E2 = never, R2 = never>(
       environmentId: EnvironmentId,
       stream: Stream.Stream<A, E, R>,
-    ) => Stream.Stream<A, E, Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor>>;
+      whileDormant?: Stream.Stream<A, E2, R2>,
+    ) => Stream.Stream<A, E | E2, Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor> | R2>;
   }
 >()("@t3tools/client-runtime/connection/registry/EnvironmentRegistry") {}
 
@@ -286,6 +298,18 @@ export const make = Effect.gen(function* () {
   const leaseLocks = yield* Ref.make<ReadonlyMap<EnvironmentId, LeaseLock>>(new Map());
   const leaseLocksGuard = yield* Semaphore.make(1);
   const started = yield* Ref.make(false);
+
+  const sameIds = (left: ReadonlySet<EnvironmentId>, right: ReadonlySet<EnvironmentId>) =>
+    left.size === right.size && [...left].every((environmentId) => right.has(environmentId));
+  let asleep: ReadonlySet<EnvironmentId> = new Set();
+  const dormant = yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(new Set());
+  const syncDormant = Effect.gen(function* () {
+    const scopes = yield* SubscriptionRef.get(serviceScopes);
+    const next = new Set([...asleep].filter((environmentId) => !scopes.has(environmentId)));
+    if (!sameIds(next, yield* SubscriptionRef.get(dormant))) {
+      yield* SubscriptionRef.set(dormant, next);
+    }
+  });
 
   const withLeaseLock = <A, E, R>(
     environmentId: EnvironmentId,
@@ -382,6 +406,7 @@ export const make = Effect.gen(function* () {
             next.set(environmentId, { entry, supervisor, scope });
             return next;
           });
+          yield* syncDormant;
           yield* SubscriptionRef.changes(supervisor.state).pipe(
             Stream.runForEach((state) =>
               state.phase === "blocked" && state.lastFailure?.reason === "unsupported"
@@ -398,6 +423,16 @@ export const make = Effect.gen(function* () {
   const acquireSupervisor = Effect.fn("EnvironmentRegistry.acquireSupervisor")(function* (
     environmentId: EnvironmentId,
   ) {
+    // Every request and stream comes through here, often for all environments at once, so a
+    // runtime already running its entry skips the lock while nothing else holds it.
+    const running = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+    if (
+      running !== undefined &&
+      running.entry === (yield* SubscriptionRef.get(entries)).get(environmentId) &&
+      !(yield* Ref.get(leaseLocks)).has(environmentId)
+    ) {
+      return running.supervisor;
+    }
     return yield* withLeaseLock(
       environmentId,
       Effect.gen(function* () {
@@ -437,11 +472,43 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const followStream: EnvironmentRegistry["Service"]["followStream"] = <A, E, R>(
+  const followStream: EnvironmentRegistry["Service"]["followStream"] = <
+    A,
+    E,
+    R,
+    E2 = never,
+    R2 = never,
+  >(
     environmentId: EnvironmentId,
     stream: Stream.Stream<A, E, R>,
-  ) =>
-    Stream.concat(
+    whileDormant?: Stream.Stream<A, E2, R2>,
+  ) => {
+    type Followed = Stream.Stream<
+      A,
+      E | E2,
+      Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor> | R2
+    >;
+    const running: Followed = Stream.unwrap(
+      acquireSupervisor(environmentId).pipe(
+        Effect.match({
+          onFailure: (): Followed => Stream.empty,
+          onSuccess: (supervisor): Followed =>
+            Stream.provideService(stream, EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        }),
+      ),
+    );
+    const registered: Followed =
+      whileDormant === undefined
+        ? running
+        : Stream.concat(
+            Stream.fromEffect(SubscriptionRef.get(dormant)),
+            SubscriptionRef.changes(dormant),
+          ).pipe(
+            Stream.map((current) => current.has(environmentId)),
+            Stream.changes,
+            Stream.switchMap((isDormant): Followed => (isDormant ? whileDormant : running)),
+          );
+    return Stream.concat(
       Stream.fromEffect(SubscriptionRef.get(entries)),
       SubscriptionRef.changes(entries),
     ).pipe(
@@ -452,23 +519,11 @@ export const make = Effect.gen(function* () {
       Stream.switchMap(
         Option.match({
           onNone: () => Stream.empty,
-          onSome: () =>
-            Stream.unwrap(
-              acquireSupervisor(environmentId).pipe(
-                Effect.match({
-                  onFailure: () => Stream.empty,
-                  onSuccess: (supervisor) =>
-                    Stream.provideService(
-                      stream,
-                      EnvironmentSupervisor.EnvironmentSupervisor,
-                      supervisor,
-                    ),
-                }),
-              ),
-            ),
+          onSome: () => registered,
         }),
       ),
     );
+  };
 
   const start = Effect.gen(function* () {
     if (yield* Ref.getAndSet(started, true)) {
@@ -489,21 +544,8 @@ export const make = Effect.gen(function* () {
 
   const installEntryLocked = Effect.fn("EnvironmentRegistry.installEntryLocked")(function* (
     entry: ConnectionCatalogEntry,
-    options?: { readonly retainEquivalentRuntime?: boolean },
   ) {
     const target = entry.target;
-    const previous = (yield* SubscriptionRef.get(entries)).get(target.environmentId);
-    const existingScope = (yield* SubscriptionRef.get(serviceScopes)).get(target.environmentId);
-    if (
-      options?.retainEquivalentRuntime === true &&
-      previous !== undefined &&
-      Equal.equals(previous, entry) &&
-      existingScope !== undefined &&
-      Equal.equals(existingScope.entry, entry)
-    ) {
-      return;
-    }
-
     yield* closeServiceScope(target.environmentId);
     yield* SubscriptionRef.update(entries, (current) => {
       const next = new Map(current);
@@ -629,8 +671,16 @@ export const make = Effect.gen(function* () {
     return yield* getEntry(environmentId);
   });
 
+  /**
+   * A new or changed entry goes to `batch` for `applyPlatformRegistrations` to install with the
+   * rest. An asleep environment with nothing running counts as unchanged.
+   */
   const installPlatformRegistration = Effect.fn("EnvironmentRegistry.installPlatformRegistration")(
-    function* (registration: PlatformConnectionRegistration) {
+    function* (
+      registration: PlatformConnectionRegistration,
+      reportedAsleep: boolean,
+      batch: Array<ConnectionCatalogEntry>,
+    ) {
       const registered = connectionRegistrationCatalogEntry(registration);
       const target = registered.target;
       return yield* withLeaseLock(
@@ -725,7 +775,15 @@ export const make = Effect.gen(function* () {
             applied &&= written;
           }
 
-          yield* installEntryLocked(entry, { retainEquivalentRuntime: true });
+          const running = (yield* SubscriptionRef.get(serviceScopes)).get(target.environmentId);
+          if (
+            previous === undefined ||
+            !Equal.equals(previous, entry) ||
+            (running === undefined ? !reportedAsleep : !Equal.equals(running.entry, entry))
+          ) {
+            yield* closeServiceScope(target.environmentId);
+            batch.push(entry);
+          }
 
           if (
             bearerReplaced &&
@@ -832,6 +890,7 @@ export const make = Effect.gen(function* () {
   /** Succeeds with `false` when a best-effort write failed, so an identical repeat retries it. */
   const applyPlatformRegistrations = Effect.fn("EnvironmentRegistry.reconcilePlatform")(function* (
     platformRegistrations: ReadonlyArray<PlatformConnectionRegistration>,
+    reportedAsleep: ReadonlySet<EnvironmentId>,
   ) {
     const desiredIds = new Set(
       platformRegistrations.map((registration) => registration.target.environmentId),
@@ -842,21 +901,61 @@ export const make = Effect.gen(function* () {
         ? Effect.succeed(true)
         : removePlatformEnvironment(environmentId),
     );
-    const installed = yield* Effect.forEach(platformRegistrations, installPlatformRegistration);
+    const batch: Array<ConnectionCatalogEntry> = [];
+    const installed = yield* Effect.forEach(platformRegistrations, (registration) =>
+      installPlatformRegistration(
+        registration,
+        reportedAsleep.has(registration.target.environmentId),
+        batch,
+      ),
+    );
+    // Dormant before they join the catalog, so followers show them from cache instead of
+    // starting them.
+    asleep = new Set([...reportedAsleep].filter((environmentId) => desiredIds.has(environmentId)));
+    yield* syncDormant;
+    if (batch.length > 0) {
+      // One catalog update: a host reporting hundreds at once would otherwise notify every
+      // catalog reader once per environment.
+      yield* SubscriptionRef.update(entries, (current) => {
+        const next = new Map(current);
+        for (const entry of batch) next.set(entry.target.environmentId, entry);
+        return next;
+      });
+      yield* Effect.forEach(
+        batch.filter((entry) => !asleep.has(entry.target.environmentId)),
+        (entry) =>
+          acquireSupervisor(entry.target.environmentId).pipe(
+            Effect.catchTags({ EnvironmentNotRegisteredError: () => Effect.void }),
+          ),
+        { discard: true },
+      );
+    }
     return [...removed, ...installed].every(Boolean);
   });
 
   const reconcileLock = yield* Semaphore.make(1);
-  let appliedPlatformRegistrations: ReadonlyArray<PlatformConnectionRegistration> | undefined;
+  let appliedPlatform:
+    | {
+        readonly registrations: ReadonlyArray<PlatformConnectionRegistration>;
+        readonly asleep: ReadonlySet<EnvironmentId>;
+      }
+    | undefined;
   // Untraced: platforms repeat unchanged registrations every few seconds, and a
   // span per poll would make idle clients export traces continuously.
   const reconcilePlatform = Effect.fnUntraced(function* (
     platformRegistrations: ReadonlyArray<PlatformConnectionRegistration>,
+    reportedAsleep: ReadonlySet<EnvironmentId> = new Set(),
   ) {
-    if (Equal.equals(appliedPlatformRegistrations, platformRegistrations)) return;
-    appliedPlatformRegistrations = undefined;
-    if (yield* applyPlatformRegistrations(platformRegistrations)) {
-      appliedPlatformRegistrations = platformRegistrations;
+    if (
+      appliedPlatform !== undefined &&
+      Equal.equals(appliedPlatform.registrations, platformRegistrations) &&
+      sameIds(appliedPlatform.asleep, reportedAsleep)
+    ) {
+      return;
+    }
+    appliedPlatform = undefined;
+    if (yield* applyPlatformRegistrations(platformRegistrations, reportedAsleep)) {
+      appliedPlatform = { registrations: platformRegistrations, asleep: reportedAsleep };
     }
   }, reconcileLock.withPermits(1));
 
@@ -1197,6 +1296,7 @@ export const make = Effect.gen(function* () {
   return EnvironmentRegistry.of({
     entries,
     networkStatus,
+    dormant,
     start,
     register,
     assertKnownAddress,
