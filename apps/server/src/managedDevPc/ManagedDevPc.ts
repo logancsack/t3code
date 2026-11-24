@@ -422,7 +422,6 @@ const make = Effect.gen(function* () {
       const launched = yield* ThreadMessageIntake.launchThread({
         commandId: command.commandId,
         threadId: command.threadId,
-        reuseExistingThread: true,
         projectId: create.projectId,
         title: create.title,
         modelSelection: command.modelSelection ?? create.modelSelection,

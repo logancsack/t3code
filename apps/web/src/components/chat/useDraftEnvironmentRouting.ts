@@ -5,11 +5,11 @@ import { useLoadBalancedEnvironment } from "../../hooks/useLoadBalancedEnvironme
 import { useLogicalProjectEnvironments } from "../../hooks/useLogicalProjectEnvironments";
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { providerInstanceEnabled } from "../../providerInstances";
 import {
   type EnvironmentId,
   type ProviderDriverKind,
   ProviderInstanceId,
-  resolveProjectProviderInstanceEnabled,
   type ThreadContextRecord,
 } from "@t3tools/contracts";
 import {
@@ -131,10 +131,10 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
                     provider.instanceId === activeProviderInstanceId) &&
                   provider.driver === selectedProvider &&
                   (environment.serverConfig?.settings
-                    ? resolveProjectProviderInstanceEnabled(
+                    ? providerInstanceEnabled(
                         environment.serverConfig.settings,
                         candidate.projectId,
-                        provider.instanceId,
+                        provider,
                       )
                     : provider.enabled) &&
                   provider.installed &&

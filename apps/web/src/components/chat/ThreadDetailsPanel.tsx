@@ -1,3 +1,4 @@
+import { isAldoCloud } from "../../aldo/api";
 import type {
   EditorId,
   EnvironmentId,
@@ -168,7 +169,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
         const show = {
           environment: density === "full" && visible.environment,
           openIn: density !== "essential" && visible.openIn && props.showOpenInPicker,
-          scripts: visible.scripts && props.activeProjectScripts !== undefined,
+          scripts: !isAldoCloud && visible.scripts && props.activeProjectScripts !== undefined,
           branch: offersGit && props.isGitRepo && visible.branch,
           // Without a branch selector, linked pull requests still need somewhere to show.
           pullRequests: !(offersGit && props.isGitRepo) && visible.branch,
@@ -268,7 +269,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 <ThreadServersPanel environmentId={props.environmentId} threadId={props.threadId} />
               ) : null}
 
-              {density === "full" && !props.draftId && visible.automations ? (
+              {density === "full" && !props.draftId && visible.automations && !isAldoCloud ? (
                 <ThreadAutomationsPanel
                   environmentId={props.environmentId}
                   threadId={props.threadId}
