@@ -20,7 +20,6 @@ import {
   ServerCliBuildAssetMissingError,
   ServerCliCommandExitError,
   ServerCliDevelopmentIconSourceMissingError,
-  ServerCliDevelopmentIconTargetMissingError,
   ServerCliExecutableImportError,
 } from "./cliErrors.ts";
 
@@ -57,9 +56,8 @@ const applyDevelopmentIconOverrides = Effect.fn("applyDevelopmentIconOverrides")
     if (!(yield* fs.exists(sourcePath))) {
       return yield* new ServerCliDevelopmentIconSourceMissingError({ sourcePath });
     }
-    if (!(yield* fs.exists(targetPath))) {
-      return yield* new ServerCliDevelopmentIconTargetMissingError({ targetPath });
-    }
+    // A client built with its own icon set (Aldo's) keeps the files it has.
+    if (!(yield* fs.exists(targetPath))) continue;
 
     yield* fs.copyFile(sourcePath, targetPath);
   }

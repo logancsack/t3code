@@ -25,17 +25,6 @@ export class ServerCliDevelopmentIconSourceMissingError extends Schema.TaggedErr
   }
 }
 
-export class ServerCliDevelopmentIconTargetMissingError extends Schema.TaggedError<ServerCliDevelopmentIconTargetMissingError>()(
-  "ServerCliDevelopmentIconTargetMissingError",
-  {
-    targetPath: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Missing development icon target: ${this.targetPath}. Build web first.`;
-  }
-}
-
 export class ServerCliBuildAssetMissingError extends Schema.TaggedError<ServerCliBuildAssetMissingError>()(
   "ServerCliBuildAssetMissingError",
   {
