@@ -1,11 +1,11 @@
 import * as Schema from "effect/Schema";
-import { ProviderSendTurnInput } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import {
+  ProviderSendTurnInput,
   ModelSelection,
   ProviderRuntimeEvent,
   ProviderSession,
@@ -4388,7 +4388,15 @@ describe("ProviderCommandReactor", () => {
   });
 
   it("switches Codex to Claude with prior context and serializes duplicate switches", async () => {
-    const harness = await createHarness();
+    const sent = Effect.runSync(Deferred.make<void>());
+    const release = Effect.runSync(Deferred.make<void>());
+    const harness = await createHarness({
+      sendTurnEffect: () =>
+        Deferred.succeed(sent, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.as({ threadId: ThreadId.make("thread-1"), turnId: asTurnId("turn-1") }),
+        ),
+    });
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -4407,8 +4415,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await waitFor(() => harness.startSession.mock.calls.length === 1);
-    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.runEffect(Deferred.await(sent));
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -4451,6 +4458,7 @@ describe("ProviderCommandReactor", () => {
         createdAt: "2026-01-01T00:00:03.000Z",
       }),
     );
+    await harness.runEffect(Deferred.succeed(release, undefined));
     await harness.runEffect(harness.drainTurnStarts);
     expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
       fresh: true,
@@ -4462,6 +4470,11 @@ describe("ProviderCommandReactor", () => {
     });
     expect(harness.startSession).toHaveBeenCalledTimes(2);
     expect(harness.sendTurn).toHaveBeenCalledTimes(3);
+    expect(harness.sendTurn.mock.calls.map(([input]) => input)).toMatchObject([
+      { input: "first" },
+      { input: expect.stringMatching(/Continuation:\nsecond$/) },
+      { input: "second switch" },
+    ]);
     expect(
       (await harness.readModel()).threads[0]?.activities.some(
         (a) => a.kind === "provider.turn.start.failed",

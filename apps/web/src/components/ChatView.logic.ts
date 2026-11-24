@@ -1061,7 +1061,7 @@ export function threadShellHasStarted(
 // Imported history has no session until its first prompt. Resolve its instance
 // through the environment's provider catalog before locking to a driver.
 export function deriveLockedProvider(input: {
-  threadModelHandoff?: boolean;
+  threadModelHandoff?: boolean | undefined;
   thread: Thread | null | undefined;
   selectedProvider: string | null;
   threadProvider: string | null;
@@ -1090,7 +1090,7 @@ export function deriveLockedProvider(input: {
 }
 
 export function getStartedThreadModelChangeBlockReason(input: {
-  threadModelHandoff?: boolean;
+  threadModelHandoff?: boolean | undefined;
   providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "requiresNewThreadForModelChange">>;
   hasStartedSession: boolean;
   currentModelSelection: ModelSelection;
