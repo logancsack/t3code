@@ -24,6 +24,7 @@ import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses
 import { tailwindPlugins } from "./vite/tailwind";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 import { formatAppDisplayName, resolveWebAppStageLabel } from "./src/branding.logic";
+import { showAldoBootError } from "./src/aldo/bootError";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -51,6 +52,9 @@ const configuredDesktopUpdateRepository =
   process.env.GITHUB_REPOSITORY?.trim() ||
   "";
 const configuredFeatureSecrets = process.env.T3CODE_FEATURE_SECRETS?.trim() || "";
+const managedDevPc = ["1", "true"].includes(
+  process.env.VITE_DEVPC_MANAGED?.trim().toLowerCase() ?? "",
+);
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
   if (explicitHostedAppUrl) {
@@ -291,6 +295,130 @@ function bootstrapTitlePlugin(): Plugin {
 }
 
 // Allow Tailnet hosts for sharing; Tailscale-controlled DNS prevents attacker rebinding.
+// Aldo cloud builds ship under the Aldo brand: Aldo icons (public-aldo/), the
+// Aldo document title and splash, and Aldo in user-facing prose. Protocol
+// identifiers (t3code:* storage keys, t3.json, theme ids) stay untouched.
+const aldoCloud = process.env.VITE_ALDO_CLOUD?.trim() === "1";
+
+const ALDO_PROSE_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
+  ["`t3 connect`", "the connect command"],
+  ["From t3.json", "From project config"],
+  [
+    " (t3.json at the repository root). See https://t3.codes for documentation.",
+    " at the repository root.",
+  ],
+  ["a T3 Connect", "an Aldo Connect"],
+  ["T3 Connect", "Aldo Connect"],
+  ["t3 connect", "aldo connect"],
+  ["T3 Code", "Aldo"],
+  ["T3 Chat", "Aldo"],
+  ["T3 server", "Aldo server"],
+  ["T3 environment", "Aldo environment"],
+  ["T3 project file", "Aldo project file"],
+  ["T3 process", "Aldo process"],
+  ["T3 system footprint", "Aldo system footprint"],
+  ["known T3 operations", "known Aldo operations"],
+  ["Managed DevPC", "Aldo"],
+  // Settings pages by the names Aldo gives them (settingsSearch.ts).
+  ["Open Settings -> Source Control", "Open Settings → Git hosts"],
+  ["Source Control Providers", "Git hosts"],
+  ["`T3`", "`Aldo`"],
+];
+
+function aldoBrandingPlugin(): Plugin {
+  return {
+    name: "aldo:branding",
+    apply: "build",
+    transformIndexHtml(html) {
+      return html
+        .replace(
+          /<title>[^<]*<\/title>/,
+          [
+            "<title>Aldo</title>",
+            '<meta name="description" content="Agents that get things done, each with its own computer." />',
+          ].join("\n    "),
+        )
+        .replace(
+          /<link rel="icon"[^>]*>/,
+          [
+            '<link rel="icon" href="/favicon.ico" sizes="48x48" />',
+            '<link rel="icon" href="/icon.svg" type="image/svg+xml" />',
+          ].join("\n    "),
+        )
+        .replace('aria-label="T3 Code splash screen"', 'aria-label="Aldo"')
+        .replace('src="/apple-touch-icon.png" alt="T3 Code"', 'src="/icon.svg" alt="Aldo"');
+    },
+    renderChunk(code) {
+      const branded = ALDO_PROSE_REPLACEMENTS.reduce(
+        (source, [legacy, aldo]) => source.replaceAll(legacy, aldo),
+        code,
+      );
+      return branded === code ? null : { code: branded, map: null };
+    },
+  };
+}
+
+function aldoBootstrapPlugin(): Plugin {
+  const entry = '<script type="module" src="/src/bootstrap.ts"></script>';
+  return {
+    name: "aldo:bootstrap",
+    apply: "build",
+    transformIndexHtml: {
+      order: "pre",
+      handler(html) {
+        if (!html.includes(entry)) throw new Error("aldo:bootstrap: index.html has no entry script.");
+        // A static entry makes $initial include the UI graph. Install its error
+        // handler outside that graph, so a missing or broken module still shows Reload.
+        return html.replace(
+          entry,
+          `<script>
+            window.addEventListener("error", function(event) {
+              if (!document.getElementById("boot-shell")) return;
+              if (event instanceof ErrorEvent || event.target instanceof HTMLScriptElement) {
+                (${showAldoBootError.toString()})(event.error || new Error("Startup module failed to load"));
+              }
+            }, true);
+          </script>
+          <script type="module" src="/src/aldo/bootstrap.ts"></script>`,
+        );
+      },
+    },
+  };
+}
+
+// Aldo's interface font (src/aldo/fonts.css) starts downloading with the page,
+// beside its scripts, rather than once the app first draws text. Only its Latin
+// file, every weight in one; other scripts and italics load as text needs them.
+function aldoFontPreloadPlugin(): Plugin {
+  let base = "/";
+  return {
+    name: "aldo:font-preload",
+    apply: "build",
+    configResolved(config) {
+      base = config.base;
+    },
+    transformIndexHtml: {
+      order: "post",
+      handler(html, context) {
+        const font = Object.values(context.bundle ?? {}).find(
+          (output) =>
+            output.type === "asset" &&
+            /(^|\/)geist-latin-wght-normal-[^/]+\.woff2$/.test(output.fileName),
+        );
+        if (!font)
+          throw new Error("aldo:font-preload: the build has no Geist Latin file to preload.");
+        const charset = '<meta charset="UTF-8" />';
+        if (!html.includes(charset))
+          throw new Error("aldo:font-preload: index.html has no charset.");
+        return html.replace(
+          charset,
+          `${charset}\n    <link rel="preload" href="${base}${font.fileName}" as="font" type="font/woff2" crossorigin />`,
+        );
+      },
+    },
+  };
+}
+
 const configuredAllowedHosts = (process.env.T3CODE_DEV_ALLOWED_HOSTS ?? "")
   .split(",")
   .map((entry) => entry.trim())
@@ -316,8 +444,11 @@ export default defineConfig(({ command }) => {
       },
     },
     assetsInclude: ["**/*.wasm"],
+    base: managedDevPc ? "/_t3/" : "/",
+    publicDir: aldoCloud ? "public-aldo" : "public",
     plugins: [
       bootstrapTitlePlugin(),
+      ...(aldoCloud ? [aldoBrandingPlugin(), aldoBootstrapPlugin(), aldoFontPreloadPlugin()] : []),
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
       builtDev
@@ -373,6 +504,8 @@ export default defineConfig(({ command }) => {
       "import.meta.env.T3CODE_FEATURE_SECRETS": JSON.stringify(configuredFeatureSecrets),
       "import.meta.env.VITE_RELEASE_CHANNEL": JSON.stringify(configuredReleaseChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
+      "import.meta.env.VITE_DEVPC_MANAGED": JSON.stringify(managedDevPc ? "1" : ""),
+      "import.meta.env.VITE_ALDO_CLOUD": JSON.stringify(aldoCloud ? "1" : ""),
     },
     resolve: {
       tsconfigPaths: true,
@@ -429,7 +562,28 @@ export default defineConfig(({ command }) => {
       sourcemap: buildSourcemap,
       ...(builtDev ? { watch: { exclude: rolldownWatchExclude } } : {}),
       rolldownOptions: {
+        ...(aldoCloud ? { input: { index: "index.html", replay: "replay.html" } } : {}),
         output: {
+          ...(aldoCloud
+            ? {
+                codeSplitting: {
+                  // Aldo's entry imports the whole first screen (aldoBootstrapPlugin). It goes in
+                  // one chunk, and its libraries in another whose name and hash stay the same
+                  // across releases that change only app code, so returning devices keep it
+                  // cached. Vite's preload helper goes with the libraries: every chunk with an
+                  // import() imports it.
+                  groups: [
+                    {
+                      name: "vendor",
+                      test: /[\\/]node_modules[\\/]|^\0vite\/preload-helper/,
+                      tags: ["$initial" as const],
+                      priority: 1,
+                    },
+                    { name: "index", tags: ["$initial" as const] },
+                  ],
+                },
+              }
+            : {}),
           // PDF.js resolves decoder modules and ICC data relative to wasmUrl.
           assetFileNames: (asset) =>
             asset.originalFileNames.some((path) => /[/\\]pdfjs-dist[/\\]wasm[/\\]/.test(path))
