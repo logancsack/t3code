@@ -391,12 +391,12 @@ const KINDS: Readonly<Record<AldoMachineKind, string>> = {
 };
 
 /** "Agent’s computer + Windows computer". */
-export function aldoMachinesName(machines: ReadonlyArray<AldoRunningMachine>): string {
+function aldoMachinesName(machines: ReadonlyArray<AldoRunningMachine>): string {
   return machines.map((m) => KINDS[m.kind]).join(" + ") || "Nothing";
 }
 
 /** The same in a sentence: "Its Agent’s computer and Windows computer". */
-export function aldoMachinesPhrase(machines: ReadonlyArray<AldoRunningMachine>): string {
+function aldoMachinesPhrase(machines: ReadonlyArray<AldoRunningMachine>): string {
   const names = machines.map((m) => KINDS[m.kind]);
   if (names.length <= 1) return names[0] ?? "Nothing";
   return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;

@@ -44,19 +44,19 @@ window.fetch = async (input, init) => {
       features: { general: true, projects: true },
     });
   if (path === "/api/environments/shells")
-    return json({ shells: { "aldo-demo-thread": workReplaySnapshots().shell } });
+    return json({ shells: { "aldo-demo-thread": workReplaySource().shell } });
   if (path === "/api/assistant/history") return json(workReplayHistory());
   if (path.endsWith("/detail"))
     return json({
-      sequence: workReplaySnapshots().detail.snapshotSequence,
-      detail: workReplaySnapshots().detail,
+      sequence: workReplaySource().detail.snapshotSequence,
+      detail: workReplaySource().detail,
     });
   // Unknown reads and all mutations stay local and unavailable. CSP also
   // forbids network connections if a future client adds another transport.
   return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
 };
 
-const { workReplaySnapshots, workReplayConfig } = await import("./runtime");
+const { workReplaySource, workReplayConfig } = await import("./runtime");
 const { homeFor, applyWorkReplay, workReplayHistory } = await import("./workReplay");
 const home = () => (frame ? homeFor(frame.script, frame.at) : null);
 window.dispatchEvent(new Event("aldo:replay-transport"));

@@ -28,7 +28,7 @@ import {
  * (a series' `color`, a pie's `colors`) takes these, so no series or slice
  * shares one (a chart has 6 series at most; a pie folds past these).
  */
-export const SERIES = [
+const SERIES = [
   "var(--primary)",
   "#e8743b",
   "#20a39e",

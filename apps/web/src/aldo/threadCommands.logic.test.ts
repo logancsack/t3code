@@ -21,7 +21,7 @@ const thread = (overrides: Partial<AldoShellThread> = {}): AldoShellThread => ({
   snoozedAt: null,
   pinnedAt: null,
   pinOrderKey: null,
-  session: { status: "ready" },
+  status: "idle",
   ...overrides,
 });
 const command = (type: string, fields: Record<string, unknown> = {}) => ({
@@ -89,21 +89,30 @@ describe("aldoCommandPatch", () => {
   });
 
   it("leaves a settle T3 would refuse to the machine, unless it's asleep and asks the user", () => {
-    expect(
-      patchFor(command("thread.settle"), thread({ session: { status: "running" } }), NOW),
-    ).toBeNull();
-    expect(
-      patchFor(command("thread.settle"), thread({ hasPendingUserInput: true }), NOW, false),
-    ).toBeNull();
-    // Asleep, its shell can't have moved on: T3's answer, without waking it.
-    expect(patchFor(command("thread.settle"), thread({ hasPendingUserInput: true }), NOW)).toEqual({
-      refuse: ALDO_SETTLE_BLOCKED,
-    });
-    // Its turn stays open while it asks, so its session reads as running.
+    expect(patchFor(command("thread.settle"), thread({ status: "running" }), NOW)).toBeNull();
     expect(
       patchFor(
         command("thread.settle"),
-        thread({ hasPendingApprovals: true, session: { status: "running" } }),
+        thread({ pendingRuntimeRequest: { kind: "user_input" } }),
+        NOW,
+        false,
+      ),
+    ).toBeNull();
+    // Asleep, its shell can't have moved on: T3's answer, without waking it.
+    expect(
+      patchFor(
+        command("thread.settle"),
+        thread({ pendingRuntimeRequest: { kind: "user_input" } }),
+        NOW,
+      ),
+    ).toEqual({
+      refuse: ALDO_SETTLE_BLOCKED,
+    });
+    // Its run stays open while it asks, so it reads as running.
+    expect(
+      patchFor(
+        command("thread.settle"),
+        thread({ pendingRuntimeRequest: { kind: "command" }, status: "running" }),
         NOW,
       ),
     ).toEqual({ refuse: ALDO_SETTLE_BLOCKED });
@@ -263,11 +272,10 @@ describe("aldoCommandPatch on work T3 won't park", () => {
   it("leaves settling or snoozing a message no turn has taken up yet to the machine", () => {
     const queued = thread({
       latestUserMessageAt: "2026-09-30T20:59:30.000Z",
-      latestTurn: {
-        requestedAt: BEFORE,
-        startedAt: BEFORE,
-        completedAt: BEFORE,
-      },
+      latestRunId: "r1",
+      latestRunRequestedAt: BEFORE,
+      latestRunStartedAt: BEFORE,
+      latestRunCompletedAt: BEFORE,
     });
     expect(patchFor(command("thread.settle"), queued, NOW)).toBeNull();
     expect(
@@ -276,17 +284,16 @@ describe("aldoCommandPatch on work T3 won't park", () => {
     // Taken up by a turn, or long ago: it settles.
     const taken = thread({
       latestUserMessageAt: "2026-09-30T20:59:30.000Z",
-      latestTurn: {
-        requestedAt: "2026-09-30T20:59:30.000Z",
-        startedAt: "2026-09-30T20:59:31.000Z",
-        completedAt: "2026-09-30T20:59:50.000Z",
-      },
+      latestRunId: "r1",
+      latestRunRequestedAt: "2026-09-30T20:59:30.000Z",
+      latestRunStartedAt: "2026-09-30T20:59:31.000Z",
+      latestRunCompletedAt: "2026-09-30T20:59:50.000Z",
     });
     expect(patchFor(command("thread.settle"), taken, NOW)).not.toBeNull();
     expect(
       patchFor(
         command("thread.settle"),
-        thread({ latestUserMessageAt: BEFORE, latestTurn: null }),
+        thread({ latestUserMessageAt: BEFORE, latestRunId: null }),
         NOW,
       ),
     ).not.toBeNull();

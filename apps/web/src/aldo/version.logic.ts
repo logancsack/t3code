@@ -2,9 +2,9 @@
 // version.ts). Pure, so it's tested on its own.
 
 /** How often a visible tab checks. */
-export const ALDO_VERSION_CHECK_EVERY_MS = 10 * 60_000;
+const ALDO_VERSION_CHECK_EVERY_MS = 10 * 60_000;
 /** Coming back to the tab checks too, at most this often (a phone switches apps all the time). */
-export const ALDO_VERSION_RECHECK_GAP_MS = 60_000;
+const ALDO_VERSION_RECHECK_GAP_MS = 60_000;
 
 export interface AldoVersionState {
   /** The version the tab loaded with: the first one Aldo reported. */

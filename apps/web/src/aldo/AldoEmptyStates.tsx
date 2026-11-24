@@ -1,12 +1,4 @@
-// Aldo's words for empty lists in T3's own panels: what will show there and
-// how it gets there, in Aldo's terms (a thread's helpers, not subagents).
-
-/** The thread's helpers (T3's Agents panel), before its agent starts any. */
-export const ALDO_HELPERS_EMPTY = {
-  title: "No helpers yet",
-  description:
-    "When this thread's agent starts helpers to work alongside it, they show here with what each is doing.",
-};
+// Aldo's words for empty lists in T3's own panels: what will show there and how it gets there.
 
 /** Settings → Archive, with nothing archived. */
 export const ALDO_ARCHIVE_EMPTY = "Threads you archive show here, ready to bring back.";

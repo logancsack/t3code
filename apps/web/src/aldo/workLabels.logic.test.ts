@@ -29,7 +29,7 @@ describe("OpenCode's steps", () => {
       "aldo_share_file",
       { path: "/vercel/work/general/plan.md", title: "Launch plan" },
       'Shared "Launch plan": https://aldo.computer/s/abc (anyone with the link)',
-      { turnId: "turn-1" as NonNullable<WorkLogEntry["turnId"]> },
+      { runId: "turn-1" as NonNullable<WorkLogEntry["runId"]> },
     );
     expect(aldoShareOf(share)).toEqual({
       path: "/vercel/work/general/plan.md",

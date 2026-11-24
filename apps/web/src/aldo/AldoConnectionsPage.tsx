@@ -34,7 +34,8 @@ import {
 } from "./accountApi";
 import { settingsIntegrations, settingsVault } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
-import { AldoAccountButton, AldoAccountRow, useAldoAccounts } from "./AldoAccountsPanel";
+import { AldoAccountButton, AldoAccountRow } from "./AldoAccountsPanel";
+import { useAldoAccounts } from "./useAldoAccounts";
 import { AldoAgentInboxRows } from "./AldoAgentInbox";
 import {
   AldoAppCatalogTile,

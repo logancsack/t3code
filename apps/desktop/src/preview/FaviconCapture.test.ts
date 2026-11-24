@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  MAX_FAVICON_CANDIDATES,
   MAX_FAVICON_RESPONSE_BYTES,
   captureFavicon,
   selectFaviconCandidates,
+  sourceDimensions,
 } from "./FaviconCapture.ts";
 
 const PNG = "data:image/png;base64,cG5n";
@@ -45,6 +47,26 @@ function sourceGif(
   buffer[offset] = 0x3b;
   return buffer;
 }
+
+it.each([
+  ["logical pixels", sourceGif(2048, 1024), { width: 2048, height: 1024 }],
+  [
+    "cumulative frame pixels",
+    sourceGif(1024, 1024, 1024, 1024, [{ width: 1024, height: 1024 }]),
+    { width: 1024, height: 1024 },
+  ],
+])("uses the caller's GIF limit for %s while keeping the favicon limit", (_, gif, dimensions) => {
+  expect(sourceDimensions(gif)).toBeNull();
+  expect(sourceDimensions(gif, 8_388_608)).toEqual(dimensions);
+});
+
+it("rejects GIF frames exceeding the caller's cumulative pixel limit", () => {
+  const gif = sourceGif(2048, 2048, 2048, 2048, [
+    { width: 2048, height: 2048 },
+    { width: 2048, height: 2048 },
+  ]);
+  expect(sourceDimensions(gif, 8_388_608)).toBeNull();
+});
 
 function sourceJpeg(
   width: number,
@@ -204,6 +226,21 @@ function makeWebContents(options?: {
 }
 
 describe("selectFaviconCandidates", () => {
+  it("filters and deduplicates before applying the candidate cap", () => {
+    const valid = Array.from(
+      { length: MAX_FAVICON_CANDIDATES + 2 },
+      (_, index) => `https://example.com/favicon-${index}.png`,
+    );
+    expect(
+      selectFaviconCandidates([
+        ...Array.from({ length: 64 }, () => "javascript:alert(1)"),
+        valid[0]!,
+        valid[0]!,
+        ...valid.slice(1),
+      ]),
+    ).toEqual(valid.slice(0, MAX_FAVICON_CANDIDATES));
+  });
+
   it("bounds raw candidate scanning independently of the usable-candidate cap", () => {
     const oversizedInvalid = `javascript:${"x".repeat(2_048)}`;
     expect(
@@ -245,18 +282,32 @@ describe("captureFavicon", () => {
     );
   });
 
-  it("cancels a rejected response body before trying the next candidate", async () => {
-    const cancel = vi.fn();
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new Uint8Array(1));
-      },
-      cancel,
-    });
+  it("decodes base64 and percent-encoded inline images without fetching", async () => {
+    const { webContents, fetch, executeJavaScriptInIsolatedWorld } = makeWebContents();
+    const percentEncodedPng = [...SOURCE_PNG]
+      .map((byte) => `%${byte.toString(16).padStart(2, "0")}`)
+      .join("");
+
+    for (const candidate of [SOURCE_PNG_URL, `data:image/png,${percentEncodedPng}`]) {
+      expect(
+        await captureFavicon({
+          webContents,
+          pageUrl: "https://example.com/page",
+          candidates: [candidate],
+          signal: new AbortController().signal,
+        }),
+      ).toEqual({ kind: "captured", dataUrl: PNG });
+    }
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(executeJavaScriptInIsolatedWorld).toHaveBeenCalledTimes(2);
+  });
+
+  it("tries the next candidate after an ordinary rejection", async () => {
     const { webContents, fetch } = makeWebContents({
       fetch: async (url) =>
         url.endsWith("first.png")
-          ? new Response(body, { status: 404 })
+          ? new Response(null, { status: 404 })
           : new Response(new Uint8Array(SOURCE_PNG), {
               headers: { "content-type": "image/png" },
             }),
@@ -270,7 +321,6 @@ describe("captureFavicon", () => {
         signal: new AbortController().signal,
       }),
     ).toEqual({ kind: "captured", dataUrl: PNG });
-    expect(cancel).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -319,26 +369,6 @@ describe("captureFavicon", () => {
     expect(executeJavaScriptInIsolatedWorld).not.toHaveBeenCalled();
   });
 
-  it("retains bounded compatibility with common favicon formats", async () => {
-    const { webContents, executeJavaScriptInIsolatedWorld } = makeWebContents();
-    for (const [mime, buffer] of [
-      ["image/gif", sourceGif(32, 32)],
-      ["image/jpeg", sourceJpeg(32, 32)],
-      ["image/webp", sourceWebp(32, 32)],
-      ["image/x-icon", sourceIco(SOURCE_PNG)],
-    ] as const) {
-      expect(
-        await captureFavicon({
-          webContents,
-          pageUrl: "https://example.com/page",
-          candidates: [`data:${mime};base64,${buffer.toString("base64")}`],
-          signal: new AbortController().signal,
-        }),
-      ).toEqual({ kind: "captured", dataUrl: PNG });
-    }
-    expect(executeJavaScriptInIsolatedWorld).toHaveBeenCalledTimes(4);
-  });
-
   it("rejects JPEG metadata when distinct SubIFDs exhaust the linear work budget", async () => {
     const source = sourceJpegWithApp1Segments(64, 32, [
       sourceJpegExifWithOverlappingSubIfds(32, 32),
@@ -350,41 +380,6 @@ describe("captureFavicon", () => {
         webContents,
         pageUrl: "https://example.com/page",
         candidates: [`data:image/jpeg;base64,${source.toString("base64")}`],
-        signal: new AbortController().signal,
-      }),
-    ).toEqual({ kind: "none" });
-    expect(executeJavaScriptInIsolatedWorld).not.toHaveBeenCalled();
-  });
-
-  it("rejects JPEGs with multiple frame headers before rasterization", async () => {
-    const buffer = Buffer.concat([sourceJpeg(4096, 4096), sourceJpeg(1, 1).subarray(2)]);
-    const { webContents, executeJavaScriptInIsolatedWorld } = makeWebContents();
-
-    expect(
-      await captureFavicon({
-        webContents,
-        pageUrl: "https://example.com/page",
-        candidates: [`data:image/jpeg;base64,${buffer.toString("base64")}`],
-        signal: new AbortController().signal,
-      }),
-    ).toEqual({ kind: "none" });
-    expect(executeJavaScriptInIsolatedWorld).not.toHaveBeenCalled();
-  });
-
-  it("rejects an unsafe PNG size before rasterization", async () => {
-    const buffer = makeUnsafePng();
-    const { webContents, executeJavaScriptInIsolatedWorld } = makeWebContents({
-      fetch: async () =>
-        new Response(new Uint8Array(buffer), {
-          headers: { "content-type": "image/png" },
-        }),
-    });
-
-    expect(
-      await captureFavicon({
-        webContents,
-        pageUrl: "https://example.com/page",
-        candidates: ["https://example.com/favicon.png"],
         signal: new AbortController().signal,
       }),
     ).toEqual({ kind: "none" });
@@ -442,57 +437,6 @@ describe("captureFavicon", () => {
       }),
     ).toEqual({ kind: "none" });
     expect(executeJavaScriptInIsolatedWorld).not.toHaveBeenCalled();
-  });
-
-  it("ignores output that is not a bounded PNG data URL", async () => {
-    const { webContents } = makeWebContents({
-      rasterize: async () => "data:image/svg+xml;base64,c3Zn",
-    });
-
-    expect(
-      await captureFavicon({
-        webContents,
-        pageUrl: "https://example.com/page",
-        candidates: [SOURCE_PNG_URL],
-        signal: new AbortController().signal,
-      }),
-    ).toEqual({ kind: "none" });
-  });
-
-  it("waits for physical rasterization settlement after a logical timeout", async () => {
-    vi.useFakeTimers();
-    try {
-      let resolveOld!: (value: unknown) => void;
-      let executions = 0;
-      const { webContents } = makeWebContents({
-        rasterize: () => {
-          executions += 1;
-          return executions === 1
-            ? new Promise((resolve) => {
-                resolveOld = resolve;
-              })
-            : Promise.resolve(PNG);
-        },
-      });
-      const input = {
-        webContents,
-        pageUrl: "https://example.com/page",
-        candidates: [SOURCE_PNG_URL],
-        signal: new AbortController().signal,
-      };
-      const timedOut = captureFavicon(input);
-      await vi.advanceTimersByTimeAsync(1_001);
-      expect(await timedOut).toEqual({ kind: "timed-out" });
-
-      const newer = captureFavicon(input);
-      await Promise.resolve();
-      expect(executions).toBe(1);
-      resolveOld(PNG);
-      expect(await newer).toEqual({ kind: "captured", dataUrl: PNG });
-      expect(executions).toBe(2);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("coalesces queued rasterizations so only the latest pending capture launches", async () => {

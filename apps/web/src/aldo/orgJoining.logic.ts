@@ -215,7 +215,7 @@ export function aldoDomainStatus(domain: AldoOrgDomain, now = Date.now()): strin
 }
 
 /** Check now runs at most this often for a domain; Aldo answers sooner ones with 429. */
-export const ALDO_CHECK_NOW_SECONDS = 30;
+const ALDO_CHECK_NOW_SECONDS = 30;
 
 /** Whether Aldo looked the record up too recently for Check now to look again. */
 export function aldoCheckedJustNow(domain: AldoOrgDomain, now = Date.now()): boolean {

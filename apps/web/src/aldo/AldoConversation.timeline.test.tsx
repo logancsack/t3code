@@ -161,7 +161,7 @@ async function remount(read: AldoHome) {
   root = createRoot(container);
   await act(async () => root.render(<Page home={read} />));
 }
-// Cold Markdown transforms are fixture setup, not a user interaction budget.
+// oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Cold Markdown transforms are fixture setup, not a user interaction budget.
 beforeAll(async () => {
   await import("../components/ChatMarkdown");
 }, 60_000);

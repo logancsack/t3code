@@ -4,7 +4,6 @@ import { createSettingsResource, useSettingsResource } from "../aldo/settingsRes
 import { isAldoBilling, type AldoBilling } from "../aldo/billing.logic";
 import { isAldoCloud } from "../aldo/api";
 import { isLandingDemo } from "../landingDemo/mode";
-import { isManagedDevPc } from "../managedDevPc";
 
 /**
  * Aldo compute usage for the signed-in workspace, as the gateway summarizes it.
@@ -299,7 +298,7 @@ export type AldoWorkspaceUsageState =
   | { readonly status: "error"; readonly usage: AldoWorkspaceUsage | null };
 
 function aldoWorkspaceUsageAvailable(): boolean {
-  return (isManagedDevPc || isAldoCloud) && !isLandingDemo();
+  return isAldoCloud && !isLandingDemo();
 }
 
 /**

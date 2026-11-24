@@ -26,7 +26,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover"
 import { useSidebar } from "../components/ui/sidebar";
 import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
-import { AldoThemeToggle } from "./AldoGeneralSettings";
+import { AldoThemeToggle } from "./AldoThemeToggle";
 import { requestAldoProfile, type AldoProfile } from "./assistantApi";
 import { type AldoHomeUsage } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";

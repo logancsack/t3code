@@ -39,26 +39,13 @@ const authManagerTestLayer = (settings: Parameters<typeof ServerSettings.layerTe
   );
 
 const primeWorkInstanceId = ProviderInstanceId.make("prime_work");
+const primeDefaultInstance = {
+  providerInstances: {
+    [ProviderInstanceId.make("primeAgent")]: { driver: ProviderDriverKind.make("primeAgent") },
+  },
+};
 
 describe("AuthConnectorManager output parsing", () => {
-  it.effect("rejects Muse authentication before spawning a process when Muse is withheld", () =>
-    Effect.gen(function* () {
-      const defaultConfig = yield* ServerConfig;
-      const error = yield* start({ connector: "muse", method: "account" }).pipe(
-        Effect.provideService(ServerConfig, {
-          ...defaultConfig,
-          museCodeEnabled: false,
-        }),
-        Effect.flip,
-      );
-
-      expect(error).toMatchObject({
-        operation: "start",
-        detail: "Muse Code is not available in this T3 Code environment.",
-      });
-    }).pipe(Effect.provide(authManagerTestLayer())),
-  );
-
   it.effect("rejects Prime subscription OAuth unless the server gate is enabled", () =>
     Effect.gen(function* () {
       const defaultConfig = yield* ServerConfig;
@@ -94,17 +81,17 @@ describe("AuthConnectorManager output parsing", () => {
         TMUX: "",
       });
       yield* cancel(session.id);
-    }).pipe(Effect.provide(authManagerTestLayer())),
+    }).pipe(Effect.provide(authManagerTestLayer(primeDefaultInstance))),
   );
 
-  it.effect("uses the derived default Prime instance for authentication", () =>
+  it.effect("uses the default Prime instance when none is named", () =>
     Effect.gen(function* () {
       const session = yield* start({ connector: "prime-agent", method: "prime-inference" });
 
       expect(ptySpawn).toHaveBeenCalledTimes(1);
       expect(ptySpawn.mock.calls[0]?.[0]).toBe("prime-agent");
       yield* cancel(session.id);
-    }).pipe(Effect.provide(authManagerTestLayer())),
+    }).pipe(Effect.provide(authManagerTestLayer(primeDefaultInstance))),
   );
 
   it.effect("launches the selected Prime instance with its materialized environment", () =>

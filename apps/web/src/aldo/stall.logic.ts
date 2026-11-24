@@ -6,8 +6,6 @@
 // words, and those words as they stream in (their record keeps one time until
 // they end, so the page notes when they grow).
 
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
-
 import type { ChatMessage } from "../types";
 
 /** How long a turn goes with nothing new before the working line says so. */
@@ -40,7 +38,7 @@ export interface AldoProgress {
 
 /** The thread's latest sign of life, from its activities and its agent's messages. */
 export function aldoThreadProgress(
-  activities: ReadonlyArray<Pick<OrchestrationThreadActivity, "createdAt">>,
+  activities: ReadonlyArray<{ readonly createdAt: string }>,
   messages: ReadonlyArray<
     Pick<ChatMessage, "role" | "text" | "streaming" | "createdAt" | "updatedAt">
   >,

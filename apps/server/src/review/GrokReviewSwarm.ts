@@ -1,14 +1,11 @@
-import type {
-  GrokReviewFinding,
-  GrokReviewInput,
-  GrokReviewReport,
-  ReviewDiffPreviewSource,
-} from "@t3tools/contracts";
+import type { GrokReviewFinding, GrokReviewInput, GrokReviewReport } from "@t3tools/contracts";
 import { GrokReviewError } from "@t3tools/contracts";
+import type { CodeReviewSource } from "@t3tools/provider-core/server/codeReview";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Hex from "effect/encoding/Hex";
 
 import { GROK_AGENT_MIN_ATTEMPT_MS, type GrokReviewAgent } from "./GrokReviewAgent.ts";
 import {
@@ -46,17 +43,9 @@ import { decodeGitPath, redactSensitiveDiffWithMetadata } from "./GrokReviewPriv
 const MAX_LEAD_CONCURRENCY = 4;
 const MAX_DELEGATED_REVIEWS = 2;
 
-/**
- * One wall-clock budget for the whole swarm, split into stage deadlines.
- *
- * Reviewers now retry, so without a shared budget a pathological lead round
- * could consume the entire request and leave nothing for verification — which
- * is the only stage that actually produces the report. Each stage therefore
- * gets `min(its own ceiling, budget remaining after later stages' reserves)`,
- * and optional work is skipped rather than started with too little time to
- * finish. The total sits just under GROK_REVIEW_TIMEOUT_MS so the swarm reports
- * a real diagnostic instead of being cut off by the outer service timeout.
- */
+// One wall-clock budget for the whole swarm: each stage gets min(its ceiling, what is left
+// after later stages' reserves), so retrying leads cannot starve verification, the only stage
+// that produces the report. Sits just under GROK_REVIEW_TIMEOUT_MS so the swarm reports itself.
 const SWARM_BUDGET_MS = 11.5 * 60_000;
 const LEAD_STAGE_MAX_MS = 6 * 60_000;
 const DELEGATED_STAGE_MAX_MS = 3 * 60_000;
@@ -205,7 +194,7 @@ function reviewerFailureSummary(error: GrokReviewError): string {
       : error.cause instanceof Error
         ? error.cause.message
         : "";
-  const detail = cause ? `${error.message} — ${cause.slice(0, 120)}` : error.message;
+  const detail = cause ? `${error.message}: ${cause.slice(0, 120)}` : error.message;
   return `${error.operation}: ${detail}`.replace(/\s+/g, " ").slice(0, 220);
 }
 
@@ -243,11 +232,11 @@ function boundVerifiedFinding(
 
 export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (input: {
   readonly request: GrokReviewInput;
-  readonly source: ReviewDiffPreviewSource;
+  readonly source: CodeReviewSource;
   readonly agent: GrokReviewAgent;
 }) {
-  const crypto = yield* Crypto.Crypto;
-  const runId = yield* crypto.randomUUIDv4.pipe(
+  const digest = yield* Digest.Digest;
+  const runId = yield* (yield* SecureRandom.SecureRandom).uuidV4().pipe(
     Effect.mapError(
       (cause) =>
         new GrokReviewError({
@@ -435,9 +424,9 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     .slice(0, MAX_REVIEW_FINDINGS)
     .map(boundVerifiedFinding);
   const findingsWithFingerprint = yield* Effect.forEach(verifiedFindings, (finding) =>
-    crypto
+    digest
       .digest(
-        "SHA-256",
+        Digest.sha256,
         new TextEncoder().encode(
           [
             normalizeFindingPath(finding.path),
@@ -451,7 +440,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         Effect.map((hash) => ({
           ...finding,
           path: normalizeFindingPath(finding.path),
-          fingerprint: Encoding.encodeHex(hash),
+          fingerprint: Hex.encode(hash),
           inlineEligible: findingIsInlineEligible(finding, lineIndex),
         })),
         Effect.mapError(

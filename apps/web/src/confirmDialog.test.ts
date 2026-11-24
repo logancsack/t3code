@@ -1,48 +1,87 @@
-import { afterEach, expect, it } from "vite-plus/test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   completeConfirmDialogClose,
   readConfirmDialogState,
-  registerConfirmDialogHost,
   requestConfirmDialog,
   resetConfirmDialogForTests,
   respondToConfirmDialog,
+  subscribeConfirmDialogHost,
 } from "./confirmDialog";
 
-afterEach(resetConfirmDialogForTests);
+const mountHost = () => subscribeConfirmDialogHost(() => {});
 
-it("keeps concurrent and closing-transition confirmations paired with their callers", async () => {
-  const unregister = registerConfirmDialogHost();
-  const first = requestConfirmDialog("Delete project A?", { variant: "destructive" });
-  const second = requestConfirmDialog("Delete project B?", { variant: "destructive" });
-  expect(first).toBeInstanceOf(Promise);
-  expect(second).toBeInstanceOf(Promise);
-  let secondResolved = false;
-  void second?.then(() => {
-    secondResolved = true;
+function requireConfirmation(confirmation: Promise<boolean> | undefined): Promise<boolean> {
+  if (!confirmation) {
+    throw new Error("Expected a registered confirmation host.");
+  }
+  return confirmation;
+}
+
+describe("confirm dialog coordinator", () => {
+  beforeEach(() => {
+    resetConfirmDialogForTests();
   });
 
-  respondToConfirmDialog(false);
-  await expect(first).resolves.toBe(false);
-  const third = requestConfirmDialog("Delete project C?");
-  respondToConfirmDialog(true);
-  expect(secondResolved).toBe(false);
-  expect(readConfirmDialogState().status).toBe("closing");
+  it("serializes concurrent confirmations", async () => {
+    const unregister = mountHost();
+    const first = requireConfirmation(
+      requestConfirmDialog("Delete the project?", { initialFocus: "confirm" }),
+    );
+    const second = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
 
-  completeConfirmDialogClose();
-  expect(readConfirmDialogState()).toMatchObject({
-    status: "confirming",
-    message: "Delete project B?",
-  });
-  respondToConfirmDialog(true);
-  await expect(second).resolves.toBe(true);
-  completeConfirmDialogClose();
-  expect(readConfirmDialogState()).toMatchObject({
-    status: "confirming",
-    message: "Delete project C?",
+    respondToConfirmDialog(false);
+    await expect(first).resolves.toBe(false);
+    expect(readConfirmDialogState()).toEqual({
+      status: "closing",
+      message: "Delete the project?",
+      variant: "default",
+      initialFocus: "confirm",
+    });
+
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState()).toEqual({
+      status: "confirming",
+      message: "Delete the worktree too?",
+      variant: "default",
+    });
+
+    respondToConfirmDialog(true);
+    await expect(second).resolves.toBe(true);
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    unregister();
   });
 
-  unregister();
-  await expect(third).resolves.toBe(false);
-  expect(readConfirmDialogState().status).toBe("idle");
+  it("cancels active and queued confirmations if the last host unmounts", async () => {
+    const unregister = mountHost();
+    const active = requireConfirmation(requestConfirmDialog("Delete the thread?"));
+    const queued = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
+
+    unregister();
+
+    await expect(Promise.all([active, queued])).resolves.toEqual([false, false]);
+    expect(readConfirmDialogState()).toEqual({ status: "idle" });
+  });
+
+  it("has no host until one subscribes", () => {
+    expect(requestConfirmDialog("Continue?")).toBeUndefined();
+    const unsubscribe = mountHost();
+    expect(requestConfirmDialog("Continue?")).toBeDefined();
+    unsubscribe();
+    expect(requestConfirmDialog("Continue?")).toBeUndefined();
+  });
+
+  it("ignores responses after the active dialog has been closed", () => {
+    const unregister = mountHost();
+    const confirmation = requireConfirmation(requestConfirmDialog("Continue?"));
+
+    respondToConfirmDialog(true);
+    respondToConfirmDialog(false);
+    completeConfirmDialogClose();
+
+    expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    unregister();
+    return expect(confirmation).resolves.toBe(true);
+  });
 });

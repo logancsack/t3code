@@ -1,14 +1,9 @@
-/**
- * Optional integration check for the exact headless CLI surface used by the
- * review swarm. Enable with:
- * T3_GROK_REVIEW_PROBE=1 pnpm exec vp test run apps/server/src/review/GrokReviewCliProbe.test.ts
- *
- * The probe assumes `grok login` has already completed or `XAI_API_KEY` is
- * available. It performs one medium-effort Grok 4.5 request.
- */
+// Optional check of the headless CLI surface the swarm uses: one Grok 4.5 request, needing
+// `grok login` or XAI_API_KEY. Enable with:
+// T3_GROK_REVIEW_PROBE=1 vp test run src/review/GrokReviewCliProbe.test.ts
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { GrokSettings } from "@t3tools/contracts";
+import { GrokSettings } from "@t3tools/provider-grok/settings";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";

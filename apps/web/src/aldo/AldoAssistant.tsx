@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import {
   Fragment,
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -83,9 +85,13 @@ import { dedupeLiveCards, interleave, scheduledEvents, type AldoFeedEvent } from
 import { type AldoPlaceable } from "./decisions.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoCallCard } from "./AldoCallCard";
-import { AldoPlanPicker } from "./AldoPlanPicker";
 import { CHIP } from "./surface";
 import "./presence.css";
+
+// Shows only under a request that waits for a plan to be picked.
+const AldoPlanPicker = lazy(() =>
+  import("./AldoPlanPicker").then((module) => ({ default: module.AldoPlanPicker })),
+);
 
 const OVERVIEW_EVERY_MS = 20_000;
 
@@ -179,7 +185,7 @@ async function imageUpload(
 }
 
 /** How to talk to Aldo from anywhere (AldoAssistantDock listens for it). */
-export const ALDO_SHORTCUT_LABEL = ALDO_TALK_LABEL;
+const ALDO_SHORTCUT_LABEL = ALDO_TALK_LABEL;
 
 export function AldoVoiceMark(props: {
   readonly size?: "xl" | "lg" | "sm" | "xs";
@@ -787,7 +793,9 @@ export function AldoConversation(
           />,
           // A request kept until a plan's chosen: the plan picker under it.
           planPick?.entry === entry ? (
-            <AldoPlanPicker key={`plan-${planPick.requestId}`} pick={planPick} />
+            <Suspense key={`plan-${planPick.requestId}`} fallback={null}>
+              <AldoPlanPicker pick={planPick} />
+            </Suspense>
           ) : null,
         ];
       })}

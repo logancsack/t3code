@@ -1,0 +1,84 @@
+{
+  "snapshotSequence": 1614,
+  "projects": [
+    {
+      "id": "9cd10424-08a3-4504-8a85-5c12b86e3147",
+      "title": "Redacted project",
+      "workspaceRoot": "/workspace/project",
+      "repositoryIdentity": null,
+      "defaultModelSelection": null,
+      "defaultThreadEnvMode": null,
+      "autoPull": false,
+      "faviconPath": null,
+      "projectIcon": null,
+      "scripts": [],
+      "createdAt": "2026-11-24T01:25:33.134Z",
+      "updatedAt": "2026-11-24T01:25:33.134Z"
+    }
+  ],
+  "threads": [
+    {
+      "id": "5cb79276-2d3a-464b-b008-d90e0ba5613b",
+      "projectId": "9cd10424-08a3-4504-8a85-5c12b86e3147",
+      "title": "Redacted thread",
+      "modelSelection": {
+        "instanceId": "claudeAgent",
+        "model": "claude-fable-5-2"
+      },
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "branch": "feature/branch",
+      "worktreePath": null,
+      "pullRequests": [],
+      "branchPullRequest": null,
+      "latestTurn": {
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "state": "running",
+        "requestedAt": "2026-11-24T05:47:41.815Z",
+        "startedAt": "2026-11-24T05:47:41.815Z",
+        "completedAt": null,
+        "assistantMessageId": "assistant:95d6b1b4-0a7a-4e80-8e66-bacb4e36e39a",
+        "sourceProposedPlan": {
+          "threadId": "5cb79276-2d3a-464b-b008-d90e0ba5613b",
+          "planId": "plan:5cb79276-2d3a-464b-b008-d90e0ba5613b:turn:2805f534-26dd-49c1-a7ba-b5cac208ea8f"
+        }
+      },
+      "createdAt": "2026-11-24T01:25:55.922Z",
+      "updatedAt": "2026-11-24T06:01:12.548Z",
+      "archivedAt": null,
+      "settledOverride": null,
+      "settledAt": null,
+      "unsettledAt": null,
+      "snoozedUntil": null,
+      "snoozedAt": null,
+      "pinnedAt": null,
+      "pinOrderKey": null,
+      "activeOrderKey": null,
+      "autoSettleDisabledAt": null,
+      "titleRegeneration": null,
+      "titleState": null,
+      "session": {
+        "threadId": "5cb79276-2d3a-464b-b008-d90e0ba5613b",
+        "status": "running",
+        "providerName": "claudeAgent",
+        "providerInstanceId": "claudeAgent",
+        "runtimeMode": "full-access",
+        "activeTurnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "lastError": null,
+        "updatedAt": "2026-11-24T06:00:50.870Z"
+      },
+      "latestUserMessageAt": "2026-11-24T05:47:41.815Z",
+      "hasPendingApprovals": false,
+      "hasPendingUserInput": false,
+      "hasActionableProposedPlan": false,
+      "backgroundLiveness": "working",
+      "planProgress": null,
+      "currentWork": {
+        "kind": "thinking",
+        "startedAt": "2026-11-24T06:00:50.839Z",
+        "activity": null
+      }
+    }
+  ],
+  "updatedAt": "2026-11-24T06:01:12.548Z"
+}

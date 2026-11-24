@@ -113,7 +113,7 @@ export function AldoDraftWhereCard(props: {
     <div
       data-aldo-draft-place=""
       className={cn(
-        "pointer-events-auto mx-auto w-full max-w-(--chat-max-width) px-1 transition-opacity",
+        "pointer-events-auto mx-auto w-full max-w-(--chat-content-max-width) px-1 transition-opacity",
         moving && "opacity-60",
       )}
     >
@@ -364,7 +364,10 @@ export function AldoThreadFirstLine(props: {
   const place = useAldoPlaceOf(props.environmentId, props.project);
   if (!place) return null;
   return (
-    <div data-aldo-thread-first-line="" className="mx-auto w-full max-w-(--chat-max-width) pb-4">
+    <div
+      data-aldo-thread-first-line=""
+      className="mx-auto w-full max-w-(--chat-content-max-width) pb-4"
+    >
       <div className="flex min-w-0 items-center gap-2 border-border/60 border-b pb-2.5 text-muted-foreground text-xs">
         <AldoPlaceTile place={place} className="size-3.5" />
         <span className="truncate font-medium text-foreground/80">{place.name}</span>

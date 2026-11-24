@@ -31,6 +31,7 @@ describe("orchestration protocol compatibility", () => {
     expect(socketUrl.searchParams.get("orchestrationProtocol")).toBe(
       String(ORCHESTRATION_PROTOCOL_VERSION),
     );
+    expect(socketUrl.searchParams.get("clientCapabilities")).toBe("settingsSecretReferences");
     expect(socketUrl.searchParams.get("wsTicket")).toBe("secret");
     expect(socketUrl.searchParams.get("connectionMethod")).toBe("relay");
   });
@@ -44,11 +45,46 @@ describe("orchestration protocol compatibility", () => {
     }
   });
 
+  it("accepts protocol 1 only on a host that opted in, and never a newer one", () => {
+    expect(orchestrationProtocolCompatibilityError(descriptor(), true)).toBeNull();
+    expect(orchestrationProtocolCompatibilityError(descriptor(1), true)).toBeNull();
+    expect(orchestrationProtocolCompatibilityError(descriptor(1))).toMatchObject({
+      reason: "unsupported",
+    });
+    expect(
+      orchestrationProtocolCompatibilityError(descriptor(ORCHESTRATION_PROTOCOL_VERSION + 1), true),
+    ).toMatchObject({ reason: "unsupported" });
+  });
+
   it("blocks a different protocol before connecting", () => {
     const error = orchestrationProtocolCompatibilityError(
       descriptor(ORCHESTRATION_PROTOCOL_VERSION + 1),
     );
     expect(error).toMatchObject({ reason: "unsupported" });
     expect(error?.message).toContain("This client is not supported");
+    expect(error).not.toHaveProperty("serverUpdateRequired");
+  });
+
+  it("offers a remote update only for an older host that can update itself", () => {
+    const older = descriptor(ORCHESTRATION_PROTOCOL_VERSION - 1);
+    const withCapabilities = (capabilities: ExecutionEnvironmentDescriptor["capabilities"]) =>
+      orchestrationProtocolCompatibilityError({ ...older, capabilities });
+
+    expect(
+      withCapabilities({ repositoryIdentity: true, serverSelfUpdate: "boot-service" }),
+    ).toMatchObject({ serverUpdateRequired: true });
+    expect(withCapabilities({ repositoryIdentity: true })).not.toHaveProperty(
+      "serverUpdateRequired",
+    );
+    expect(
+      withCapabilities({ repositoryIdentity: true, serverSelfUpdate: "desktop-managed" }),
+    ).not.toHaveProperty("serverUpdateRequired");
+    expect(
+      withCapabilities({
+        repositoryIdentity: true,
+        serverSelfUpdate: "desktop-managed",
+        desktopAppUpdate: true,
+      }),
+    ).toMatchObject({ serverUpdateRequired: true });
   });
 });

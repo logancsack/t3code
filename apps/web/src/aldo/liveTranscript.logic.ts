@@ -167,7 +167,7 @@ export function idleCall(state: {
  * takes (500 tokens): about three characters of English a token, and any
  * other character (Japanese, emoji, accented letters) a token and a half.
  */
-export function liveTokens(text: string): number {
+function liveTokens(text: string): number {
   let ascii = 0;
   let other = 0;
   for (const char of text) {

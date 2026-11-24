@@ -1,8 +1,11 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { GrokReviewError, GrokReviewInput, type ReviewDiffPreviewSource } from "@t3tools/contracts";
+import { GrokReviewError, GrokReviewInput } from "@t3tools/contracts";
+import type { CodeReviewSource } from "@t3tools/provider-core/server/codeReview";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -31,7 +34,9 @@ import {
 import { redactSensitiveDiff, redactSensitiveDiffWithMetadata } from "./GrokReviewPrivacy.ts";
 import { changedLinesFromDiff, runGrokReviewSwarm } from "./GrokReviewSwarm.ts";
 
-const source: ReviewDiffPreviewSource = {
+const TestServices = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer);
+
+const source: CodeReviewSource = {
   id: "working-tree",
   kind: "working-tree",
   title: "Dirty worktree",
@@ -428,7 +433,7 @@ describe("runGrokReviewSwarm", () => {
         expect(result.failure.message).toContain("required schema");
         expect(result.failure.message.length).toBeLessThan(1_500);
       }
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("normalizes repairable Grok output before building the canonical report", () => {
@@ -485,7 +490,7 @@ describe("runGrokReviewSwarm", () => {
       expect(report.findings[0]).not.toHaveProperty("verification");
       expect(report.status).toBe("partial");
       expect(report.limitations).toContain(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION);
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("retries failed medium verification at high effort", () => {
@@ -535,7 +540,7 @@ describe("runGrokReviewSwarm", () => {
         highEffortRuns: 1,
       });
       expect(calls.filter(({ effort }) => effort === "high")).toHaveLength(1);
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("fails closed when medium and high verification both fail", () => {
@@ -567,7 +572,7 @@ describe("runGrokReviewSwarm", () => {
         expect(result.failure).toBeInstanceOf(GrokReviewError);
         expect(result.failure.operation).toBe("GrokReviewSwarm.verify");
       }
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("keeps the medium report partial when high-effort escalation fails", () => {
@@ -610,7 +615,7 @@ describe("runGrokReviewSwarm", () => {
       expect(report.limitations).toContain(
         "High-effort escalation failed; the medium-effort verification is shown.",
       );
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("reports unavailable escalation without pretending to run at high effort", () => {
@@ -650,7 +655,7 @@ describe("runGrokReviewSwarm", () => {
       expect(report.limitations).toContain(
         "The selected provider does not expose a high-effort review mode; the medium-effort verification is shown.",
       );
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("uses medium by default and escalates an ambiguous high finding", () => {
@@ -717,7 +722,7 @@ describe("runGrokReviewSwarm", () => {
       expect(report.findings[0]!.fingerprint).toMatch(/^[0-9a-f]{64}$/);
       expect(report.markdown).toContain("HIGH: Unsafe value escapes validation");
       expect(report.markdown).toContain("Reasoning:** medium → high");
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("preserves medium normalization omissions after successful escalation", () => {
@@ -761,7 +766,7 @@ describe("runGrokReviewSwarm", () => {
       expect(report.escalatedToHigh).toBe(true);
       expect(report.status).toBe("partial");
       expect(report.limitations).toContain(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION);
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("bounds the canonical report for pull-request comment delivery", () => {
@@ -813,11 +818,11 @@ describe("runGrokReviewSwarm", () => {
       expect(report.limitations.length).toBeLessThanOrEqual(8);
       expect(report.summary.length).toBeLessThanOrEqual(2_000);
       expect(report.markdown.length).toBeLessThan(60_000);
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("marks reviews with redacted sensitive patches as partial", () => {
-    const sensitiveSource: ReviewDiffPreviewSource = {
+    const sensitiveSource: CodeReviewSource = {
       ...source,
       diff: [
         "diff --git a/.env b/.env",
@@ -861,11 +866,11 @@ describe("runGrokReviewSwarm", () => {
       expect(report.markdown).toContain(
         "No actionable findings were verified in the reviewed portion.",
       );
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("preserves leading directory names on verified findings", () => {
-    const nestedSource: ReviewDiffPreviewSource = {
+    const nestedSource: CodeReviewSource = {
       ...source,
       diff: [
         "diff --git a/a/parser.ts b/a/parser.ts",
@@ -912,7 +917,7 @@ describe("runGrokReviewSwarm", () => {
         path: "a/parser.ts",
         inlineEligible: true,
       });
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("surfaces why Grok Build rejected a reviewer's structured output", () => {
@@ -959,7 +964,7 @@ describe("runGrokReviewSwarm", () => {
       );
       expect(failureLimitation).toBeDefined();
       expect(failureLimitation).toContain("severity must be one of the allowed values");
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("bounds every reviewer with a stage deadline drawn from one review budget", () => {
@@ -1009,7 +1014,7 @@ describe("runGrokReviewSwarm", () => {
       for (const entry of leadDeadlines) {
         expect(entry.deadline!).toBeLessThanOrEqual(startedAt + 6 * 60_000);
       }
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 
   it.effect("skips specialist follow-ups instead of starving verification", () => {
@@ -1057,6 +1062,6 @@ describe("runGrokReviewSwarm", () => {
         "Specialist follow-up reviews were skipped to protect the verification budget.",
       );
       expect(report.status).not.toBe("pass");
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(TestServices));
   });
 });

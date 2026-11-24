@@ -17,7 +17,7 @@ export function unsettleAldoConversation(): void {
 }
 
 /** Whether what mounts now arrived after the page opened. */
-export function useAldoArrived(): boolean {
+function useAldoArrived(): boolean {
   const [arrived] = useState(() => Date.now() > settledAt);
   return arrived;
 }

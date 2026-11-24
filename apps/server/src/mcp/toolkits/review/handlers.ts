@@ -1,20 +1,17 @@
+import type { GrokReviewInput } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as GrokReviewService from "../../../review/GrokReviewService.ts";
-import { GrokReviewToolkit } from "./tools.ts";
+import { ReviewToolkit } from "./tools.ts";
 
-export const GrokReviewToolkitHandlersLive = GrokReviewToolkit.toLayer({
-  aldo_review: (input) =>
-    Effect.gen(function* () {
-      yield* McpInvocationContext.requireMcpReviewCapability();
-      const review = yield* GrokReviewService.GrokReviewService;
-      return yield* review.run(input);
-    }),
-  grok_review: (input) =>
-    Effect.gen(function* () {
-      yield* McpInvocationContext.requireMcpReviewCapability();
-      const review = yield* GrokReviewService.GrokReviewService;
-      return yield* review.run(input);
-    }),
-});
+const run = McpToolAccess.readsAsCaller((input: GrokReviewInput) =>
+  Effect.flatMap(GrokReviewService.GrokReviewService, (review) => review.run(input)),
+);
+
+const handlers = {
+  aldo_review: run,
+  grok_review: run,
+} satisfies McpToolAccess.Handlers<typeof ReviewToolkit.tools>;
+
+export const layer = McpToolAccess.toLayer(ReviewToolkit, handlers);

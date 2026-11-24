@@ -1,88 +1,100 @@
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadLiveWork } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import { shellWork } from "./liveWork";
 
 type Shell = NonNullable<Parameters<typeof shellWork>[0]>;
 
-const running = (fields: Partial<Shell>) =>
+const shell = (
+  status: "running" | "completed",
+  activityStartedAt: string | null = null,
+  liveWork?: OrchestrationV2ThreadLiveWork,
+) =>
   ({
-    session: { status: "running" },
-    latestTurn: { state: "running", requestedAt: "2026-10-27T12:00:00.000Z", startedAt: null },
-    ...fields,
+    latestRun: { status, requestedAt: "2026-10-27T12:00:00.000Z", startedAt: null },
+    runtime: { status: status === "running" ? "running" : "idle", activityStartedAt },
+    source: { liveWork },
   }) as unknown as Shell;
 
-const command = (text: string) =>
+const startedAt = DateTime.makeUnsafe("2026-10-27T12:00:09.000Z");
+const live = (work: Partial<OrchestrationV2ThreadLiveWork>): OrchestrationV2ThreadLiveWork => ({
+  kind: "thinking",
+  startedAt,
+  tool: null,
+  plan: null,
+  ...work,
+});
+const tool = (fields: object) =>
   ({
-    id: "evt-1",
-    tone: "tool",
-    kind: "tool.started",
-    summary: "Command run started",
-    payload: {
-      itemType: "command_execution",
-      toolCallId: "item-1",
-      status: "inProgress",
-      data: { command: text },
-    },
-    turnId: null,
-    createdAt: "2026-10-27T12:00:05.000Z",
-  }) as unknown as OrchestrationThreadActivity;
+    id: "tool-1",
+    threadId: "thread-1",
+    runId: "run-1",
+    nodeId: null,
+    status: "running",
+    title: null,
+    startedAt,
+    completedAt: null,
+    updatedAt: startedAt,
+    ...fields,
+  }) as unknown as NonNullable<OrchestrationV2ThreadLiveWork["tool"]>;
 
 describe("shellWork", () => {
-  it("words a tool call under way as the thread's timeline does", () => {
-    const work = shellWork(
-      running({
-        currentWork: {
-          kind: "tool",
-          startedAt: "2026-10-27T12:00:05.000Z",
-          activity: command("python3 build.py --final"),
-        },
-      }),
-      "live",
-    );
-    expect(work).toMatchObject({
-      kind: "tool",
-      doing: "Running build.py",
+  it("says since when a run has been under way", () => {
+    expect(shellWork(shell("running"), "live")).toMatchObject({
+      doing: null,
+      since: "2026-10-27T12:00:00.000Z",
+    });
+    expect(shellWork(shell("running", "2026-10-27T12:00:05.000Z"), "live")).toMatchObject({
       since: "2026-10-27T12:00:05.000Z",
     });
   });
 
-  it("says thinking without a step, and the plan's step for a machine that doesn't report its work", () => {
+  it("says what the machine reports the run is doing, in the timeline's words", () => {
+    expect(shellWork(shell("running", null, live({ kind: "writing" })), "live")).toEqual({
+      kind: "writing",
+      doing: null,
+      since: "2026-10-27T12:00:09.000Z",
+      plan: null,
+      surface: null,
+      site: null,
+    });
     expect(
       shellWork(
-        running({
-          currentWork: { kind: "thinking", startedAt: "2026-10-27T12:00:05.000Z", activity: null },
-        }),
+        shell(
+          "running",
+          null,
+          live({
+            kind: "tool",
+            tool: tool({
+              type: "dynamic_tool",
+              toolName: "mcp__playwright__browser_navigate",
+              input: { url: "https://example.com/pricing" },
+            }),
+          }),
+        ),
         "live",
       ),
-    ).toMatchObject({ kind: "thinking", doing: null });
-    expect(
-      shellWork(
-        running({ planProgress: { step: "Run the tests", completedSteps: 1, totalSteps: 3 } }),
-        "live",
-      ),
-    ).toMatchObject({ doing: "Running the tests", plan: { done: 1, total: 3 } });
+    ).toMatchObject({ kind: "tool", doing: "Opening example.com", surface: "browser" });
   });
 
-  it("has nothing to say once no turn runs", () => {
-    expect(
-      shellWork(
-        running({
-          session: { status: "ready" } as Shell["session"],
-          currentWork: { kind: "thinking", startedAt: "2026-10-27T12:00:05.000Z", activity: null },
-        }),
-        "live",
-      ),
-    ).toBeNull();
+  it("falls back to the plan's step, with how far along it is", () => {
+    const plan = { step: "Run the tests", completedSteps: 1, totalSteps: 3 };
+    expect(shellWork(shell("running", null, live({ plan })), "live")).toMatchObject({
+      kind: "thinking",
+      doing: "Running the tests",
+      plan: { done: 1, total: 3 },
+    });
+  });
+
+  it("has nothing to say once no run is under way", () => {
+    expect(shellWork(shell("completed"), "live")).toBeNull();
+    expect(shellWork(shell("completed", null, live({ kind: "writing" })), "live")).toBeNull();
   });
 
   it("has nothing to say from a shell it isn't connected to now: what it kept may be over", () => {
-    const writing = running({
-      currentWork: { kind: "writing", startedAt: "2026-10-27T12:00:05.000Z", activity: null },
-    });
-    expect(shellWork(writing, "live")).toMatchObject({ kind: "writing" });
     for (const status of ["cached", "synchronizing", "empty"] as const) {
-      expect(shellWork(writing, status)).toBeNull();
+      expect(shellWork(shell("running"), status)).toBeNull();
     }
   });
 });

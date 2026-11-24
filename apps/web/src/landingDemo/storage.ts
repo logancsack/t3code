@@ -1,10 +1,6 @@
 // An opaque replay frame cannot use IndexedDB, and must never use the
 // visitor's connection catalog. Its only environment is the local script.
-import {
-  ConnectionTargetStore,
-  ConnectionRegistrationStore,
-  EnvironmentCacheStore,
-} from "@t3tools/client-runtime/platform";
+import { Persistence } from "@t3tools/client-runtime/platform";
 import { ProfileStore, CredentialStore } from "@t3tools/client-runtime/connection";
 import { TokenStore } from "@t3tools/client-runtime/authorization";
 import * as Effect from "effect/Effect";
@@ -15,12 +11,13 @@ import { workReplaySnapshots, workReplayConfig } from "./runtime";
 const noWrite = () => Effect.void;
 const absent = () => Effect.succeedNone;
 export const workReplayStorageLayer = Layer.mergeAll(
-  Layer.succeed(ConnectionTargetStore, {
+  Layer.succeed(Persistence.ConnectionTargetStore, {
     list: Effect.succeed([]),
     listDisabled: Effect.succeed([]),
   }),
-  Layer.succeed(ConnectionRegistrationStore, {
+  Layer.succeed(Persistence.ConnectionRegistrationStore, {
     register: noWrite,
+    setRoutes: noWrite,
     remove: noWrite,
     setEnabled: noWrite,
   }),
@@ -39,10 +36,16 @@ export const workReplayStorageLayer = Layer.mergeAll(
     put: noWrite,
     remove: noWrite,
   }),
-  Layer.succeed(EnvironmentCacheStore, {
-    loadShell: () => Effect.sync(() => Option.some(workReplaySnapshots().shell)),
-    loadThread: () => Effect.sync(() => Option.some(workReplaySnapshots().detail)),
-    loadServerConfig: () => Effect.sync(() => Option.some(workReplayConfig())),
+  Layer.succeed(Persistence.EnvironmentCacheStore, {
+    loadShell: Effect.fn("Persistence.EnvironmentCacheStore.loadShell")(() =>
+      Effect.map(workReplaySnapshots, ({ shell }) => Option.some(shell)),
+    ),
+    loadThread: Effect.fn("Persistence.EnvironmentCacheStore.loadThread")(() =>
+      Effect.map(workReplaySnapshots, ({ detail }) => Option.some(detail)),
+    ),
+    loadServerConfig: Effect.fn("Persistence.EnvironmentCacheStore.loadServerConfig")(() =>
+      Effect.sync(() => Option.some(workReplayConfig())),
+    ),
     saveShell: noWrite,
     saveThread: noWrite,
     removeThread: noWrite,

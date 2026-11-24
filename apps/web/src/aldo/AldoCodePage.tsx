@@ -3,9 +3,9 @@
 // are connected (Connections).
 
 import { Link } from "@tanstack/react-router";
-import { ChevronRightIcon, GitCompareArrowsIcon, GitBranchIcon } from "lucide-react";
+import { ChevronRightIcon, GitBranchIcon } from "lucide-react";
 
-import { GeneralSettingsPanel } from "../components/settings/SettingsPanels";
+import { DiffsSettingsPanel } from "../components/settings/SettingsPanels";
 import {
   SettingsPageContainer,
   SettingsRow,
@@ -18,13 +18,7 @@ export function AldoCodePage() {
   return (
     <SettingsPageContainer>
       <AldoEnvironmentsPanel />
-      <SettingsSection
-        id="aldo-changes"
-        title="Changes"
-        icon={<GitCompareArrowsIcon className="size-4" />}
-      >
-        <GeneralSettingsPanel aldoPart="diffs" />
-      </SettingsSection>
+      <DiffsSettingsPanel />
       <SettingsSection title="Code hosts" icon={<GitBranchIcon className="size-4" />}>
         <SettingsRow
           id="aldo-code-hosts"

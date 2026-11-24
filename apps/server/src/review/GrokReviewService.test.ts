@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
   ProviderDriverKind,
@@ -14,8 +16,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
-import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as GrokReviewService from "./GrokReviewService.ts";
 import * as ReviewService from "./ReviewService.ts";
 
@@ -82,6 +84,7 @@ function makeLayer(instances: ReadonlyArray<ProviderInstance>) {
         listInstances: Effect.succeed(instances),
       }),
     ),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 }
 
@@ -99,6 +102,7 @@ describe("GrokReviewService", () => {
           auth: { status: "authenticated" },
         }),
       },
+      textGeneration: {},
       codeReview: {
         run: ({
           source,

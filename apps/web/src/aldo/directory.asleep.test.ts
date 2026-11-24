@@ -12,7 +12,6 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -62,7 +61,7 @@ vi.mock("../state/presentation", () => ({
   },
 }));
 vi.mock("../rpc/atomRegistry", async () => {
-  const { AsyncResult } = await import("effect/unstable/reactivity");
+  const { AsyncResult } = await import("effect/reactivity");
   const presented = (phase: string | undefined) => (phase ? { connection: { phase } } : null);
   return {
     appAtomRegistry: {
@@ -77,6 +76,9 @@ vi.mock("../rpc/atomRegistry", async () => {
     },
   };
 });
+vi.mock("../state/entities", () => ({
+  readThreadShell: () => ({ runtimeMode: "full-access", interactionMode: "default" }),
+}));
 vi.mock("../composerDraftStore", () => ({
   useComposerDraftStore: { getState: () => ({ getComposerDraft: () => null }) },
 }));
@@ -264,6 +266,8 @@ const page = (machines: Record<string, MachineState>) =>
     const directory = yield* Effect.promise(() => import("./directory"));
     const { installAldoReconnect } = yield* Effect.promise(() => import("./reconnect"));
     const dispatch = yield* Effect.promise(() => import("./dispatch"));
+    // Loaded before the clock is driven by hand: a send converts with it.
+    yield* Effect.promise(() => import("@t3tools/client-runtime/legacyV1"));
     installAldoReconnect();
     dispatch.installAldoCommandDispatch();
     yield* Stream.runDrain(directory.aldoPlatformRegistrations()).pipe(Effect.forkScoped);
@@ -646,52 +650,49 @@ describe("the directory answers for sleeping machines", () => {
 });
 
 describe("bringing a machine up from this page", () => {
-  /** A message to a thread, or its first (`first`), which makes the thread. */
-  function message(threadId: string, first = false): ClientOrchestrationCommand {
+  /** Sends a message, or a thread's first (`first`), to a machine this page isn't connected to: Aldo holds it (dispatch.ts). */
+  const send = (id: string, first = false) => {
     const modelSelection = ModelSelection.make({
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt",
     });
-    return {
-      type: "thread.turn.start",
-      commandId: CommandId.make(`command-${threadId}`),
-      threadId: ThreadId.make(threadId),
-      message: {
-        messageId: MessageId.make(`message-${threadId}`),
-        role: "user",
-        text: "Carry on",
-        attachments: [],
-      },
-      modelSelection,
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      ...(first
-        ? {
-            bootstrap: {
-              createThread: {
-                projectId: ProjectId.make("project"),
-                title: "Carry on",
-                modelSelection,
-                runtimeMode: "full-access",
-                interactionMode: "default",
-                branch: null,
-                worktreePath: null,
-                createdAt: "2026-10-19T00:00:00.000Z",
-              },
-            },
-          }
-        : {}),
-      createdAt: "2026-10-19T00:00:00.000Z",
+    const target = {
+      commandId: CommandId.make(`command-t-${id}`),
+      threadId: ThreadId.make(`t-${id}`),
     };
-  }
-
-  /** Sends a message to a machine this page isn't connected to: Aldo holds it (dispatch.ts). */
-  const send = (threadId: string, first = false) =>
-    host.dispatch!({
-      environmentId: `aldo-${threadId}`,
-      command: message(`t-${threadId}`, first),
-      primary: true,
-    });
+    const message = {
+      messageId: MessageId.make(`message-t-${id}`),
+      text: "Carry on",
+      attachments: [],
+    };
+    const to = { environmentId: `aldo-${id}`, primary: true };
+    return first
+      ? host.dispatch!({
+          ...to,
+          launch: {
+            ...target,
+            projectId: ProjectId.make("project"),
+            title: "Carry on",
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            workspaceStrategy: { type: "root" },
+            initialMessage: message,
+          },
+        })
+      : host.dispatch!({
+          ...to,
+          command: {
+            type: "message.dispatch",
+            createdBy: "user",
+            creationSource: "web",
+            ...target,
+            ...message,
+            modelSelection,
+            dispatchMode: { type: "start_immediately" },
+          },
+        });
+  };
 
   /** Aldo picks new threads' models from here on, as the next directory read says. */
   const routeModels = (tab: Tab) =>

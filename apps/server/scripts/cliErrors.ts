@@ -25,17 +25,6 @@ export class ServerCliDevelopmentIconSourceMissingError extends Schema.TaggedErr
   }
 }
 
-export class ServerCliDevelopmentIconTargetMissingError extends Schema.TaggedError<ServerCliDevelopmentIconTargetMissingError>()(
-  "ServerCliDevelopmentIconTargetMissingError",
-  {
-    targetPath: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Missing development icon target: ${this.targetPath}. Build web first.`;
-  }
-}
-
 export class ServerCliBuildAssetMissingError extends Schema.TaggedError<ServerCliBuildAssetMissingError>()(
   "ServerCliBuildAssetMissingError",
   {
@@ -56,5 +45,17 @@ export class ServerCliExecutableImportError extends Schema.TaggedError<ServerCli
 ) {
   override get message(): string {
     return `${this.bundlePath} imports file-backed packages that a single-executable cannot resolve: ${this.specifiers.join(", ")}. Load them through createRequire instead.`;
+  }
+}
+
+export class ServerCliBootstrapTooLargeError extends Schema.TaggedError<ServerCliBootstrapTooLargeError>()(
+  "ServerCliBootstrapTooLargeError",
+  {
+    bootstrapPath: Schema.String,
+    bytes: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return `${this.bootstrapPath} is ${this.bytes} bytes. The CLI was bundled into the executable bootstrap; keep ./binMain.ts external.`;
   }
 }

@@ -6,8 +6,8 @@ import * as Effect from "effect/Effect";
 
 const original = vi.hoisted(() => ({ now: Date.now }));
 vi.mock("../state/entities", () => ({ setActiveEnvironmentId: vi.fn() }));
-import { workReplaySnapshots } from "./runtime";
-import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
+import { mapShellSnapshot } from "@t3tools/client-runtime/legacyV1";
+import { workReplaySource } from "./runtime";
 import { aldoOpenShareNow } from "../aldo/shareViewer";
 import { useAldoAssistant } from "../aldo/assistantSession";
 import { applyWorkReplay, homeFor, sourceTime, type WorkReplayScript } from "./workReplay";
@@ -163,19 +163,13 @@ it("keeps native sidebar status in sync with Home at each task start, finish and
   for (const at of [...boundaries, 0]) {
     applyWorkReplay(script, at);
     const home = homeFor(script, at);
-    const threads = workReplaySnapshots().shell.threads;
+    const threads = mapShellSnapshot(workReplaySource().shell).threads;
     expect(threads).toHaveLength(home.conversations.length);
-    expect(threads.filter((t) => resolveSidebarThreadStatus(t) === "working")).toHaveLength(
-      home.usage.agents.running,
-    );
+    expect(threads.filter((t) => t.status === "running")).toHaveLength(home.usage.agents.running);
     for (const conversation of home.conversations) {
       const thread = threads.find((t) => t.id === `replay-${conversation.ref}`)!;
-      expect(resolveSidebarThreadStatus(thread)).toBe(
-        conversation.state === "working" ? "working" : "ready",
-      );
-      expect(thread.session?.activeTurnId).toBe(
-        conversation.state === "working" ? thread.latestTurn?.turnId : null,
-      );
+      expect(thread.status).toBe(conversation.state === "working" ? "running" : "completed");
+      expect(thread.activeRunId).toBe(conversation.state === "working" ? thread.latestRunId : null);
     }
   }
 });

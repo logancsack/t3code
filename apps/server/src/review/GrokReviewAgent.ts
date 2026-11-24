@@ -1,4 +1,5 @@
-import type { GrokReviewReasoningEffort, GrokSettings } from "@t3tools/contracts";
+import type { GrokReviewReasoningEffort } from "@t3tools/contracts";
+import type { GrokSettings } from "@t3tools/provider-grok/settings";
 import { GrokReviewError } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
@@ -7,23 +8,21 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { ChildProcess } from "effect/unstable/process";
+import { ChildProcess } from "effect/process";
 
-import { parseGenericCliVersion, spawnAndCollect } from "../provider/providerSnapshot.ts";
-import { toJsonSchemaObject } from "../textGeneration/TextGenerationUtils.ts";
+import {
+  parseGenericCliVersion,
+  ProviderProbeOutputLimitError,
+  spawnAndCollect,
+} from "@t3tools/provider-core/server/snapshotProbe";
+import { toJsonSchemaObject } from "@t3tools/provider-core/server/textGenerationUtils";
 import { GROK_REVIEW_SENSITIVE_PATH_GLOBS } from "./GrokReviewPrivacy.ts";
 
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
-export const GROK_AGENT_TIMEOUT_MS = 3 * 60 * 1_000;
-/**
- * Grok Build intermittently returns `structuredOutputError` or exits nonzero for
- * a prompt it handles correctly on the next sample. A single such blip used to
- * delete an entire lead reviewer from the swarm for the whole run, so every
- * failure that a fresh sample could plausibly fix is retried against a new
- * subprocess. Retries are bounded by the caller's deadline, never by attempts
- * alone, so a degraded run can never outlive its review budget.
- */
-export const GROK_AGENT_MAX_ATTEMPTS = 3;
+const GROK_AGENT_TIMEOUT_MS = 3 * 60 * 1_000;
+// Grok Build intermittently fails a prompt it handles on the next sample, so retryable
+// failures get a fresh subprocess. The caller's deadline bounds retries, not attempts alone.
+const GROK_AGENT_MAX_ATTEMPTS = 3;
 /** Never start an attempt that cannot plausibly finish before the deadline. */
 export const GROK_AGENT_MIN_ATTEMPT_MS = 40 * 1_000;
 const GROK_AGENT_RETRY_BASE_DELAY_MS = 1_500;
@@ -40,6 +39,7 @@ const GrokHeadlessEnvelope = Schema.Struct({
 const decodeGrokHeadlessEnvelope = Schema.decodeEffect(Schema.fromJsonString(GrokHeadlessEnvelope));
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const isGrokReviewError = Schema.is(GrokReviewError);
+const isOutputLimitError = Schema.is(ProviderProbeOutputLimitError);
 
 export interface GrokReviewAgentRequest<S extends Schema.Top> {
   readonly cwd: string;
@@ -117,7 +117,7 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
       env: processEnvironment,
       shell: versionCommand.shell,
     }),
-    { maxOutputBytes: 64_000 },
+    { maxStdoutBytes: 64_000 },
   ).pipe(
     Effect.timeoutOption("5 seconds"),
     Effect.orElseSucceed(() => Option.none()),
@@ -126,13 +126,13 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
     ? parseGenericCliVersion(`${versionResult.value.stdout}\n${versionResult.value.stderr}`)
     : null;
 
-  const runAttempt = <S extends Schema.Top>(
-    request: GrokReviewAgentRequest<S>,
-    promptPath: string,
-    jsonSchema: string,
-    attemptTimeoutMs: number,
-  ): Effect.Effect<S["Type"], AgentAttemptFailure, S["DecodingServices"]> =>
-    Effect.gen(function* () {
+  const runAttempt = Effect.fn("GrokReviewAgent.runAttempt")(
+    function* <S extends Schema.Top>(
+      request: GrokReviewAgentRequest<S>,
+      promptPath: string,
+      jsonSchema: string,
+      attemptTimeoutMs: number,
+    ) {
       const args = [
         "--cwd",
         request.cwd,
@@ -169,19 +169,27 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
           env: processEnvironment,
           shell: command.shell,
         }),
-        { maxOutputBytes: GROK_AGENT_MAX_OUTPUT_BYTES },
+        { maxStdoutBytes: GROK_AGENT_MAX_OUTPUT_BYTES },
       ).pipe(
         Effect.timeoutOption(attemptTimeoutMs),
         // Spawn failures are usually transient resource exhaustion when four
         // leads start at once, so a fresh attempt is worth one cheap retry.
+        // Overflow is deterministic for a given prompt, so it is never retried.
         Effect.mapError((cause) =>
-          retryable(
-            new GrokReviewError({
-              operation: "GrokReviewAgent.run",
-              detail: "Failed to start the configured Grok Build reviewer.",
-              cause,
-            }),
-          ),
+          isOutputLimitError(cause)
+            ? terminal(
+                new GrokReviewError({
+                  operation: "GrokReviewAgent.run",
+                  detail: "Grok Build reviewer output exceeded the safe collection limit.",
+                }),
+              )
+            : retryable(
+                new GrokReviewError({
+                  operation: "GrokReviewAgent.run",
+                  detail: "Failed to start the configured Grok Build reviewer.",
+                  cause,
+                }),
+              ),
         ),
       );
 
@@ -195,20 +203,8 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
           ),
         );
       }
-      if (result.value.stdoutTruncated || result.value.stderrTruncated) {
-        // Deterministic for a given prompt: the same diff overflows every time,
-        // and each retry would burn a full attempt timeout to learn that again.
-        return yield* Effect.fail(
-          terminal(
-            new GrokReviewError({
-              operation: "GrokReviewAgent.run",
-              detail: "Grok Build reviewer output exceeded the safe collection limit.",
-            }),
-          ),
-        );
-      }
       const decodedEnvelope = yield* decodeGrokHeadlessEnvelope(result.value.stdout).pipe(
-        Effect.map(Option.some),
+        Effect.asSome,
         Effect.orElseSucceed(() => Option.none()),
       );
       if (
@@ -270,26 +266,24 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
           ),
         ),
       );
-    }).pipe(
-      Effect.mapError((cause) =>
-        isAgentAttemptFailure(cause)
-          ? cause
-          : terminal(
-              isGrokReviewError(cause)
-                ? cause
-                : new GrokReviewError({
-                    operation: "GrokReviewAgent.run",
-                    detail: "Grok Build review execution failed.",
-                    cause,
-                  }),
-            ),
-      ),
-    );
+    },
+    Effect.mapError((cause) =>
+      isAgentAttemptFailure(cause)
+        ? cause
+        : terminal(
+            isGrokReviewError(cause)
+              ? cause
+              : new GrokReviewError({
+                  operation: "GrokReviewAgent.run",
+                  detail: "Grok Build review execution failed.",
+                  cause,
+                }),
+          ),
+    ),
+  );
 
-  const run = <S extends Schema.Top>(
-    request: GrokReviewAgentRequest<S>,
-  ): Effect.Effect<S["Type"], GrokReviewError, S["DecodingServices"]> =>
-    Effect.gen(function* () {
+  const run = Effect.fn("GrokReviewAgent.run")(
+    function* <S extends Schema.Top>(request: GrokReviewAgentRequest<S>) {
       const tempDirectory = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-grok-review-",
       });
@@ -335,20 +329,20 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
           }),
         attempts,
       );
-    }).pipe(
-      // Scope setup (temp directory, prompt file, schema encoding) fails outside
-      // the attempt loop, so it still needs the canonical error shape.
-      Effect.mapError((cause) =>
-        isGrokReviewError(cause)
-          ? cause
-          : new GrokReviewError({
-              operation: "GrokReviewAgent.run",
-              detail: "Grok Build review execution failed.",
-              cause,
-            }),
-      ),
-      Effect.scoped,
-    );
+    },
+    // Scope setup (temp directory, prompt file, schema encoding) fails outside
+    // the attempt loop, so it still needs the canonical error shape.
+    Effect.mapError((cause) =>
+      isGrokReviewError(cause)
+        ? cause
+        : new GrokReviewError({
+            operation: "GrokReviewAgent.run",
+            detail: "Grok Build review execution failed.",
+            cause,
+          }),
+    ),
+    Effect.scoped,
+  );
 
   return {
     resolvedModel: DEFAULT_GROK_REVIEW_MODEL,

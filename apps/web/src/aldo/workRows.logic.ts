@@ -10,10 +10,9 @@
 // joins the group for its kind of work, or starts one, so a group never moves
 // while a turn streams.
 
-import { omitSupersededLifecycleMarkers } from "@t3tools/client-runtime/work-log/presentation";
-
 import type { WorkWords } from "../components/chat/MessagesTimeline.logic";
-import type { WorkLogEntry } from "../session-logic";
+import type { TimelineEntry, WorkLogEntry } from "../session-logic";
+import type { AldoPlanStep } from "./progress.logic";
 import { aldoStepsInOrder, aldoWorkWords, type AldoStep } from "./workLabels.logic";
 
 type Entry = Pick<
@@ -32,15 +31,14 @@ type Entry = Pick<
   | "tone"
   | "toolLifecycleStatus"
   | "toolCallId"
-  | "turnId"
+  | "runId"
+  | "viewedImagePath"
   | "sourceActivityKind"
 >;
 
 /** The tool calls among a run of work: what "84 steps" counts (not thoughts or notices). */
 export function aldoStepCount(entries: ReadonlyArray<Entry>): number {
-  return omitSupersededLifecycleMarkers(entries, (entry) => entry).filter(
-    (entry) => entry.tone === "tool",
-  ).length;
+  return entries.filter((entry) => entry.tone === "tool").length;
 }
 
 /** "40 sec", "6 min", "1 hr 12 min". */
@@ -321,9 +319,7 @@ export function aldoWorkGroups(
   entries: ReadonlyArray<Entry>,
   endedAt: string | null = null,
 ): AldoWorkGroup[] {
-  const work = omitSupersededLifecycleMarkers(entries, (entry) => entry).filter(
-    (entry) => entry.tone !== "info" && entry.tone !== "thinking",
-  );
+  const work = entries.filter((entry) => entry.tone !== "info" && entry.tone !== "thinking");
   // A step with no words of its own still says which tool it used ("Used gig lookup").
   const found = aldoStepsInOrder(work).map((step, index): AldoStep | null => {
     if (step) return step;
@@ -394,3 +390,31 @@ export const aldoQuietWork: WorkWords = {
   ...aldoWorkWords,
   worked: aldoWorkedLabel,
 };
+
+export interface AldoRunProgress {
+  /** The run's latest todo list, if its agent keeps one. */
+  readonly plan: ReadonlyArray<AldoPlanStep> | null;
+  /** The step under way in plain words. */
+  readonly words: string | null;
+}
+
+/** What the working line says about the run under way, from the timeline's own entries. */
+export function aldoRunProgress(
+  entries: ReadonlyArray<TimelineEntry>,
+  runId: string | null,
+): AldoRunProgress {
+  const work: WorkLogEntry[] = [];
+  let plan: AldoRunProgress["plan"] = null;
+  for (const entry of entries) {
+    if (entry.kind !== "work" || (runId !== null && entry.entry.runId !== runId)) continue;
+    work.push(entry.entry);
+    const item = entry.entry.structuredPayload;
+    if (item?.type === "todo_list") {
+      plan = item.steps.map((step) => ({
+        step: step.text,
+        status: step.status === "running" ? "inProgress" : step.status,
+      }));
+    }
+  }
+  return { plan, words: aldoQuietWork.working(work) };
+}

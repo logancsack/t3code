@@ -20,7 +20,7 @@ import {
 import { Textarea } from "../components/ui/textarea";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
-import { aldoOrgAdmin } from "./accountApi";
+import { aldoOrgAdmin } from "./orgAdminApi";
 import { ErrorLine } from "./AldoOrgParts";
 import {
   aldoRunningDetail,

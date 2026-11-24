@@ -57,7 +57,7 @@ export function useAldoGoals(): AldoGoalsRead {
 }
 
 /** How often an open Goals page looks again, while it's the tab in front. */
-export const ALDO_GOALS_EVERY_MS = 60_000;
+const ALDO_GOALS_EVERY_MS = 60_000;
 
 /** Runs `look` now and every minute while the page is visible, and when it comes back to the front. */
 export function useAldoGoalsWatch(look: () => void): void {

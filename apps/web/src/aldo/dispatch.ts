@@ -19,12 +19,18 @@
 // Aldo keeps the command for the machine (threadCommands.ts).
 
 import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
-import { EnvironmentId } from "@t3tools/contracts";
+import type { V1ClientCommand } from "@t3tools/client-runtime/legacyV1";
+import {
+  EnvironmentId,
+  type OrchestrationV2Command,
+  type OrchestrationV2ThreadLaunchInput,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { hasExplicitComposerModelSelection } from "../lib/chatThreadActions";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { keepAldoCommand } from "./threadCommands";
@@ -33,6 +39,7 @@ import { dropOutgoing, keepOutgoing, outgoing } from "./outbox";
 import { aldoMachineConnected, releaseAldoStartingThreads } from "./startingThreads";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { readThreadShell } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
 import { toastManager } from "../components/ui/toast";
 import { AldoApiError, api, threadIdForEnvironment, isAldoCloud, isAldoEnvironmentId } from "./api";
@@ -384,58 +391,64 @@ export function installAldoCommandDispatch(): void {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void resumeAldoOutbox();
   });
-  setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
+  setOrchestrationCommandDispatchOverride(async ({ command, launch, environmentId }) => {
     if (!isAldoEnvironmentId(environmentId)) return null;
-    if (command.type === "thread.turn.interrupt") {
-      try {
-        await api(`/api/environments/${threadIdForEnvironment(environmentId)}/actions`, {
-          method: "POST",
-          body: JSON.stringify({ action: "interrupt", t3ThreadId: command.threadId }),
-        });
-        requestAldoDirectoryRefresh();
-        return { sequence: 0 };
-      } catch (cause) {
-        // Older Aldo servers still take the ordinary T3 interrupt.
-        if (!(cause instanceof AldoApiError) || cause.status !== 400) throw cause;
-      }
-    }
-    if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
-    // Settling, archiving, renaming... a sleeping machine's thread: at once, without waking it.
-    // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
-    const kept = inFlight.has(environmentId) ? null : await keepAldoCommand(environmentId, command);
-    if (kept) return kept;
-    // A message for a machine this page isn't connected to goes to Aldo first, and one with
-    // files however the machine is: Aldo puts them on it, so only Aldo can send it.
-    const files = command.type === "thread.turn.start" ? aldoFilesOf(command) : null;
     const connected = isAldoConnected(environmentId);
-    const routed = command.type === "thread.turn.start" && aldoRoutesModels();
-    const heldCommand = routed
-      ? {
-          ...command,
-          aldoModelExplicit: hasExplicitComposerModelSelection(
-            useComposerDraftStore
-              .getState()
-              .getComposerDraft(
-                scopeThreadRef(EnvironmentId.make(environmentId), command.threadId),
-              ),
-          ),
-        }
-      : command;
-    const held =
-      command.type === "thread.turn.start" &&
-      (await handToAldo(environmentId, heldCommand, files, connected));
-    if (!held) {
+    // What V1 can't say goes to the machine itself, woken first if it sleeps.
+    const viaMachine = async () => {
       await ensureAldoConnected(environmentId).catch((cause: unknown) => {
         notifyAldoRefusal(cause);
         throw cause;
       });
       return null;
+    };
+    const v1 = await aldoCommandOf(environmentId, launch ?? command);
+    // Read state lives on the machine alone: opening a thread never wakes it.
+    if (v1 === "skip") return connected || command?.type !== "thread.visit" ? viaMachine() : SENT;
+    if (v1 === null) return viaMachine();
+    if (v1.type === "thread.turn.interrupt") {
+      try {
+        await api(`/api/environments/${threadIdForEnvironment(environmentId)}/actions`, {
+          method: "POST",
+          body: JSON.stringify({ action: "interrupt", t3ThreadId: v1.threadId }),
+        });
+        requestAldoDirectoryRefresh();
+        return SENT;
+      } catch (cause) {
+        // Older Aldo servers still take the ordinary T3 interrupt.
+        if (!(cause instanceof AldoApiError) || cause.status !== 400) throw cause;
+        return viaMachine();
+      }
     }
-    heldThreads.set(environmentId, command.threadId);
-    const onlyAldo = true;
+    if (v1.type !== "thread.turn.start") {
+      // Settling, archiving, renaming... a sleeping machine's thread: at once, without waking it.
+      // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
+      const kept = inFlight.has(environmentId) ? null : await keepAldoCommand(environmentId, v1);
+      return kept ?? viaMachine();
+    }
+    // A message goes to Aldo first, and one with files however the machine is: Aldo puts them
+    // on it, so only Aldo can send it. Queued, steered, restarting or fresh-session messages
+    // have no V1 form, so a connected machine takes those itself.
+    const files = aldoFilesOf(v1);
+    if (connected && files === null && command?.type === "message.dispatch" && !isPlain(command)) {
+      return null;
+    }
+    lastSentAt.set(environmentId, Date.now());
+    const routed = aldoRoutesModels();
+    const heldCommand = routed
+      ? {
+          ...v1,
+          aldoModelExplicit: hasExplicitComposerModelSelection(
+            useComposerDraftStore
+              .getState()
+              .getComposerDraft(scopeThreadRef(EnvironmentId.make(environmentId), v1.threadId)),
+          ),
+        }
+      : v1;
+    if (!(await handToAldo(environmentId, heldCommand, files, connected))) return viaMachine();
+    heldThreads.set(environmentId, v1.threadId);
     try {
-      if (await connectForHeld(environmentId, command, onlyAldo))
-        return onlyAldo ? { sequence: 0 } : null;
+      if (await connectForHeld(environmentId, v1, true)) return SENT;
     } finally {
       heldThreads.delete(environmentId);
     }
@@ -446,8 +459,51 @@ export function installAldoCommandDispatch(): void {
     releaseAldoStartingThreads(environmentId);
     requestAldoDirectoryRefresh();
     followAldoMachine(environmentId);
-    return { sequence: 0 };
+    return SENT;
   });
+}
+
+type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
+
+/** Aldo's answer for a command it took: the machine's own sequence comes with its shell. */
+const SENT = { sequence: 0 };
+
+/** Whether a V1 turn start says all of a message: it isn't queued, steered, a restart or a fresh session. */
+function isPlain(command: MessageDispatch): boolean {
+  return (
+    command.dispatchMode.type === "start_immediately" &&
+    (command.deliveryIntent ?? "auto") === "auto" &&
+    command.freshContext !== true &&
+    command.idleCompaction === undefined
+  );
+}
+
+/**
+ * The V1 command Aldo and every machine's gateway take for what the client sends: Aldo holds
+ * and replays V1 only, whatever the machine runs. "skip" changes nothing a V1 machine keeps;
+ * null has no V1 form. A message converts as one that starts a turn: Aldo delivers it under a
+ * running one as the gateway sees fit.
+ */
+async function aldoCommandOf(
+  environmentId: string,
+  input: OrchestrationV2Command | (OrchestrationV2ThreadLaunchInput & { threadId: ThreadId }),
+): Promise<V1ClientCommand | "skip" | null> {
+  // With the rest of the generation-1 adapter, off the first screen.
+  const { launchToV1Command, toV1Commands } = await import("@t3tools/client-runtime/legacyV1");
+  const now = new Date().toISOString();
+  if (!("type" in input)) return launchToV1Command(input, now);
+  const result = toV1Commands(
+    input.type === "message.dispatch"
+      ? { ...input, dispatchMode: { type: "start_immediately" } }
+      : input,
+    {
+      now,
+      thread: (threadId) =>
+        readThreadShell(scopeThreadRef(EnvironmentId.make(environmentId), threadId)) ?? undefined,
+    },
+  );
+  if (result.kind === "skip") return "skip";
+  return result.kind === "send" && result.commands.length === 1 ? result.commands[0]! : null;
 }
 
 /**

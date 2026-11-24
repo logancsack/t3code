@@ -160,9 +160,9 @@ export function withApprovalHolds(
 
 /** A thread's timeline with its approvals in it, each where it was asked (the same entries back when it has none). */
 export function withThreadApprovals(
-  entries: TimelineEntry[],
+  entries: ReadonlyArray<TimelineEntry>,
   approvals: ReadonlyArray<AldoApproval>,
-): TimelineEntry[] {
+): ReadonlyArray<TimelineEntry> {
   if (approvals.length === 0) return entries;
   const merged = [...entries];
   for (const approval of approvals) {

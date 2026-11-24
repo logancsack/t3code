@@ -8,8 +8,8 @@
 // it. Kept apart from startingThreads.ts so the connection runtime can use it.
 
 import {
+  BoundedThreadSnapshotLoader,
   ThreadSnapshotLoader,
-  threadSnapshotLoaderLayer,
   type ThreadSnapshotLoadResult,
 } from "@t3tools/client-runtime/state/threads";
 import * as Effect from "effect/Effect";
@@ -42,11 +42,11 @@ export function aldoThreadSnapshotResult(
   const key = keyOf(environmentId, threadId);
   const since = pending.get(key);
   if (since === undefined) return result;
-  if (result.kind === "found" || Date.now() - since > PENDING_MS) {
+  if (result._tag === "present" || Date.now() - since > PENDING_MS) {
     pending.delete(key);
     return result;
   }
-  return result.kind === "not-found" ? { kind: "unavailable" } : result;
+  return result._tag === "missing" ? { _tag: "unavailable" } : result;
 }
 
 /** T3's thread loader, reading pending threads' answers as above. */
@@ -55,14 +55,15 @@ export const aldoThreadSnapshotLoaderLayer = Layer.effect(
   Effect.gen(function* () {
     const loader = yield* ThreadSnapshotLoader;
     return ThreadSnapshotLoader.of({
-      load: (prepared, threadId, window) =>
+      load: Effect.fn("ThreadSnapshotLoader.load")((prepared, threadId) =>
         loader
-          .load(prepared, threadId, window)
+          .load(prepared, threadId)
           .pipe(
             Effect.map((result) =>
               aldoThreadSnapshotResult(prepared.environmentId, threadId, result),
             ),
           ),
+      ),
     });
   }),
-).pipe(Layer.provide(threadSnapshotLoaderLayer));
+).pipe(Layer.provide(BoundedThreadSnapshotLoader.layer));

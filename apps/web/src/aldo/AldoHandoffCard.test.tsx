@@ -81,7 +81,11 @@ it("on a computer, offers Take control and a QR code for the phone, which opens 
   expect(phone.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector('svg[aria-label="QR code for your phone"]')).toBeNull();
 
-  await act(() => phone.click());
+  // The code's drawing loads when it is first shown.
+  await act(async () => {
+    phone.click();
+    await import("../components/ui/qr-code");
+  });
   expect(phone.getAttribute("aria-expanded")).toBe("true");
   expect(container.querySelector('svg[aria-label="QR code for your phone"]')).not.toBeNull();
   expect(container.textContent).toContain("It opens your agent's browser at this step");

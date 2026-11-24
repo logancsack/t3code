@@ -35,7 +35,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
-import { aldoOffboarding } from "./accountApi";
+import { aldoOffboarding } from "./orgAdminApi";
 import { ErrorLine, Initials, OpenRow } from "./AldoOrgParts";
 import {
   ALDO_WORK_LABELS,

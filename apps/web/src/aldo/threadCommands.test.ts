@@ -10,6 +10,7 @@ const device = vi.hoisted(() => ({
 }));
 
 const aldoApiMock = vi.hoisted(() => {
+  // @effect-diagnostics-next-line extendsNativeError:off
   class AldoApiError extends Error {
     constructor(
       readonly status: number,

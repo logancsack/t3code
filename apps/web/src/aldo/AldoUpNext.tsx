@@ -27,7 +27,7 @@ import { cn } from "~/lib/utils";
 import { useAldoAssistant } from "./assistantSession";
 import { currentDecisionReport, legacyHomeUpdate, technicalUpdateLink } from "./homeUpdate.logic";
 import { AldoUpdateDetails } from "./AldoUpdateCard";
-import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
+import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
 import { DismissChatDecision } from "./DismissChatDecision";
 import { ApprovalCard, ApprovalText, DecidedApproval, RewriteNote } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";

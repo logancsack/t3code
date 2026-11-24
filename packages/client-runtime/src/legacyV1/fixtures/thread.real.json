@@ -1,0 +1,584 @@
+{
+  "snapshotSequence": 1963,
+  "thread": {
+    "id": "5cb79276-2d3a-464b-b008-d90e0ba5613b",
+    "projectId": "9cd10424-08a3-4504-8a85-5c12b86e3147",
+    "title": "Redacted thread",
+    "modelSelection": {
+      "instanceId": "claudeAgent",
+      "model": "claude-fable-5-2"
+    },
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "branch": "feature/branch",
+    "worktreePath": null,
+    "pullRequests": [],
+    "branchPullRequest": null,
+    "latestTurn": {
+      "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+      "state": "running",
+      "requestedAt": "2026-11-24T05:47:41.815Z",
+      "startedAt": "2026-11-24T05:47:41.815Z",
+      "completedAt": null,
+      "assistantMessageId": "assistant:c2fae8a8-79c3-461f-b16f-4d63876d5ced",
+      "sourceProposedPlan": {
+        "threadId": "5cb79276-2d3a-464b-b008-d90e0ba5613b",
+        "planId": "plan:5cb79276-2d3a-464b-b008-d90e0ba5613b:turn:2805f534-26dd-49c1-a7ba-b5cac208ea8f"
+      }
+    },
+    "createdAt": "2026-11-24T01:25:55.922Z",
+    "updatedAt": "2026-11-24T06:03:39.549Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "pinnedAt": null,
+    "pinOrderKey": null,
+    "activeOrderKey": null,
+    "autoSettleDisabledAt": null,
+    "titleRegeneration": null,
+    "titleState": null,
+    "deletedAt": null,
+    "messages": [
+      {
+        "id": "aldo-reminder-r_t1x2f50hg402:message",
+        "role": "user",
+        "text": "user text 1",
+        "attachments": [],
+        "turnId": null,
+        "streaming": false,
+        "createdAt": "2026-11-24T01:25:55.922Z",
+        "updatedAt": "2026-11-24T01:25:55.922Z"
+      },
+      {
+        "id": "assistant:msg_0af098b381170572016b04eb8694f487d08b46d127680f0bc4",
+        "role": "assistant",
+        "text": "assistant text 2",
+        "turnId": "01a20b28-db57-7853-ae47-39307079bded",
+        "streaming": false,
+        "createdAt": "2026-11-24T01:42:31.513Z",
+        "updatedAt": "2026-11-24T01:42:33.173Z",
+        "attachments": []
+      },
+      {
+        "id": "reasoning:summary:2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "role": "reasoning",
+        "text": "reasoning text 3",
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "streaming": false,
+        "createdAt": "2026-11-24T04:49:09.101Z",
+        "updatedAt": "2026-11-24T04:49:09.103Z",
+        "attachments": []
+      },
+      {
+        "id": "assistant:b3b791b3-f4ba-4397-8cf4-47637396110c",
+        "role": "assistant",
+        "text": "assistant text 4",
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "streaming": false,
+        "createdAt": "2026-11-24T04:52:49.309Z",
+        "updatedAt": "2026-11-24T04:53:05.464Z",
+        "attachments": []
+      },
+      {
+        "id": "aldo-plan-5cb79276-2d3a-464b-b008-d90e0ba5613b:plan:5cb79276-2d3a-464b-b008-d90e0ba5613b:turn:2805f534-26dd-49c1-a7ba-b5cac208ea8f:message",
+        "role": "user",
+        "text": "user text 5",
+        "attachments": [],
+        "turnId": null,
+        "streaming": false,
+        "createdAt": "2026-11-24T05:47:41.815Z",
+        "updatedAt": "2026-11-24T05:47:41.815Z"
+      },
+      {
+        "id": "reasoning:summary:be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "role": "reasoning",
+        "text": "reasoning text 6",
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "streaming": false,
+        "createdAt": "2026-11-24T05:47:47.179Z",
+        "updatedAt": "2026-11-24T05:47:47.212Z",
+        "attachments": []
+      },
+      {
+        "id": "assistant:c2fae8a8-79c3-461f-b16f-4d63876d5ced",
+        "role": "assistant",
+        "text": "assistant text 7",
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "streaming": false,
+        "createdAt": "2026-11-24T06:03:05.272Z",
+        "updatedAt": "2026-11-24T06:03:05.272Z",
+        "attachments": []
+      }
+    ],
+    "proposedPlans": [
+      {
+        "id": "plan:5cb79276-2d3a-464b-b008-d90e0ba5613b:turn:01a20b28-db57-7853-ae47-39307079bded",
+        "turnId": "01a20b28-db57-7853-ae47-39307079bded",
+        "planMarkdown": "# Plan 1\n\n- step one\n- step two\n",
+        "implementedAt": null,
+        "implementationThreadId": null,
+        "createdAt": "2026-11-24T01:44:56.519Z",
+        "updatedAt": "2026-11-24T01:45:52.510Z"
+      },
+      {
+        "id": "plan:5cb79276-2d3a-464b-b008-d90e0ba5613b:turn:2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "planMarkdown": "# Plan 2\n\n- step one\n- step two\n",
+        "approvedAt": "2026-11-24T05:47:41.815Z",
+        "implementedAt": "2026-11-24T05:47:41.910Z",
+        "implementationThreadId": "5cb79276-2d3a-464b-b008-d90e0ba5613b",
+        "createdAt": "2026-11-24T04:52:42.091Z",
+        "updatedAt": "2026-11-24T05:47:41.910Z"
+      }
+    ],
+    "activities": [
+      {
+        "id": "d6bf3a0c-a6e0-4b40-9e30-fccaf15f0999",
+        "tone": "info",
+        "kind": "user-input.requested",
+        "summary": "user-input.requested summary",
+        "payload": {
+          "requestId": "cb4e035a-0857-4dff-86c3-b5f9044aff70",
+          "questions": [
+            {
+              "id": "existing_machine_rollout",
+              "header": "Header 1",
+              "question": "Question 1?",
+              "options": [
+                {
+                  "label": "Option 1",
+                  "description": "Description 1"
+                },
+                {
+                  "label": "Option 2",
+                  "description": "Description 2"
+                },
+                {
+                  "label": "Option 3",
+                  "description": "Description 3"
+                }
+              ],
+              "multiSelect": false
+            }
+          ]
+        },
+        "turnId": "01a20b28-db57-7853-ae47-39307079bded",
+        "createdAt": "2026-11-24T01:30:18.610Z"
+      },
+      {
+        "id": "6a0456e8-7065-4542-89e0-aad201381e86",
+        "tone": "info",
+        "kind": "user-input.resolved",
+        "summary": "user-input.resolved summary",
+        "payload": {
+          "requestId": "cb4e035a-0857-4dff-86c3-b5f9044aff70",
+          "answers": {
+            "existing_machine_rollout": "Option 1"
+          }
+        },
+        "turnId": "01a20b28-db57-7853-ae47-39307079bded",
+        "createdAt": "2026-11-24T01:32:31.191Z"
+      },
+      {
+        "id": "301bf873-7a53-4dcb-a6fb-dd960f5008e5",
+        "tone": "approval",
+        "kind": "approval.resolved",
+        "summary": "approval.resolved summary",
+        "payload": {
+          "requestType": "unknown"
+        },
+        "turnId": null,
+        "createdAt": "2026-11-24T01:32:31.197Z"
+      },
+      {
+        "id": "ce6251ad-75d6-4eb5-a372-e3e3ee46aa5a",
+        "tone": "error",
+        "kind": "provider.turn.start.failed",
+        "summary": "provider.turn.start.failed summary",
+        "payload": {
+          "detail": "provider.turn.start.failed detail",
+          "requestId": "aldo-reminder-r_4aj15fc14msd:message"
+        },
+        "turnId": null,
+        "createdAt": "2026-11-24T03:29:57.591Z"
+      },
+      {
+        "id": "b8996443-4990-4a08-843b-21d40743f7d9",
+        "tone": "tool",
+        "kind": "tool.started",
+        "summary": "tool.started summary",
+        "payload": {
+          "itemType": "command_execution",
+          "toolCallId": "toolu_01CBZHUZbTutswnBUs7UZHzn",
+          "status": "inProgress",
+          "title": "tool.started title",
+          "detail": "tool.started detail",
+          "data": {
+            "toolName": "Bash"
+          }
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:49:09.103Z"
+      },
+      {
+        "id": "8e579ff7-8f49-418d-81bc-c4e9729aeabd",
+        "tone": "tool",
+        "kind": "tool.completed",
+        "summary": "tool.completed summary",
+        "payload": {
+          "itemType": "command_execution",
+          "toolCallId": "toolu_01CBZHUZbTutswnBUs7UZHzn",
+          "status": "completed",
+          "title": "tool.completed title",
+          "detail": "tool.completed detail",
+          "data": {
+            "command": "echo redacted",
+            "toolName": "Bash",
+            "rawOutput": {
+              "content": "redacted output\n"
+            }
+          }
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:49:12.174Z"
+      },
+      {
+        "id": "82f9ba93-46a9-4a73-b76e-c7cdeb74a865",
+        "tone": "tool",
+        "kind": "tool.started",
+        "summary": "tool.started summary",
+        "payload": {
+          "itemType": "file_change",
+          "toolCallId": "toolu_01BYH9mdQgpGw96oDKH6T2EZ",
+          "status": "inProgress",
+          "title": "tool.started title",
+          "detail": "tool.started detail",
+          "data": {
+            "toolName": "Write"
+          }
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:51:07.943Z"
+      },
+      {
+        "id": "b7545cb1-9ee3-4fbc-96b2-c0a97b539494",
+        "tone": "tool",
+        "kind": "tool.started",
+        "summary": "tool.started summary",
+        "payload": {
+          "itemType": "dynamic_tool_call",
+          "toolCallId": "toolu_012o8obCGbXrMiLJjPorTJgf",
+          "status": "inProgress",
+          "title": "tool.started title",
+          "detail": "tool.started detail",
+          "data": {
+            "toolName": "ToolSearch"
+          }
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:52:40.438Z"
+      },
+      {
+        "id": "0946e045-49e9-45d7-adc2-50f11617382c",
+        "tone": "tool",
+        "kind": "tool.completed",
+        "summary": "tool.completed summary",
+        "payload": {
+          "itemType": "file_change",
+          "toolCallId": "toolu_01BYH9mdQgpGw96oDKH6T2EZ",
+          "status": "completed",
+          "title": "tool.completed title",
+          "detail": "tool.completed detail",
+          "data": {
+            "toolName": "Write"
+          }
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:52:40.457Z"
+      },
+      {
+        "id": "0cfe2433-4430-486f-a65d-d9451081d3cc",
+        "tone": "tool",
+        "kind": "tool.completed",
+        "summary": "tool.completed summary",
+        "payload": {
+          "itemType": "dynamic_tool_call",
+          "toolCallId": "toolu_012o8obCGbXrMiLJjPorTJgf",
+          "status": "completed",
+          "title": "tool.completed title",
+          "detail": "tool.completed detail",
+          "data": {
+            "toolName": "ToolSearch"
+          }
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:52:40.912Z"
+      },
+      {
+        "id": "63d1846e-996f-45aa-a2ee-b364b48728bb",
+        "tone": "tool",
+        "kind": "tool.updated",
+        "summary": "tool.updated summary",
+        "payload": {
+          "itemType": "dynamic_tool_call",
+          "toolCallId": "toolu_012o8obCGbXrMiLJjPorTJgf",
+          "status": "inProgress",
+          "title": "tool.updated title",
+          "detail": "tool.updated detail",
+          "data": {
+            "toolName": "ToolSearch"
+          }
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:52:40.912Z"
+      },
+      {
+        "id": "71614a9c-23e3-412a-84d5-3edf40da7a9a",
+        "tone": "info",
+        "kind": "context-window.updated",
+        "summary": "context-window.updated summary",
+        "payload": {
+          "usedTokens": 193755,
+          "lastUsedTokens": 193755,
+          "totalProcessedTokens": 1633761,
+          "inputTokens": 193056,
+          "outputTokens": 699,
+          "maxTokens": 1000000
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:53:05.479Z"
+      },
+      {
+        "id": "844e1b8c-9686-4905-a896-74a46051d74e",
+        "tone": "info",
+        "kind": "checkpoint.captured",
+        "summary": "checkpoint.captured summary",
+        "payload": {
+          "turnCount": 7,
+          "status": "ready"
+        },
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "createdAt": "2026-11-24T04:53:05.479Z"
+      },
+      {
+        "id": "ad268969-ffff-459c-919f-c2382d0bb1a9",
+        "tone": "tool",
+        "kind": "tool.started",
+        "summary": "tool.started summary",
+        "payload": {
+          "itemType": "command_execution",
+          "toolCallId": "toolu_01VGrbWW7SRn1jTLWAEXaLXS",
+          "status": "inProgress",
+          "title": "tool.started title",
+          "detail": "tool.started detail",
+          "data": {
+            "toolName": "Bash"
+          }
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T05:47:48.485Z"
+      },
+      {
+        "id": "04cae623-de6d-43a7-a15b-bf9d553152ce",
+        "tone": "info",
+        "kind": "task.started",
+        "summary": "task.started summary",
+        "payload": {
+          "taskId": "be19oam0t",
+          "taskType": "local_bash",
+          "detail": "task.started detail",
+          "agentKind": "background",
+          "title": "task.started title",
+          "toolUseId": "toolu_01VGrbWW7SRn1jTLWAEXaLXS"
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T05:47:59.916Z"
+      },
+      {
+        "id": "c0dae037-cc9e-48a9-a317-c70c788da6b2",
+        "tone": "info",
+        "kind": "task.completed",
+        "summary": "task.completed summary",
+        "payload": {
+          "taskId": "be19oam0t",
+          "status": "completed",
+          "title": "task.completed title",
+          "summary": "task.completed summary",
+          "detail": "task.completed detail",
+          "agentKind": "background",
+          "taskType": "local_bash",
+          "toolUseId": "toolu_01VGrbWW7SRn1jTLWAEXaLXS"
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T05:48:05.162Z"
+      },
+      {
+        "id": "c96c5e8a-e288-453d-a115-b219efb5e197",
+        "tone": "tool",
+        "kind": "tool.completed",
+        "summary": "tool.completed summary",
+        "payload": {
+          "itemType": "command_execution",
+          "toolCallId": "toolu_01VGrbWW7SRn1jTLWAEXaLXS",
+          "status": "completed",
+          "title": "tool.completed title",
+          "detail": "tool.completed detail",
+          "data": {
+            "command": "echo redacted",
+            "toolName": "Bash",
+            "rawOutput": {
+              "content": "redacted output\n"
+            }
+          }
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T05:48:05.170Z"
+      },
+      {
+        "id": "83aa3932-7fd0-421e-bcc0-dac4ce27fe51",
+        "tone": "tool",
+        "kind": "tool.started",
+        "summary": "tool.started summary",
+        "payload": {
+          "itemType": "collab_agent_tool_call",
+          "toolCallId": "toolu_01RXrMEJ9w9G5ptS8e7u26Fx",
+          "status": "inProgress",
+          "title": "tool.started title",
+          "detail": "tool.started detail",
+          "data": {
+            "toolName": "Agent"
+          }
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T05:57:51.775Z"
+      },
+      {
+        "id": "29c732dc-9ac0-413a-8a6d-dd421c99285b",
+        "tone": "tool",
+        "kind": "tool.completed",
+        "summary": "tool.completed summary",
+        "payload": {
+          "itemType": "collab_agent_tool_call",
+          "toolCallId": "toolu_01RXrMEJ9w9G5ptS8e7u26Fx",
+          "status": "completed",
+          "title": "tool.completed title",
+          "detail": "tool.completed detail",
+          "data": {
+            "toolName": "Agent"
+          }
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T05:58:03.995Z"
+      },
+      {
+        "id": "ce759259-bdda-49a6-ae06-d5d1a7cb6808",
+        "tone": "tool",
+        "kind": "tool.updated",
+        "summary": "tool.updated summary",
+        "payload": {
+          "itemType": "collab_agent_tool_call",
+          "toolCallId": "toolu_01RXrMEJ9w9G5ptS8e7u26Fx",
+          "status": "inProgress",
+          "title": "tool.updated title",
+          "detail": "tool.updated detail",
+          "data": {
+            "toolName": "Agent"
+          }
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T05:58:03.995Z"
+      },
+      {
+        "id": "4e1f1996-8229-4147-801c-85ddd3f7bb76",
+        "tone": "tool",
+        "kind": "tool.started",
+        "summary": "tool.started summary",
+        "payload": {
+          "itemType": "dynamic_tool_call",
+          "toolCallId": "toolu_01Q4GRumbB94KkSF3g6pNwSP",
+          "status": "inProgress",
+          "title": "tool.started title",
+          "detail": "tool.started detail",
+          "data": {
+            "toolName": "Read"
+          }
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T06:02:21.999Z"
+      },
+      {
+        "id": "365b6486-c3a4-4672-8891-cac4605e3536",
+        "tone": "tool",
+        "kind": "tool.completed",
+        "summary": "tool.completed summary",
+        "payload": {
+          "itemType": "dynamic_tool_call",
+          "toolCallId": "toolu_01Q4GRumbB94KkSF3g6pNwSP",
+          "status": "completed",
+          "title": "tool.completed title",
+          "detail": "tool.completed detail",
+          "data": {
+            "toolName": "Read"
+          }
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T06:02:22.822Z"
+      },
+      {
+        "id": "866823a5-8e8b-48ef-ba90-20f7dc697c89",
+        "tone": "info",
+        "kind": "context-window.updated",
+        "summary": "context-window.updated summary",
+        "payload": {
+          "usedTokens": 190291,
+          "lastUsedTokens": 190291,
+          "totalProcessedTokens": 1633761,
+          "maxTokens": 1000000,
+          "toolUses": 46,
+          "durationMs": 314196
+        },
+        "turnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+        "createdAt": "2026-11-24T06:03:39.431Z"
+      }
+    ],
+    "checkpoints": [
+      {
+        "turnId": "01a20b28-db57-7853-ae47-39307079bded",
+        "checkpointTurnCount": 1,
+        "checkpointRef": "refs/t3/checkpoints/NWNiNzkyNzYtMmQzYS00NjRiLWIwMDgtZDkwZTBiYTU2MTNi/turn/1",
+        "status": "ready",
+        "files": [],
+        "assistantMessageId": "assistant:msg_0af098b381170572016b04eb8694f487d08b46d127680f0bc4",
+        "completedAt": "2026-11-24T01:45:52.526Z"
+      },
+      {
+        "turnId": "2805f534-26dd-49c1-a7ba-b5cac208ea8f",
+        "checkpointTurnCount": 7,
+        "checkpointRef": "refs/t3/checkpoints/NWNiNzkyNzYtMmQzYS00NjRiLWIwMDgtZDkwZTBiYTU2MTNi/turn/7",
+        "status": "ready",
+        "files": [],
+        "assistantMessageId": "assistant:b3b791b3-f4ba-4397-8cf4-47637396110c",
+        "completedAt": "2026-11-24T04:53:05.479Z"
+      }
+    ],
+    "session": {
+      "threadId": "5cb79276-2d3a-464b-b008-d90e0ba5613b",
+      "status": "running",
+      "providerName": "claudeAgent",
+      "providerInstanceId": "claudeAgent",
+      "runtimeMode": "full-access",
+      "activeTurnId": "be550b44-bba2-4efd-ae22-92e2933c2fd1",
+      "lastError": null,
+      "updatedAt": "2026-11-24T06:03:27.004Z"
+    }
+  },
+  "page": {
+    "beforeCursor": "eyJ0IjoiNWNiNzkyNzYtMmQzYS00NjRiLWIwMDgtZDkwZTBiYTU2MTNiIiwiYSI6IjIwMjYtMTEtMjRUMDU6NDc6NDEuODE1WiIsImkiOiJiZTU1MGI0NC1iYmEyLTRlZmQtYWUyMi05MmUyOTMzYzJmZDEifQ",
+    "hasMore": true,
+    "snapshotSequence": 1963,
+    "threadSequence": 1963
+  }
+}

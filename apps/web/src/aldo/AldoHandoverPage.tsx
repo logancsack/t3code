@@ -25,7 +25,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { Textarea } from "../components/ui/textarea";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
-import { aldoOffboarding } from "./accountApi";
+import { aldoOffboarding } from "./orgAdminApi";
 import { ALDO_COPYING_EVERY_MS } from "./AldoHandedToYou";
 import { Confirm, ErrorLine } from "./AldoOrgParts";
 import { AldoPlacePage } from "./AldoPlaces";

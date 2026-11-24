@@ -8,10 +8,10 @@
 // What to say, given what was said last; focus.ts listens and sends.
 
 /** How often it's said again while the conversation stays on screen. */
-export const ALDO_FOCUS_REFRESH_MS = 45_000;
+const ALDO_FOCUS_REFRESH_MS = 45_000;
 
 /** A page nobody has used for this long is left alone: the devices ring again. */
-export const ALDO_FOCUS_IDLE_MS = 5 * 60_000;
+const ALDO_FOCUS_IDLE_MS = 5 * 60_000;
 
 export interface AldoFocusTarget {
   /** The machine whose touch carries it. */

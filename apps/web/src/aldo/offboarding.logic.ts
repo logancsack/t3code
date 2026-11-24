@@ -137,7 +137,7 @@ export interface AldoHandoverView {
 }
 
 /** How long a copy nobody was handed is kept, and a closed account before it's deleted. */
-export const ALDO_KEPT_DAYS = 30;
+const ALDO_KEPT_DAYS = 30;
 
 const str = (value: unknown) => (typeof value === "string" ? value : null);
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);

@@ -1,3 +1,6 @@
+import { OrchestrationV2ThreadShellJson } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -13,7 +16,7 @@ const thread: AldoNewThread = {
   id: "t-new",
   projectId: "p1",
   title: "Overhaul the home page",
-  modelSelection: { instanceId: "claudeAgent" },
+  modelSelection: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
   runtimeMode: "full-access",
   interactionMode: "default",
   branch: null,
@@ -28,32 +31,22 @@ const shell = (threads: Array<{ id: string }> = []) => ({
   updatedAt: CREATED,
 });
 
+const decodeShellThread = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson);
+
 describe("aldoStartingShellThread", () => {
-  it("is connecting, with its message sent, so the sidebar shows it working from the send", () => {
-    const entry = aldoStartingShellThread(thread);
+  it("is starting, with its message sent, so the sidebar shows it working from the send", () => {
+    const entry = decodeShellThread(aldoStartingShellThread(thread));
     expect(entry).toMatchObject({
       id: "t-new",
       projectId: "p1",
       title: "Overhaul the home page",
-      latestTurn: null,
-      createdAt: CREATED,
-      updatedAt: SENT,
-      latestUserMessageAt: SENT,
-      archivedAt: null,
-      hasPendingApprovals: false,
-      hasPendingUserInput: false,
-      hasActionableProposedPlan: false,
-    });
-    expect(entry.session).toEqual({
-      threadId: "t-new",
-      status: "starting",
-      providerName: null,
       providerInstanceId: "claudeAgent",
-      runtimeMode: "full-access",
-      activeTurnId: null,
-      lastError: null,
-      updatedAt: SENT,
+      status: "starting",
+      latestRunId: null,
+      archivedAt: null,
     });
+    expect(DateTime.formatIso(entry.updatedAt)).toBe(SENT);
+    expect(entry.latestUserMessageAt && DateTime.formatIso(entry.latestUserMessageAt)).toBe(SENT);
   });
 });
 

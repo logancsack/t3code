@@ -10,7 +10,7 @@
 import type { UsageSummaryInput } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { aldoMachineIsNew } from "./directory";
 import { fetchAldoUsage } from "./threadApi";
@@ -19,6 +19,7 @@ import { withAldoUsage, type AldoUsageAnswers } from "./usage.logic";
 /** Aldo's answers for one window, keyed as state/usage.ts keys it. */
 export const aldoUsageAtom = Atom.family((windowKey: string) => {
   const input = JSON.parse(windowKey) as UsageSummaryInput;
+  // @effect-diagnostics-next-line effectTryWithoutCatch:off
   return Atom.make(Effect.tryPromise(() => fetchAldoUsage(input))).pipe(
     Atom.withLabel(`aldo-usage:${windowKey}`),
   );

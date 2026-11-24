@@ -1,21 +1,65 @@
-import { expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
-import { parseBase64DataUrl } from "./imageMime.ts";
+import { inferImageExtension, parseBase64DataUrl } from "./imageMime.ts";
 
-it("parses a large image near the stack limit without matching its payload with a regex", () => {
-  const payload = "A".repeat(14_000_000);
-  const dataUrl = `data:image/png;base64,${payload}`;
-  const atDepth = (depth: number): ReturnType<typeof parseBase64DataUrl> =>
-    depth === 0 ? parseBase64DataUrl(dataUrl) : atDepth(depth - 1);
-  const findMaxDepth = (depth: number): number => {
-    try {
-      return findMaxDepth(depth + 1);
-    } catch {
-      return depth;
+describe("imageMime", () => {
+  it("parses base64 data URL with mime parameters", () => {
+    expect(parseBase64DataUrl("data:image/png;charset=utf-8;base64,SGVsbG8=")).toEqual({
+      mimeType: "image/png",
+      base64: "SGVsbG8=",
+    });
+  });
+
+  it.each(["\t", "\n", "\f", "\r", " "])(
+    "parses base64 data URL with ASCII whitespace %j",
+    (space) => {
+      expect(parseBase64DataUrl(`data:image/png;base64,SGVs${space}bG8=\n`)).toEqual({
+        mimeType: "image/png",
+        base64: "SGVsbG8=",
+      });
+    },
+  );
+
+  it("rejects payload with characters outside the base64 alphabet", () => {
+    expect(parseBase64DataUrl("data:image/png;base64,SGVs!bG8=")).toBeNull();
+    expect(parseBase64DataUrl("data:image/png;base64,SGVs,bG8=")).toBeNull();
+    for (const space of ["\v", "\u00a0", "\u2003"]) {
+      expect(parseBase64DataUrl(`data:image/png;base64,SGVs${space}bG8=`)).toBeNull();
     }
-  };
-  expect(atDepth(Math.floor(findMaxDepth(0) * 0.85))).toEqual({
-    mimeType: "image/png",
-    base64: payload,
+  });
+
+  // regression: #3952 image upload crashed dispatchCommand with a stack overflow
+  it("rejects structurally malformed base64", () => {
+    expect(parseBase64DataUrl("data:image/png;base64,AB=CD===")).toBeNull();
+    expect(parseBase64DataUrl("data:image/png;base64,SGV=bG8=")).toBeNull();
+    expect(parseBase64DataUrl("data:image/png;base64,SGVsbG8=====AAA")).toBeNull();
+    expect(parseBase64DataUrl("data:image/png;base64,SGVsbG8")).toBeNull();
+  });
+
+  it("accepts base64 with one or two trailing padding characters", () => {
+    expect(parseBase64DataUrl("data:image/png;base64,SGVsbA==")).toEqual({
+      mimeType: "image/png",
+      base64: "SGVsbA==",
+    });
+    expect(parseBase64DataUrl("data:image/png;base64,SGVsbG8h")).toEqual({
+      mimeType: "image/png",
+      base64: "SGVsbG8h",
+    });
+  });
+
+  it("rejects empty and whitespace-only payloads", () => {
+    expect(parseBase64DataUrl("data:image/png;base64,")).toBeNull();
+    expect(parseBase64DataUrl("data:image/png;base64, \t\r\n\f")).toBeNull();
+  });
+
+  it("parses a case-insensitive scheme and mime type", () => {
+    expect(parseBase64DataUrl("DATA:IMAGE/PNG;BASE64,SGVsbG8=")).toEqual({
+      mimeType: "image/png",
+      base64: "SGVsbG8=",
+    });
+  });
+
+  it("does not read inherited keys from mime extension map", () => {
+    expect(inferImageExtension({ mimeType: "constructor" })).toBe(".bin");
   });
 });

@@ -12,6 +12,7 @@ const aldo = vi.hoisted(() => ({
 }));
 vi.mock("./directory", () => ({ aldoReusesPullRequestThreads: () => aldo.supported }));
 vi.mock("./api", () => ({
+  isAldoCloud: true,
   threadIdForEnvironment: (id: string) => id.replace(/^aldo-/, ""),
   api: async () => {
     if (aldo.lookupError) throw new Error("Offline");

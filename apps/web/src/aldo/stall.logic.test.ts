@@ -115,7 +115,7 @@ describe("the stall's words", () => {
     const ask = {
       label: "MCP tool call",
       tone: "tool" as const,
-      itemType: "mcp_tool_call" as const,
+      itemType: "dynamic_tool" as const,
       toolTitle: "aldo · needs_you_now",
       toolLifecycleStatus: "inProgress" as const,
       toolData: {

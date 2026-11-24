@@ -114,7 +114,7 @@ const MARKS: Readonly<Record<string, (className: string) => ReactNode>> = {
 };
 
 /** Whether there's a logo for this id (a catalog's, a model's or a code host's). */
-export function aldoHasBrandMark(id: string): boolean {
+function aldoHasBrandMark(id: string): boolean {
   return id in MARKS || id in BRAND_MARKS;
 }
 
@@ -122,7 +122,7 @@ export function aldoHasBrandMark(id: string): boolean {
  * The service a host is (api.runwayml.com is Runway's), from the first of
  * them that's known, or null.
  */
-export function aldoBrandForHosts(hosts: ReadonlyArray<string> | null): string | null {
+function aldoBrandForHosts(hosts: ReadonlyArray<string> | null): string | null {
   for (const host of hosts ?? []) {
     const name = host.toLowerCase().replace(/^\*\./, "");
     for (const [id, domains] of BRAND_DOMAINS) {
@@ -216,7 +216,7 @@ const BRAND_DOMAINS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   ["granola", ["granola.ai", "granola.so"]],
 ];
 
-export function AldoBrandMark({ id, className }: { id: string; className?: string }) {
+function AldoBrandMark({ id, className }: { id: string; className?: string }) {
   const custom = MARKS[id];
   if (custom) return custom(cn("text-foreground", className));
   const mark = BRAND_MARKS[id];

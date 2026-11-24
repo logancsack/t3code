@@ -89,7 +89,7 @@ const ALDO_LIBRARY_WHEN_LABEL: Record<AldoLibraryWhen | "pinned", string> = {
 };
 
 /** Today (since midnight, here), this week (the six days before), or older. */
-export function aldoLibraryWhen(at: string, now: Date): AldoLibraryWhen {
+function aldoLibraryWhen(at: string, now: Date): AldoLibraryWhen {
   const time = Date.parse(at);
   if (!Number.isFinite(time)) return "older";
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -274,7 +274,7 @@ const TURN_SLACK_MS = 2 * 60_000;
  */
 export function aldoThreadLibrary(input: {
   readonly turns: ReadonlyArray<{
-    readonly turnId: string;
+    readonly runId: string;
     readonly completedAt: string;
     readonly files: ReadonlyArray<{
       readonly path: string;
@@ -321,7 +321,7 @@ export function aldoThreadLibrary(input: {
   turns.forEach((turn, turnIndex) => {
     const made = aldoTurnMade({
       files: turn.files,
-      shares: input.sharesByTurn.get(turn.turnId) ?? [],
+      shares: input.sharesByTurn.get(turn.runId) ?? [],
       workspaceRoot: input.workspaceRoot,
     });
     const from = turns[turnIndex + 1] ? timeOf(turns[turnIndex + 1]!.completedAt) : -Infinity;

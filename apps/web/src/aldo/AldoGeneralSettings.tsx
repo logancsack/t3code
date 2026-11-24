@@ -12,41 +12,11 @@ import { searchableSetting } from "../components/settings/settingsSearch";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
-import { useTheme } from "../hooks/useTheme";
 import { AldoInterestChips } from "./AldoInterestChips";
-import { AldoSettingsFold } from "./AldoSettingsShell";
+import { AldoSettingsFold } from "./AldoSettingsFold";
 import { saveAldoOnboarding, useAldoOnboardingState } from "./onboarding";
 import { setAldoPreloadSettings, useAldoPreloadSettings } from "./preloadSettings";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
-
-const ALDO_THEME_MODES = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-  { value: "system", label: "System" },
-] as const;
-
-/** Light, dark, or the device's, for the account menu. */
-export function AldoThemeToggle(props: { readonly className?: string }) {
-  const { appearanceMode, setAppearanceMode } = useTheme();
-  return (
-    <ToggleGroup
-      aria-label="Theme"
-      variant="segmented"
-      {...(props.className ? { className: props.className } : {})}
-      value={[appearanceMode]}
-      onValueChange={(next) => {
-        const mode = ALDO_THEME_MODES.find((entry) => entry.value === next[0])?.value;
-        if (mode) setAppearanceMode(mode);
-      }}
-    >
-      {ALDO_THEME_MODES.map((entry) => (
-        <Toggle key={entry.value} value={entry.value}>
-          {entry.label}
-        </Toggle>
-      ))}
-    </ToggleGroup>
-  );
-}
 
 /** General's rows above More settings: a search for one of them leaves it folded. */
 const ALDO_GENERAL_BASIC_IDS: ReadonlySet<string> = new Set([
@@ -87,26 +57,29 @@ export function AldoGeneralBasics(props: { readonly sendShortcutRow: ReactNode }
 }
 
 /** Settings → Appearance's Layout in Aldo: the simple rail or every thread. */
-export function AldoLayoutRow() {
+export function AldoLayoutSection() {
   const simple = useAldoSimpleMode();
   return (
-    <SettingsRow
-      {...searchableSetting("aldo-simple-mode")}
-      description="Simple shows Aldo, what needs you and your Library. Full adds every thread and the developer tools."
-      control={
-        <ToggleGroup
-          aria-label="Layout"
-          variant="segmented"
-          value={[simple ? "simple" : "full"]}
-          onValueChange={(next) => {
-            if (next[0] === "simple" || next[0] === "full") setAldoSimpleMode(next[0] === "simple");
-          }}
-        >
-          <Toggle value="simple">Simple</Toggle>
-          <Toggle value="full">Full</Toggle>
-        </ToggleGroup>
-      }
-    />
+    <SettingsSection title="Layout" hideTitle>
+      <SettingsRow
+        {...searchableSetting("aldo-simple-mode")}
+        description="Simple shows Aldo, what needs you and your Library. Full adds every thread and the developer tools."
+        control={
+          <ToggleGroup
+            aria-label="Layout"
+            variant="segmented"
+            value={[simple ? "simple" : "full"]}
+            onValueChange={(next) => {
+              if (next[0] === "simple" || next[0] === "full")
+                setAldoSimpleMode(next[0] === "simple");
+            }}
+          >
+            <Toggle value="simple">Simple</Toggle>
+            <Toggle value="full">Full</Toggle>
+          </ToggleGroup>
+        }
+      />
+    </SettingsSection>
   );
 }
 

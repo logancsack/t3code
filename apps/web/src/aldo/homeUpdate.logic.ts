@@ -169,7 +169,7 @@ export const technicalUpdateLink = (url: string) =>
   /\/(?:pull|pull-requests|merge_requests)\/\d+|\/_git\/.+\/pullrequest\//i.test(url);
 
 /** Old thread notes are evidence, never a voice example for Home. */
-export function internalHomeCopy(text: string): boolean {
+function internalHomeCopy(text: string): boolean {
   return /the agent|\blint\b|type[ -]?check|\bCI\b|\bPRs?\b|\d[\d,]* (?:(?:deterministic |reliability |focused )*(?:tests?|checks?)|passed\b)|\bdeploy(?:ed|ment)?\b|release checks|still being followed|https?:\/\//i.test(
     text,
   );

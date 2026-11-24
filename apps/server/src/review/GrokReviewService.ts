@@ -4,14 +4,15 @@ import {
   type GrokReviewReport,
   type GrokReviewRunError,
 } from "@t3tools/contracts";
+import type { CodeReviewSource } from "@t3tools/provider-core/server/codeReview";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
-import { makeProviderCodeReview } from "./ProviderCodeReview.ts";
+import { makeProviderCodeReview, type ProviderCodeReviewServices } from "./ProviderCodeReview.ts";
 
 const GROK_DRIVER_KIND = "grok";
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
@@ -29,9 +30,10 @@ export class GrokReviewService extends Context.Service<
   }
 >()("t3/review/GrokReviewService") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const review = yield* ReviewService.ReviewService;
   const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  const services = yield* Effect.context<ProviderCodeReviewServices>();
 
   const run: GrokReviewService["Service"]["run"] = Effect.fn("GrokReviewService.run")(
     function* (input) {
@@ -46,7 +48,9 @@ export const make = Effect.gen(function* () {
         )
           ? "working-tree"
           : "branch-range");
-      const source = preview.sources.find((candidate) => candidate.kind === preferredTarget);
+      const source = preview.sources.find(
+        (candidate): candidate is CodeReviewSource => candidate.kind === preferredTarget,
+      );
       if (!source || source.diff.trim().length === 0) {
         return yield* new GrokReviewError({
           operation: "AldoReviewService.run",
@@ -128,16 +132,24 @@ export const make = Effect.gen(function* () {
         selected.instance.driverKind === GROK_DRIVER_KIND &&
         selectedModel === DEFAULT_GROK_REVIEW_MODEL &&
         selected.instance.codeReview !== undefined;
+      const generateStructured = selected.instance.textGeneration.generateStructured;
+      if (!useSpecializedGrokRunner && !generateStructured) {
+        return yield* new GrokReviewError({
+          operation: "GrokReviewService.run",
+          detail: "The selected Aldo Review provider cannot produce structured review results.",
+        });
+      }
       const runner = useSpecializedGrokRunner
         ? selected.instance.codeReview!
         : makeProviderCodeReview({
-            textGeneration: selected.instance.textGeneration,
+            generateStructured: generateStructured!,
             modelSelection: {
               instanceId: selected.instance.instanceId,
               model: selectedModel,
             },
             driver: selected.instance.driverKind,
             providerLabel: selected.snapshot.displayName ?? selected.instance.driverKind,
+            services,
           });
       const result = yield* runner
         .run({ request: { ...input, model: selectedModel }, source })

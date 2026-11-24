@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { aldoOrgAdmin } from "./accountApi";
+import { aldoOrgAdmin } from "./orgAdminApi";
 import { useLoadedOrg } from "./AldoOrgParts";
 import {
   aldoActivityDays,

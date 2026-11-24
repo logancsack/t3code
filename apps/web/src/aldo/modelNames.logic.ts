@@ -4,7 +4,7 @@
 // (reportedModelName); modelNameFromId is the fallback, and reads the id the
 // way its maker writes the name.
 
-import { getTriggerDisplayModelName, type ModelEsque } from "../components/chat/providerIconUtils";
+import { getDisplayModelName, type ModelEsque } from "../components/chat/providerIconUtils";
 
 /** Words model ids spell in lower case, as their makers write them. Others get a capital. */
 const WORDS = new Map<string, string>([
@@ -117,7 +117,7 @@ export function listedModelName(models: ReadonlyArray<ModelEsque>, slug: string)
       ? models.find((candidate) => candidate.isDefault)
       : (models.find((candidate) => candidate.slug === slug) ??
         models.find((candidate) => candidate.aliases?.includes(slug)));
-  return model ? getTriggerDisplayModelName(model) : null;
+  return model ? getDisplayModelName(model, { preferShortName: true }) : null;
 }
 
 /**
@@ -191,7 +191,7 @@ export function modelNameIndex(
   const byInstance = new Map<string, Map<string, string>>();
   const anywhere = new Map<string, string>();
   const keep = (names: Map<string, string>, slug: string, model: ModelEsque) => {
-    if (!names.has(slug)) names.set(slug, getTriggerDisplayModelName(model));
+    if (!names.has(slug)) names.set(slug, getDisplayModelName(model, { preferShortName: true }));
   };
   for (const [environmentId, config] of configs) {
     byEnvironment.set(environmentId, config.providers);

@@ -24,7 +24,7 @@ If you only talk to Aldo and never open a thread yourself, simple mode trades th
 
 Tapping a thread (**Open** on something that needs you, say) opens it with the rail still beside it. At the foot of the rail, **Full view** brings the sidebar back, and your picture opens your account. On a phone, the three places are tabs at the top of the home screen, and the button at the top left opens them, with **Full view** and your account.
 
-Turn simple mode on or off in **Settings → General → Layout**, or with the **Simple mode** switch in your account. It's off unless you turn it on, and it applies to the device you set it on.
+Turn simple mode on or off in **Settings → Appearance → Layout**, or with the **Simple mode** switch in your account. It's off unless you turn it on, and it applies to the device you set it on.
 
 ## Your brief
 

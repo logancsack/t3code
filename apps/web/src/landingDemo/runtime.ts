@@ -1,23 +1,26 @@
 import {
-  EnvironmentId,
   EventId,
   MessageId,
-  ORCHESTRATION_WS_METHODS,
+  ORCHESTRATION_V2_WS_METHODS,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
   TurnId,
   WS_METHODS,
-  type ClientOrchestrationCommand,
-  type OrchestrationMessage,
   type OrchestrationProjectShell,
-  type OrchestrationShellSnapshot,
-  type OrchestrationShellStreamItem,
-  type OrchestrationThread,
-  type OrchestrationThreadDetailSnapshot,
-  type OrchestrationThreadStreamItem,
+  type OrchestrationV2Command,
   type ServerConfig,
 } from "@t3tools/contracts";
+import type {
+  ThreadStreamState,
+  V1ClientCommand,
+  V1Message,
+  V1ShellSnapshot,
+  V1ShellStreamItem,
+  V1Thread,
+  V1ThreadDetailSnapshot,
+  V1ThreadStreamItem,
+} from "@t3tools/client-runtime/legacyV1";
 import {
   RpcSessionFactory,
   type RpcSession,
@@ -30,16 +33,14 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
-import {
-  LANDING_DEMO_ENVIRONMENT_ID,
-  LANDING_DEMO_PROJECT_ID,
-  LANDING_DEMO_THREAD_ID,
-  isWorkReplay,
-} from "./mode";
+import { LANDING_DEMO_PROJECT_ID, demoEnvironmentId, demoThreadId, isWorkReplay } from "./mode";
 
-export const demoEnvironmentId = EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID);
+// The demo and the replay keep their script in the original thread shape; the
+// mapper that reads older machines turns it into what the app shows, loaded
+// only when one of them runs.
+const legacy = Effect.promise(() => import("@t3tools/client-runtime/legacyV1"));
+
 const demoProjectId = ProjectId.make(LANDING_DEMO_PROJECT_ID);
-export const demoThreadId = ThreadId.make(LANDING_DEMO_THREAD_ID);
 const demoProviderId = ProviderInstanceId.make("codex");
 const STARTED_AT = "2026-07-31T12:00:00.000Z";
 
@@ -73,10 +74,10 @@ let files: Record<string, string> = { ...initialFiles };
 let snapshotSequence = 1;
 let nextId = 1;
 const previewListeners = new Set<() => void>();
-const shellListeners = new Set<(item: OrchestrationShellStreamItem) => void>();
-const threadListeners = new Set<(item: OrchestrationThreadStreamItem) => void>();
+const shellListeners = new Set<(item: V1ShellStreamItem) => void>();
+const threadListeners = new Set<(item: V1ThreadStreamItem) => void>();
 
-const welcomeMessage: OrchestrationMessage = {
+const welcomeMessage: V1Message = {
   id: MessageId.make("demo-welcome"),
   role: "assistant",
   text: "This is the real Aldo interface running a safe, browser-local project. Ask me to inspect the site, change its design, or add a section—the preview updates as I work.",
@@ -86,7 +87,7 @@ const welcomeMessage: OrchestrationMessage = {
   updatedAt: STARTED_AT,
 };
 
-let thread: OrchestrationThread = {
+let thread: V1Thread = {
   id: demoThreadId,
   projectId: demoProjectId,
   title: "Make the homepage unforgettable",
@@ -111,7 +112,6 @@ let thread: OrchestrationThread = {
     threadId: demoThreadId,
     status: "ready",
     providerName: "OpenRouter demo",
-    providerInstanceId: demoProviderId,
     runtimeMode: "full-access",
     activeTurnId: null,
     lastError: null,
@@ -156,24 +156,23 @@ function threadShell() {
   } as const;
 }
 
-let homeShells: OrchestrationShellSnapshot["threads"] | null = null;
+let homeShells: V1ShellSnapshot["threads"] | null = null;
 
-function shellSnapshot(): OrchestrationShellSnapshot {
+function shellSnapshot(): V1ShellSnapshot {
   return {
     snapshotSequence,
     projects: [project],
     threads: homeShells ?? [threadShell()],
-    updatedAt: thread.updatedAt,
   };
 }
 
-function threadSnapshot(): OrchestrationThreadDetailSnapshot {
+function threadSnapshot(): V1ThreadDetailSnapshot {
   return { snapshotSequence, thread };
 }
 
 function broadcastThread() {
   snapshotSequence += 1;
-  const item: OrchestrationThreadStreamItem = { kind: "snapshot", snapshot: threadSnapshot() };
+  const item: V1ThreadStreamItem = { kind: "snapshot", snapshot: threadSnapshot() };
   for (const listener of threadListeners) listener(item);
 }
 
@@ -190,23 +189,39 @@ function callbackStream<T>(listeners: Set<(item: T) => void>) {
   );
 }
 
-function subscribeThread(): Stream.Stream<OrchestrationThreadStreamItem> {
-  return Stream.concat(
-    Stream.fromIterable<OrchestrationThreadStreamItem>([
-      { kind: "snapshot", snapshot: threadSnapshot() },
-      { kind: "synchronized" },
-    ]),
-    callbackStream(threadListeners),
+function subscribeThread() {
+  return Stream.unwrap(
+    Effect.map(legacy, ({ stepThreadStream }) =>
+      Stream.concat(
+        Stream.fromIterable<V1ThreadStreamItem>([
+          { kind: "snapshot", snapshot: threadSnapshot() },
+          { kind: "synchronized" },
+        ]),
+        callbackStream(threadListeners),
+      ).pipe(
+        Stream.mapAccum(
+          (): ThreadStreamState => ({ thread: null, sequence: 0 }),
+          (state, item) => {
+            const step = stepThreadStream(state, item);
+            return [step.state, step.items] as const;
+          },
+        ),
+      ),
+    ),
   );
 }
 
-function subscribeShell(): Stream.Stream<OrchestrationShellStreamItem> {
-  return Stream.concat(
-    Stream.fromIterable<OrchestrationShellStreamItem>([
-      { kind: "snapshot", snapshot: shellSnapshot() },
-      { kind: "synchronized" },
-    ]),
-    callbackStream(shellListeners),
+function subscribeShell() {
+  return Stream.unwrap(
+    Effect.map(legacy, ({ mapShellStreamItem }) =>
+      Stream.concat(
+        Stream.fromIterable<V1ShellStreamItem>([
+          { kind: "snapshot", snapshot: shellSnapshot() },
+          { kind: "synchronized" },
+        ]),
+        callbackStream(shellListeners),
+      ).pipe(Stream.map(mapShellStreamItem)),
+    ),
   );
 }
 
@@ -435,10 +450,12 @@ async function runAgent(userText: string, turnId: ReturnType<typeof TurnId.make>
   }
 }
 
-function dispatchCommand(command: ClientOrchestrationCommand) {
-  return Effect.sync(() => {
-    if (command.type !== "thread.turn.start") return { sequence: snapshotSequence };
-    const now = command.createdAt;
+function dispatchCommand(input: OrchestrationV2Command) {
+  return Effect.map(legacy, ({ toV1Commands }) => {
+    const now = new Date().toISOString();
+    const sent = toV1Commands(input, { now, thread: () => thread });
+    const command = sent.kind === "send" ? sent.commands.find(isTurnStart) : undefined;
+    if (!command) return { sequence: snapshotSequence };
     const turnId = TurnId.make(`demo-turn-${nextId++}`);
     thread = {
       ...thread,
@@ -467,7 +484,6 @@ function dispatchCommand(command: ClientOrchestrationCommand) {
         threadId: demoThreadId,
         status: "running",
         providerName: "OpenRouter demo",
-        providerInstanceId: demoProviderId,
         runtimeMode: "full-access",
         activeTurnId: turnId,
         lastError: null,
@@ -481,9 +497,13 @@ function dispatchCommand(command: ClientOrchestrationCommand) {
   });
 }
 
+const isTurnStart = (
+  command: V1ClientCommand,
+): command is Extract<V1ClientCommand, { type: "thread.turn.start" }> =>
+  command.type === "thread.turn.start";
+
 const streamingMethods = new Set<string>([
   WS_METHODS.subscribeVcsStatus,
-  WS_METHODS.subscribeTerminalEvents,
   WS_METHODS.subscribeTerminalMetadata,
   WS_METHODS.subscribePreviewEvents,
   WS_METHODS.subscribeDiscoveredLocalServers,
@@ -527,9 +547,9 @@ const client = new Proxy(
         ),
         Stream.never,
       ),
-    [ORCHESTRATION_WS_METHODS.subscribeShell]: subscribeShell,
-    [ORCHESTRATION_WS_METHODS.subscribeThread]: subscribeThread,
-    [ORCHESTRATION_WS_METHODS.dispatchCommand]: dispatchCommand,
+    [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: subscribeShell,
+    [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: subscribeThread,
+    [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: dispatchCommand,
     [WS_METHODS.vcsListRefs]: () =>
       Effect.succeed({
         refs: [],
@@ -538,8 +558,8 @@ const client = new Proxy(
         nextCursor: null,
         totalCount: 0,
       }),
-    [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: () => Effect.succeed({ patch: "", files: [] }),
-    [ORCHESTRATION_WS_METHODS.getTurnDiff]: () => Effect.succeed({ patch: "", files: [] }),
+    [ORCHESTRATION_V2_WS_METHODS.getFullThreadDiff]: () => Effect.succeed({ patch: "", files: [] }),
+    [ORCHESTRATION_V2_WS_METHODS.getTurnDiff]: () => Effect.succeed({ patch: "", files: [] }),
   } as Record<string, unknown>,
   {
     get(target, property) {
@@ -565,11 +585,14 @@ const session: RpcSession = {
   ready: Effect.void,
   probe: Effect.void,
   closed: Effect.never,
+  inboundFrames: Effect.succeed(0),
 };
 
 export const landingDemoRpcSessionLayer = Layer.succeed(
   RpcSessionFactory,
-  RpcSessionFactory.of({ connect: () => Effect.succeed(session) }),
+  RpcSessionFactory.of({
+    connect: Effect.fn("RpcSessionFactory.connect")(() => Effect.succeed(session)),
+  }),
 );
 
 export function subscribeDemoPreview(listener: () => void) {
@@ -590,7 +613,7 @@ export function resetDemoFiles() {
 
 /** Feed the stock sidebar and ChatView the replay's local server snapshot. */
 export function setWorkReplayThread(
-  next: Pick<OrchestrationThread, "title" | "messages" | "activities" | "latestTurn" | "session">,
+  next: Pick<V1Thread, "title" | "messages" | "activities" | "latestTurn" | "session">,
   projectTitle: string,
 ) {
   project = {
@@ -631,7 +654,6 @@ export function setWorkReplayHomeThreads(
       threadId: ThreadId.make(`replay-${row.id}`),
       status: row.finishedAt ? "ready" : "running",
       providerName: "codex",
-      providerInstanceId: demoProviderId,
       runtimeMode: "full-access",
       activeTurnId: row.finishedAt ? null : TurnId.make(`replay-${row.id}`),
       lastError: null,
@@ -642,9 +664,19 @@ export function setWorkReplayHomeThreads(
   for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
 }
 
-export function workReplaySnapshots() {
+/** The replay's script as it stands, in the original thread shape. */
+export function workReplaySource() {
   return { shell: shellSnapshot(), detail: threadSnapshot() };
 }
+
+/** What the app reads of it. */
+export const workReplaySnapshots = Effect.map(
+  legacy,
+  ({ mapShellSnapshot, mapThreadDetailSnapshot }) => ({
+    shell: mapShellSnapshot(shellSnapshot()),
+    detail: mapThreadDetailSnapshot(threadSnapshot()),
+  }),
+);
 
 export function workReplayConfig() {
   return demoServerConfig;

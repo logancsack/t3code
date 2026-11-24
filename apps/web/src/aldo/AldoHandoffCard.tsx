@@ -10,12 +10,11 @@
 // waits on the user (AldoBrowserChrome.tsx). Shown only when Aldo reports handoffs.
 
 import { ExternalLinkIcon, HandIcon, LoaderIcon, SmartphoneIcon } from "lucide-react";
-import { useState, type MouseEvent } from "react";
+import { lazy, Suspense, useState, type MouseEvent } from "react";
 import { create } from "zustand";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { QRCodeSvg } from "../components/ui/qr-code";
 import { toastManager } from "../components/ui/toast";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -39,6 +38,11 @@ import {
 } from "./handoffs.logic";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { PRIMARY, SECONDARY } from "./surface";
+
+// Drawn only for a step that continues on a phone.
+const QRCodeSvg = lazy(() =>
+  import("../components/ui/qr-code").then((module) => ({ default: module.QRCodeSvg })),
+);
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -392,13 +396,15 @@ function HandoffPhonePanel(props: {
     <div className="mt-3 flex items-start gap-3 rounded-lg border border-border bg-background p-3">
       {/* Dark on white whatever the theme: a camera reads it that way. */}
       <div className="shrink-0 rounded-md bg-white p-1">
-        <QRCodeSvg
-          value={link.href}
-          size={128}
-          level="M"
-          marginSize={1}
-          title="QR code for your phone"
-        />
+        <Suspense fallback={<div className="size-32" />}>
+          <QRCodeSvg
+            value={link.href}
+            size={128}
+            level="M"
+            marginSize={1}
+            title="QR code for your phone"
+          />
+        </Suspense>
       </div>
       <div className="min-w-0 flex-1 text-sm">
         <p className="font-medium text-foreground">Scan it with your phone's camera</p>

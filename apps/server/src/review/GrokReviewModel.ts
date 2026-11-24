@@ -19,18 +19,13 @@ export const MAX_REVIEW_IMPACT_CHARS = 350;
 export const MAX_REVIEW_SUGGESTION_CHARS = 500;
 export const MAX_REVIEW_VERIFICATION_CHARS = 350;
 export const MAX_REVIEW_LIST_ENTRY_CHARS = 300;
-export const MAX_REVIEW_DELEGATION_CHARS = 800;
-export const MAX_REVIEW_DELEGATION_PATHS = 8;
+const MAX_REVIEW_DELEGATION_CHARS = 800;
+const MAX_REVIEW_DELEGATION_PATHS = 8;
 export const GROK_REVIEW_FINDINGS_OMITTED_LIMITATION =
   "Some model-proposed findings were omitted because they were malformed or exceeded the report limit.";
 
-/**
- * Grok's constrained output is intentionally decoded through a permissive wire
- * shape first. Real models still occasionally emit null for optional fields or
- * exceed a presentation bound by a few characters. Rejecting the whole agent
- * result for those repairable differences made otherwise useful reviews
- * disappear, so normalization below restores the strict canonical shape.
- */
+// Decoded through a permissive wire shape first: models occasionally emit null for optional
+// fields or exceed a bound by a few characters. Normalization restores the strict shape.
 const GrokReviewCandidateFindingWire = Schema.Struct({
   severity: Schema.Literals(["blocker", "high", "medium", "low"]),
   confidence: Schema.Number,
@@ -282,7 +277,7 @@ function findingLocation(finding: GrokReviewFinding): string {
   return `${finding.path}:${finding.startLine}`;
 }
 
-export function renderGrokReviewMarkdown(input: {
+function renderGrokReviewMarkdown(input: {
   readonly status: GrokReviewStatus;
   readonly summary: string;
   readonly findings: ReadonlyArray<GrokReviewFinding>;

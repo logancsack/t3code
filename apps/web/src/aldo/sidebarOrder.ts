@@ -94,7 +94,7 @@ export function useAldoSidebarOrder(options: { readonly hold?: boolean } = {}) {
       shown.current.set(section, result.map(keyOf));
       return result;
     },
-    // oxlint-disable-next-line react/memo-dependencies
+    // oxlint-disable-next-line react/memo-dependencies -- `released` is listed to make a new function for each release.
     [hold, released, sort],
   );
 

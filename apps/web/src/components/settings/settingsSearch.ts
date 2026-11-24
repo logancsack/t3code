@@ -1,56 +1,59 @@
-import { isElectron } from "~/env";
-import { isAldoCloud } from "../../aldo/api";
-import { aldoSettingsSearchItem, aldoShowsSettingsSearchItem } from "../../aldo/settings.logic";
-import { isManagedDevPc } from "../../managedDevPc";
+import { HOSTED_APP_CHANNEL } from "~/branding";
+import { isElectron, isSecretsFeatureEnabled } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { commandLabel } from "./KeybindingsSettings.logic";
 import {
-  validateSettingsScopeSearch,
-  type ResolvedSettingsScope,
-  type SettingsScopeSearch,
-} from "./settingsScope";
+  sourceControlClients,
+  type SourceControlDefinition,
+} from "@t3tools/client-runtime/source-control-clients";
+import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import * as Schema from "effect/Schema";
+import { decodeMsg, msg, useMessages } from "gt-react";
+import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
+import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
+import type { MessageResolver } from "../../i18n/messages";
+import { commandLabel } from "./KeybindingsSettings.logic";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoSettingsSearchItem, aldoShowsSettingsSearchItem } from "../../aldo/settings.logic";
+import {
+  ALDO_SETTINGS_SEARCH_ITEMS,
+  ALDO_SETTINGS_SECTION_LABELS,
+  type AldoSettingsPath,
+} from "../../aldo/settingsSearchItems";
+import type { ResolvedSettingsScope } from "./settingsScope";
+
+const ALDO_SETTINGS_CATEGORY_SCOPES = Object.fromEntries(
+  Object.keys(ALDO_SETTINGS_SECTION_LABELS).map((path) => [path, null]),
+) as Record<AldoSettingsPath, null>;
 
 export type SettingsPath =
   | "/settings/projects"
   | "/settings/general"
+  | "/settings/diagnostics"
+  | "/settings/voice"
   | "/settings/appearance"
-  | "/settings/workspace"
+  | "/settings/chat"
+  | "/settings/diffs"
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
-  | "/settings/integrations"
+  | "/settings/threads"
+  | "/settings/browser"
+  | "/settings/devices"
+  | "/settings/scheduled-tasks"
   | "/settings/source-control"
-  | "/settings/instructions"
-  | "/settings/skills"
-  | "/settings/memory"
-  | "/settings/vault"
-  | "/settings/shared"
-  | "/settings/environments"
-  | "/settings/storage"
+  | "/settings/worktrees"
   | "/settings/connections"
+  | "/settings/access"
+  | "/settings/secrets"
+  | "/settings/maintenance"
+  | "/settings/labs"
+  | "/settings/about"
   | "/settings/archived"
-  // Aldo's own pages (aldo/settings.logic.ts).
-  | "/settings/account"
-  | "/settings/organization"
-  | "/settings/members"
-  | "/settings/running"
-  | "/settings/activity"
-  | "/settings/joining"
-  | "/settings/agents"
-  | "/settings/permissions"
-  | "/settings/notifications"
-  | "/settings/phone"
-  | "/settings/code";
+  | AldoSettingsPath;
 
-/**
- * Where a setting can be edited. Device-local rows have no scope: they render
- * at every selection. `project-defaults` rows accept project overrides, so
- * they are reachable from any server-backed selection.
- */
 export type SettingsSearchScope =
   | "environment"
   | "environment-defaults"
@@ -64,113 +67,158 @@ export interface SettingsSearchItem {
   readonly title: string;
   readonly to: SettingsPath;
   readonly targetId?: string;
-  /** Descriptions, option labels, and aliases people may remember instead of the title. */
   readonly searchTerms?: ReadonlyArray<string>;
   readonly scope?: SettingsSearchScope;
-  // Its row only renders in the desktop app, so a browser result would land on
-  // an anchor that isn't there.
   readonly desktopOnly?: boolean;
   readonly macOnly?: boolean;
-  // Its row only renders on Windows desktop, so other desktop platforms must
-  // not expose a result that points to a missing anchor.
   readonly windowsOnly?: boolean;
+  readonly releaseChannelOnly?: boolean;
+  readonly secretsFeatureOnly?: boolean;
   readonly cloudOnly?: boolean;
+  readonly environmentOnly?: boolean;
+  readonly providerSettingsOnly?: boolean;
+  readonly localBackendManagementOnly?: boolean;
+  readonly localEnvironmentOnly?: boolean;
+  readonly primaryEnvironmentOnly?: boolean;
+  readonly wslAvailableOnly?: boolean;
+  readonly managedTunnelOnly?: boolean;
+  readonly peerLinksOnly?: boolean;
+  readonly fastWorktreeCheckoutOnly?: boolean;
+  readonly textGeneratorsOnly?: boolean;
+  readonly secondary?: boolean;
+  readonly requiresThreadAutoSettlement?: boolean;
   /** Only in Aldo cloud mode, whose page at this path differs from T3's. */
   readonly aldoCloudOnly?: boolean;
   readonly requiresAldoPhone?: boolean;
-  /** Its page shows only for someone in an organization (aldo/organization.logic.ts). */
   readonly requiresAldoOrganization?: boolean;
-  /** Its page shows only to an organization's owners and admins, on an Aldo that has it (aldo/orgJoining.logic.ts). */
   readonly requiresAldoJoining?: boolean;
-  /** Its row renders only once Aldo says it has agent inboxes. */
   readonly requiresAldoAgentInbox?: boolean;
-  /** Its row renders only on an Aldo that keeps the welcome's answer (aldo/onboarding.ts). */
   readonly requiresAldoOnboarding?: boolean;
-  /** Its row renders only once Aldo says its policy takes this rule (aldo/policy.logic.ts). */
   readonly requiresAldoPolicyRule?: string;
-  readonly environmentOnly?: boolean;
-  readonly providerSettingsOnly?: boolean;
-  readonly macProviderSettingsOnly?: boolean;
-  readonly localBackendManagementOnly?: boolean;
-  readonly localEnvironmentOnly?: boolean;
-  readonly wslAvailableOnly?: boolean;
-  /**
-   * Sorts after every other match. Keybinding commands mirror rows on other
-   * surfaces, so "model" must still lead with Default model, not Model Picker.
-   */
-  readonly secondary?: boolean;
-  readonly requiresThreadAutoSettlement?: boolean;
 }
 
 export interface SettingsSearchAvailability {
-  readonly localEnvironmentDisabled?: boolean;
-  readonly hasCloudPublicConfig: boolean;
-  readonly hasEnvironment: boolean;
-  readonly hasProviderSettingsEnvironment: boolean;
-  readonly hasMacProviderSettingsEnvironment: boolean;
-  readonly canManageLocalBackend: boolean;
-  readonly isWslSettingsRowVisible: boolean;
-  readonly hasThreadAutoSettlement: boolean;
   readonly hasAldoPhoneApi?: boolean;
   readonly hasAldoOrganization?: boolean;
   readonly hasAldoJoining?: boolean;
   readonly hasAldoAgentInbox?: boolean;
   readonly hasAldoOnboarding?: boolean;
-  /** The rules Aldo's policy takes, once it's said (Settings → Permissions). */
   readonly aldoPolicyRules?: ReadonlyArray<string>;
-  /** False for an Aldo account without the developer tools (aldo/developerTools.ts): no Code page. */
+  /** False for an Aldo account without the developer tools: no Code page. */
   readonly aldoDeveloperTools?: boolean;
+  readonly localEnvironmentDisabled?: boolean;
+  readonly hasCloudPublicConfig: boolean;
+  readonly hasEnvironment: boolean;
+  readonly hasProviderSettingsEnvironment: boolean;
+  readonly canManageLocalBackend: boolean;
+  readonly isWslSettingsRowVisible: boolean;
+  readonly hasThreadAutoSettlement: boolean;
+  readonly managedTunnelActive?: boolean;
+  readonly hasPeerLinkHost?: boolean;
+  readonly hasFastWorktreeCheckoutEnvironment?: boolean;
+  /** An environment without a provider allow-list, which hides text generators. */
+  readonly hasTextGeneratorsEnvironment?: boolean;
+  readonly hasPrimaryEnvironment?: boolean;
 }
 
-/**
- * Section labels in sidebar order. The sidebar nav and the search-result
- * subtitles both render from this record, so each label exists once.
- */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/projects": "Project",
-  "/settings/general": "General",
-  "/settings/appearance": "Appearance",
-  "/settings/workspace": "Workspace",
-  "/settings/keybindings": "Keybindings",
-  "/settings/snap-shot": "SnapShots",
-  // Aldo: what runs the agents, and where code lives, in the words people use.
-  "/settings/providers": isAldoCloud ? "AI subscriptions" : "Providers",
-  "/settings/integrations": "Integrations",
-  "/settings/source-control": isAldoCloud ? "Git hosts" : "Source Control",
-  // Aldo: one page, in tabs.
-  "/settings/instructions": isAldoCloud ? "Personalization" : "Instructions",
-  "/settings/skills": isAldoCloud ? "Personalization" : "Skills",
-  "/settings/memory": isAldoCloud ? "Personalization" : "Memory",
-  "/settings/vault": "Vault",
-  "/settings/shared": "Shared files",
-  "/settings/environments": "Environments",
-  "/settings/storage": "Storage",
-  "/settings/connections": isManagedDevPc ? "Server connections" : "Connections",
-  "/settings/archived": "Archive",
-  "/settings/account": "Account",
-  "/settings/organization": "Organization",
-  "/settings/members": "Members",
-  "/settings/running": "Running now",
-  "/settings/activity": "Activity",
-  "/settings/joining": "Who can join",
-  "/settings/agents": "Models",
-  "/settings/permissions": "Permissions",
-  "/settings/notifications": "Notifications",
-  "/settings/phone": "Phone",
-  "/settings/code": "Code",
+  "/settings/diagnostics": msg("Diagnostics"),
+  "/settings/projects": msg("Projects"),
+  "/settings/general": msg("General"),
+  "/settings/appearance": msg("Appearance"),
+  "/settings/chat": msg("Chat"),
+  "/settings/diffs": msg("Diffs & pull requests"),
+  "/settings/keybindings": msg("Keybindings"),
+  "/settings/snap-shot": msg("SnapShots"),
+  "/settings/providers": msg("Providers"),
+  "/settings/threads": msg("Threads"),
+  "/settings/browser": msg("Browser"),
+  "/settings/devices": msg("Devices"),
+  "/settings/scheduled-tasks": msg("Scheduled tasks"),
+  "/settings/source-control": msg("Source control & issues"),
+  "/settings/worktrees": msg("Worktrees"),
+  "/settings/connections": msg("Environments"),
+  "/settings/access": msg("Sharing & access"),
+  "/settings/secrets": msg("Secrets"),
+  "/settings/maintenance": msg("Maintenance"),
+  "/settings/labs": msg("Labs"),
+  "/settings/about": msg("About"),
+  "/settings/voice": msg("Voice"),
+  "/settings/archived": msg("Archive"),
+  ...ALDO_SETTINGS_SECTION_LABELS,
+  // Aldo: what runs the agents and where code lives, in the words people use.
+  ...(isAldoCloud
+    ? {
+        "/settings/providers": "AI subscriptions",
+        "/settings/source-control": "Git hosts",
+        "/settings/connections": "Connections",
+      }
+    : {}),
 };
 
-/** Anchor id of the first row bound to `command` on the Keybindings page. */
+/** Sidebar labels; an entry of its own lets a translator shorten one below its page title. */
+export const SETTINGS_NAV_LABELS: Readonly<Record<SettingsPath, string>> = {
+  ...SETTINGS_SECTION_LABELS,
+  "/settings/source-control": msg("Source control & issues", {
+    $context: "settings navigation item",
+  }),
+  "/settings/access": msg("Sharing & access", { $context: "settings navigation item" }),
+};
+
+/** Sidebar order. A group with a hidden heading is set apart on screen by space alone. */
+export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
+  readonly heading: string;
+  readonly headingHidden?: true;
+  readonly paths: ReadonlyArray<SettingsPath>;
+}> = [
+  {
+    heading: msg("Preferences"),
+    headingHidden: true,
+    paths: [
+      "/settings/general",
+      "/settings/appearance",
+      "/settings/chat",
+      "/settings/diffs",
+      "/settings/keybindings",
+      "/settings/voice",
+      "/settings/snap-shot",
+    ],
+  },
+  {
+    heading: msg("Agents"),
+    paths: [
+      "/settings/providers",
+      "/settings/threads",
+      "/settings/browser",
+      "/settings/devices",
+      "/settings/scheduled-tasks",
+    ],
+  },
+  {
+    heading: msg("Code"),
+    paths: ["/settings/projects", "/settings/source-control", "/settings/worktrees"],
+  },
+  {
+    heading: msg("Connections"),
+    paths: [
+      "/settings/connections",
+      "/settings/access",
+      ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
+    ],
+  },
+  {
+    heading: msg("More"),
+    headingHidden: true,
+    paths: ["/settings/maintenance", "/settings/labs", "/settings/about", "/settings/archived"],
+  },
+];
+
 export function keybindingSearchAnchorId<Command extends KeybindingCommand>(command: Command) {
   return `keybinding-${command}` as const;
 }
 
-/**
- * One result per built-in command, alphabetical by label. The anchor is
- * the command's first row; default keys are searchable so "mod+b" lands on
- * Sidebar: Toggle. A command with no default binding may have no row, so it
- * points at the section instead.
- */
+const untranslated = ((message) => message) as MessageResolver;
+
 const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right) =>
   commandLabel(left).localeCompare(commandLabel(right)),
 ).map((command) => {
@@ -179,7 +227,7 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
   );
   return {
     id: keybindingSearchAnchorId(command),
-    title: commandLabel(command),
+    title: commandLabel(command, untranslated),
     to: "/settings/keybindings" as const,
     searchTerms: [command, ...defaultKeys],
     secondary: true,
@@ -187,999 +235,1153 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
   };
 });
 
-/**
- * Searchable settings and stable destinations, in result order. Rows with a
- * dedicated anchor render their id and title via `searchableSetting`; items
- * that may not be mounted point at their nearest stable section instead.
- */
+export function sourceControlHostSettingsSearchId(kind: string) {
+  return `source-control-host-${kind}` as const;
+}
+
+/** Each host's own settings: its accounts and token, or the fields of its settings form. */
+export function sourceControlHostSearchItems(
+  definitions: ReadonlyArray<SourceControlDefinition>,
+): ReadonlyArray<
+  SettingsSearchItem & { readonly id: ReturnType<typeof sourceControlHostSettingsSearchId> }
+> {
+  return definitions.flatMap((definition) => {
+    if (!definition.settings) return [];
+    const names = [definition.label, ...(definition.searchKeywords ?? [])].join(" ");
+    const { credentials } = definition;
+    return [
+      {
+        id: sourceControlHostSettingsSearchId(definition.kind),
+        title: credentials
+          ? msg("{label} accounts and token", { label: definition.label })
+          : msg("{label} credentials", { label: definition.label }),
+        to: "/settings/source-control" as const,
+        searchTerms: [
+          credentials
+            ? `${names} ${credentials.cliName} account login user host switch multiple accounts disable sign in token personal access token pat api key credential`
+            : `${names} ${Object.keys(definition.settings.fields).join(" ")} token credentials sign in`,
+        ],
+        environmentOnly: true,
+        scope: "environment-defaults" as const,
+      },
+    ];
+  });
+}
+
+/** For settings that apply to every host. */
+const SOURCE_CONTROL_HOST_LABELS = sourceControlClients.definitions
+  .map((definition) => definition.label)
+  .join(" ");
+const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
+  .flatMap((definition) => [definition.label, ...(definition.searchKeywords ?? [])])
+  .join(" ");
+
 export const SETTINGS_SEARCH_ITEMS = [
   {
-    id: "storage-worktrees",
-    title: "Worktree cleanup",
-    to: "/settings/storage",
+    id: "storage-worktree-keep-when",
+    targetId: "storage-worktrees",
+    title: msg("Keep worktrees with local changes"),
+    to: "/settings/worktrees",
     scope: "project-defaults",
     searchTerms: [
-      "disk storage delete deleted archived threads old inactive merged unchanged worktrees retention days project inherit off custom",
+      msg(
+        "any local files uncommitted changes edited tracked files ignored env build output cleanup",
+      ),
     ],
   },
   {
-    id: "storage-artifacts",
-    title: "Artifacts and logs",
-    to: "/settings/storage",
+    id: "storage-delete-now",
+    title: msg("Delete now"),
+    to: "/settings/maintenance",
     scope: "environment-defaults",
-    searchTerms: ["disk storage browser screenshots captures rotated logs cleanup retention"],
+    searchTerms: [msg("storage cleanup run now results report removed kept failed")],
+  },
+  {
+    id: "storage-worktrees",
+    title: msg("Worktree cleanup"),
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: [
+      msg(
+        "disk storage automatic delete deleted archived threads old inactive merged settled unchanged worktrees retention days project inherit off custom",
+      ),
+    ],
+  },
+  {
+    id: "storage-worktrees-location",
+    title: msg("Worktree location"),
+    to: "/settings/worktrees",
+    scope: "environment-defaults",
+    searchTerms: [msg("worktree location folder directory path drive external disk")],
+  },
+  {
+    id: "storage-artifacts",
+    title: msg("Artifacts and logs"),
+    to: "/settings/maintenance",
+    scope: "environment-defaults",
+    searchTerms: [
+      msg(
+        "disk storage delete old browser artifacts screenshots captures rotated logs cleanup retention",
+      ),
+    ],
   },
   {
     id: "project-defaults",
-    title: "Project defaults and overrides",
-    to: "/settings/general",
+    title: msg("Project defaults and overrides"),
+    to: "/settings/threads",
     scope: "project-defaults",
-    searchTerms: ["model workspace environments projects inheritance checkout"],
+    searchTerms: [msg("model workspace environments projects inheritance checkout")],
   },
   {
     id: "project-overview",
-    title: "Project overview",
+    title: msg("Project overview"),
     to: "/settings/projects",
-    searchTerms: ["name icon emoji image checkout remove delete"],
+    searchTerms: [msg("name icon emoji image checkout remove delete")],
   },
   {
     id: "default-model",
-    title: "Default model",
-    to: "/settings/general",
+    title: msg("Default model"),
+    to: "/settings/threads",
     scope: "project-defaults",
-    searchTerms: ["new thread project provider reasoning effort"],
+    searchTerms: [msg("new thread project provider reasoning effort")],
+  },
+  {
+    id: "fallback-model",
+    title: msg("Fallback model"),
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: [msg("fallback agent provider out of usage new threads")],
+    environmentOnly: true,
   },
   {
     id: "default-permissions",
-    title: "Permissions",
-    to: "/settings/general",
+    title: msg("Permissions"),
+    to: "/settings/threads",
     scope: "project-defaults",
     searchTerms: [
-      "new thread default runtime mode supervised approvals auto accept edits full access",
+      msg("new thread default runtime mode supervised approvals auto accept edits full access"),
     ],
   },
   {
     id: "color-scheme",
-    title: "Color scheme",
+    title: msg("Color scheme"),
     to: "/settings/appearance",
-    searchTerms: ["appearance light dark system mode"],
-    // The scheme tiles sit at the top of the Appearance section.
+    searchTerms: [msg("appearance light dark system mode")],
     targetId: "appearance",
   },
   {
     id: "theme",
-    title: "Themes",
+    title: msg("Themes"),
     to: "/settings/appearance",
-    searchTerms: ["appearance colors palette custom import"],
-    // Theme cards live directly under the scheme tiles; the section is the
-    // stable scroll destination for both.
+    searchTerms: [msg("appearance colors palette custom import")],
     targetId: "appearance",
   },
   {
     // Prefixed because the slider control already owns the `appearance-contrast` id.
     id: "setting-appearance-contrast",
-    title: "Contrast",
+    title: msg("Contrast"),
     to: "/settings/appearance",
-    searchTerms: ["colors borders interface"],
+    searchTerms: [msg("colors borders interface")],
   },
   {
     // Prefixed because the slider control already owns the `glass-opacity` id.
     id: "setting-glass-opacity",
-    title: "Glass opacity",
+    title: msg("Glass opacity"),
     to: "/settings/appearance",
-    searchTerms: ["transparent transparency solid menus dialogs composer"],
+    searchTerms: [msg("transparent transparency solid menus dialogs composer")],
   },
   {
     id: "diff-color-scheme",
-    title: "Diff colors",
-    to: "/settings/appearance",
-    searchTerms: ["red green blue orange additions deletions changes counts palette colorblind"],
+    title: msg("Diff colors"),
+    to: "/settings/diffs",
+    searchTerms: [
+      msg("red green blue orange additions deletions changes counts palette colorblind"),
+    ],
   },
   {
     id: "chat-width",
-    title: "Chat width",
+    title: msg("Chat width"),
     to: "/settings/appearance",
-    searchTerms: ["wide full width column layout messages composer monitor"],
+    searchTerms: [msg("wide full width column layout messages composer monitor")],
+  },
+  {
+    id: "thread-details-items",
+    title: msg("Thread details"),
+    to: "/settings/appearance",
+    searchTerms: [
+      msg(
+        "customize show hide panel card environment editor scripts branch pull request git changes servers automations lineage usage limits 5 hour weekly quota tokens context window",
+      ),
+    ],
+  },
+  {
+    id: "effort-display",
+    title: msg("Effort display"),
+    to: "/settings/appearance",
+    searchTerms: [msg("reasoning effort thinking bars graph word label level composer")],
+  },
+  {
+    id: "math-rendering",
+    title: msg("Render math"),
+    to: "/settings/appearance",
+    searchTerms: [msg("latex tex katex equations formulas markdown")],
   },
   {
     id: "panel-animations",
-    title: "Panel animations",
+    title: msg("Panel animations"),
     to: "/settings/appearance",
   },
   {
     id: "environment-identification",
-    title: "Environment identification",
+    title: msg("Environment identification"),
     to: "/settings/appearance",
-    searchTerms: ["dev nightly artwork pill label hide none"],
-    // The setting is stage-dependent, so its parent section is the stable destination.
+    searchTerms: [msg("dev nightly latest channel artwork pill label hide none")],
     targetId: "appearance-interface",
   },
   {
     id: "interface-font",
-    title: "Interface font",
+    title: msg("Interface font"),
     to: "/settings/appearance",
-    searchTerms: ["typography family size system sans"],
+    searchTerms: [msg("typography family size system sans")],
   },
   {
     id: "prompt-font",
-    title: "Prompt font",
+    title: msg("Prompt font"),
     to: "/settings/appearance",
-    searchTerms: ["typography family size composer input"],
+    searchTerms: [msg("typography family size composer input")],
   },
   {
     id: "code-font",
-    title: "Code font",
+    title: msg("Code font"),
     to: "/settings/appearance",
-    searchTerms: ["typography family size monospace code blocks diffs file previews"],
+    searchTerms: [msg("typography family size monospace code blocks diffs file previews")],
   },
   {
     id: "terminal-font",
-    title: "Terminal font",
+    title: msg("Terminal font"),
     to: "/settings/appearance",
-    searchTerms: ["typography family size monospace output"],
+    searchTerms: [msg("typography family size monospace output")],
+  },
+  {
+    id: "separate-fonts",
+    title: msg("Separate fonts"),
+    to: "/settings/appearance",
+    searchTerms: [msg("typography advanced prompt code terminal font family size individually")],
   },
   {
     id: "font-smoothing",
-    title: "Font smoothing",
+    title: msg("Font smoothing"),
     to: "/settings/appearance",
-    searchTerms: ["typography text grayscale anti aliasing macos thin"],
+    searchTerms: [msg("typography text grayscale anti aliasing macos thin")],
     macOnly: true,
   },
   {
     id: "word-wrap",
-    title: "Word wrap",
+    title: msg("Word wrap"),
     to: "/settings/appearance",
-    searchTerms: ["long lines code blocks tables diffs file previews"],
+    searchTerms: [msg("long lines code blocks diffs file previews")],
   },
   {
-    id: "aldo-notifications",
-    title: "Notifications on this device",
-    to: "/settings/notifications",
-    searchTerms: ["push alerts notify phone browser finished needs you"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-notification-sound",
-    title: "Play a sound when a thread finishes or needs you",
-    to: "/settings/notifications",
-    searchTerms: ["notifications chime sound audio alert"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-simple-mode",
-    title: "Layout",
+    id: "composer-context",
+    title: msg("Composer context"),
     to: "/settings/appearance",
-    searchTerms: ["simple mode rail sidebar hide threads just aldo needs you library full view"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-interests",
-    title: "What you hand Aldo",
-    to: "/settings/general",
-    searchTerms: [
-      "interests welcome starters ideas home developer tools code pull requests terminal diff",
-    ],
-    aldoCloudOnly: true,
-    requiresAldoOnboarding: true,
   },
   {
     id: "project-grouping",
-    title: "Project grouping",
+    title: msg("Project grouping"),
     to: "/settings/general",
-    searchTerms: ["combine matching repositories environments sidebar"],
+    searchTerms: [msg("combine matching repositories environments sidebar")],
+  },
+  {
+    id: "project-order",
+    title: msg("Project order"),
+    to: "/settings/general",
+    searchTerms: [msg("sort projects sidebar manual created recent")],
+  },
+  {
+    id: "snooze-options",
+    title: msg("Snooze options"),
+    to: "/settings/threads",
+    searchTerms: [msg("snooze presets times later tonight tomorrow next week remind")],
+    environmentOnly: true,
+    scope: "environment-defaults",
+  },
+  {
+    id: "snooze-limited-threads",
+    title: msg("Snooze until limits reset"),
+    to: "/settings/threads",
+    searchTerms: [msg("usage quota rate limit reset wake recover continue")],
+  },
+  {
+    id: "auto-resume-limited-threads",
+    title: msg("Resume after usage limits"),
+    to: "/settings/threads",
+    searchTerms: [msg("usage quota rate limit reset recover continue")],
   },
   {
     id: "working-shelf",
-    title: "Working section (beta)",
+    title: msg("Working section"),
     to: "/settings/general",
-    searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
+    searchTerms: [msg("hide fold running monitoring threads inbox sidebar shelf")],
+  },
+  {
+    id: "boring-sidebar",
+    title: msg("Boring sidebar (group by project)"),
+    to: "/settings/labs",
+    searchTerms: [msg("beta folders project tree classic sidebar")],
+  },
+  {
+    id: "boring-sidebar-multiline",
+    title: msg("Two-line folder rows"),
+    to: "/settings/labs",
+    // Shown inside the boring sidebar row only while it is on, so search lands on the parent.
+    targetId: "boring-sidebar",
+    searchTerms: [msg("beta boring sidebar folder rows multiline branch pull request details")],
+  },
+  {
+    id: "tool-call-visibility",
+    title: msg("Tool calls in chat"),
+    to: "/settings/chat",
+    searchTerms: [
+      msg(
+        "hide tool calls commands edits searches work log activity quiet chat zen final answers only",
+      ),
+    ],
+  },
+  {
+    id: "screen-reader-announcements",
+    title: msg("Screen reader announcements"),
+    to: "/settings/chat",
+    searchTerms: [
+      msg(
+        "accessibility a11y screen reader nvda jaws voiceover orca narrator speech announce read aloud messages activity steps",
+      ),
+    ],
+  },
+  {
+    id: "screen-reader-window-title",
+    title: msg("Screen reader window title"),
+    to: "/settings/chat",
+    searchTerms: [
+      msg(
+        "accessibility a11y screen reader nvda jaws voiceover orca narrator window title tab title alt tab taskbar thread status order working approval",
+      ),
+    ],
+  },
+  {
+    id: "guest-links",
+    title: msg("Guest links"),
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: [msg("beta share guest invite link teammate watch t3 connect tunnel")],
+  },
+  {
+    id: "linked-environments-beta",
+    title: msg("Linked environments"),
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: [msg("beta link another machine vps peer agents work there delegate")],
+  },
+  {
+    id: "prompt-suggestions-beta",
+    title: msg("Suggest next prompt"),
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: [msg("beta tab autocomplete predict next message claude codex ghost text")],
+  },
+  {
+    id: "simlock-hosts",
+    title: msg("Simlock device hosts (alpha)"),
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: [
+      msg("beta alpha simlock callstack simulator emulator ios android pool lease gateway"),
+    ],
+  },
+  {
+    id: "worktree-fast-checkout",
+    title: msg("Fast worktree checkout"),
+    to: "/settings/labs",
+    scope: "environment",
+    fastWorktreeCheckoutOnly: true,
+    searchTerms: [msg("beta fast worktree checkout clone apfs copy-on-write cache macos speed")],
+  },
+  {
+    id: "voice-transcription-destination",
+    title: msg("Transcribe with"),
+    to: "/settings/voice",
+    searchTerms: [
+      msg(
+        "send microphone audio dictation destination speech voice stt transcription environment machine consent privacy cloud OpenAI Grok OpenRouter",
+      ),
+    ],
+  },
+  {
+    id: "voice-microphone",
+    title: msg("Microphone"),
+    to: "/settings/voice",
+    searchTerms: [msg("mic input audio device order priority preferred")],
+  },
+  {
+    id: "dictation-shortcut-mode",
+    title: msg("Dictation shortcut"),
+    to: "/settings/voice",
+    searchTerms: [msg("speech voice keyboard hotkey hold toggle auto")],
+  },
+  {
+    id: "speech-language",
+    title: msg("Transcription language"),
+    to: "/settings/voice",
+    searchTerms: [msg("speech voice translate english auto detect")],
+  },
+  {
+    id: "speech-dictionary",
+    title: msg("Dictionary"),
+    to: "/settings/voice",
+    searchTerms: [msg("speech voice transcription vocabulary names glossary alias")],
+  },
+  {
+    id: "speech-project-dictionary",
+    title: msg("Project dictionary"),
+    to: "/settings/voice",
+    scope: "project-defaults",
+    searchTerms: [
+      msg("speech voice transcription vocabulary shared dictionary team environment glossary"),
+    ],
+  },
+  {
+    id: "speech-post-processing-model",
+    title: msg("Cleanup model"),
+    to: "/settings/voice",
+    scope: "environment",
+    searchTerms: [msg("speech voice transcript cleanup provider model post-processing")],
+  },
+  {
+    id: "speech-correction-word",
+    title: msg("Correction cue"),
+    to: "/settings/voice",
+    searchTerms: [msg("speech voice cleanup sorry scratch that fix mistake")],
+  },
+  {
+    id: "speech-silence-filtering",
+    title: msg("Silence filtering"),
+    to: "/settings/voice",
+    searchTerms: [msg("voice speech vad silero pauses noise")],
+  },
+  {
+    id: "remove-filler-words",
+    title: msg("Remove filler words"),
+    to: "/settings/voice",
+    searchTerms: [msg("voice speech transcription hesitation um uh cleanup")],
+  },
+  {
+    id: "speech-post-processing",
+    title: msg("Clean up transcripts"),
+    to: "/settings/voice",
+    searchTerms: [msg("speech transcription polish clean provider prompt post-processing")],
+  },
+  {
+    id: "speech-models",
+    title: msg("Transcription models"),
+    to: "/settings/voice",
+    searchTerms: [
+      msg(
+        "speech voice stt download whisper parakeet canary moonshine accuracy speed benchmark languages",
+      ),
+    ],
+  },
+  {
+    id: "speech-hardware",
+    title: msg("Transcription hardware and model unloading"),
+    to: "/settings/voice",
+    searchTerms: [msg("speech voice stt advanced gpu cpu acceleration memory unload idle")],
+  },
+  {
+    id: "speech-streaming",
+    title: msg("Streaming transcription"),
+    to: "/settings/voice",
+    searchTerms: [
+      msg("speech voice stt advanced native live preview batch after stopping slow lag"),
+    ],
+  },
+  {
+    id: "microphone-test",
+    title: msg("Test microphone"),
+    to: "/settings/voice",
+    searchTerms: [msg("test mic audio playback loopback record input level")],
+  },
+  {
+    id: "transcription-test",
+    title: msg("Test model"),
+    to: "/settings/voice",
+    searchTerms: [msg("test voice speech model transcription recognition")],
   },
   {
     id: "auto-settle-inactive-threads",
-    title: "Auto-settle inactive threads",
-    to: "/settings/general",
-    searchTerms: ["sidebar inactivity days no activity automatically"],
+    title: msg("Auto-settle inactive threads"),
+    to: "/settings/threads",
+    searchTerms: [msg("sidebar inactivity days no activity automatically")],
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
   {
+    id: "compact-idle-threads",
+    title: msg("Compact idle threads"),
+    to: "/settings/providers",
+    scope: "environment-defaults",
+    searchTerms: [msg("claude context compaction idle cache tokens usage summary resume")],
+  },
+  {
     id: "auto-settle-merged-threads",
-    title: "Auto-settle merged threads",
-    to: "/settings/general",
-    searchTerms: ["pull request merge closed automatically sidebar"],
+    title: msg("Auto-settle merged threads"),
+    to: "/settings/threads",
+    searchTerms: [msg("pull request merge closed automatically sidebar")],
+    requiresThreadAutoSettlement: true,
+    scope: "project-defaults",
+  },
+  {
+    id: "keep-threads-with-pull-requests",
+    title: msg("Keep threads with a PR"),
+    to: "/settings/threads",
+    targetId: "auto-settle-inactive-threads",
+    searchTerms: [msg("pull request inactivity auto-settle merge close sidebar")],
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
   {
     id: "days-before-auto-settle",
-    title: "Days of inactivity before auto-settle",
-    to: "/settings/general",
+    title: msg("Days of inactivity before auto-settle"),
+    to: "/settings/threads",
     targetId: "auto-settle-inactive-threads",
-    searchTerms: ["thread timeout activity sidebar"],
+    searchTerms: [msg("thread timeout activity sidebar")],
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
   {
     id: "thread-notifications",
-    title: "Thread notifications",
+    title: msg("Thread notifications"),
     to: "/settings/general",
-    searchTerms: ["notification sound alert completion input approval desktop"],
+    searchTerms: [msg("notification sound alert completion input approval desktop")],
   },
   {
     id: "in-app-notifications",
-    title: "In-app notifications",
+    title: msg("In-app notifications"),
     to: "/settings/general",
-    searchTerms: ["notification toast popup completion input approval failure"],
+    searchTerms: [msg("notification toast popup completion input approval failure")],
+  },
+  {
+    id: "language",
+    title: msg("Language"),
+    to: "/settings/general",
+    searchTerms: [
+      msg(
+        "locale translation english deutsch german español spanish français french português portuguese brasil brazilian chinese 中文 japanese 日本語 korean 한국어 russian русский swedish svenska sprache idioma langue 语言 言語 언어 язык",
+      ),
+    ],
   },
   {
     id: "time-format",
-    title: "Time format",
+    title: msg("Time format"),
     to: "/settings/general",
-    searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
+    searchTerms: [msg("timestamp clock locale system browser os 12 hour 24 hour")],
   },
   {
     id: "response-streaming",
-    title: "Response streaming",
-    to: "/settings/general",
+    title: msg("Response streaming"),
+    to: "/settings/threads",
     scope: "project-defaults",
-    searchTerms: ["output token paragraph buffered wait turn legacy"],
+    searchTerms: [msg("output token paragraph buffered wait turn legacy")],
   },
   {
     id: "hide-whitespace-changes",
-    title: "Hide whitespace changes",
-    to: "/settings/general",
-    searchTerms: ["diff ignore spaces edits default"],
+    title: msg("Hide whitespace changes"),
+    to: "/settings/diffs",
+    searchTerms: [msg("diff ignore spaces edits default")],
   },
   {
     id: "default-diff-file-state",
-    title: "Default diff file state",
-    to: "/settings/general",
-    searchTerms: ["collapsed expanded collapse expand files pull request pr code tab"],
+    title: msg("Default diff file state"),
+    to: "/settings/diffs",
+    searchTerms: [msg("collapsed expanded collapse expand files pull request pr code tab")],
   },
   {
     id: "diff-layout",
-    title: "Diff layout",
-    to: "/settings/general",
-    searchTerms: ["stacked split side by side unified inline view"],
+    title: msg("Diff layout"),
+    to: "/settings/diffs",
+    searchTerms: [msg("stacked split side by side unified inline view")],
   },
   {
     id: "proactive-panels",
-    title: "Proactive panels",
-    to: "/settings/general",
-    searchTerms: ["automatically open diff pull request pr right panel agent completion"],
+    title: msg("Open pull requests and changes panels proactively"),
+    to: "/settings/diffs",
+    searchTerms: [
+      msg("proactive automatically open diff pull request pr right panel agent completion"),
+    ],
   },
   {
     id: "skills-in-slash-menu",
-    title: "Show skills in slash menu",
-    to: "/settings/general",
-    searchTerms: ["command menu dollar $ slash /"],
+    title: msg("Show skills in slash menu"),
+    to: "/settings/chat",
+    searchTerms: [msg("command menu dollar $ slash /")],
   },
   {
     id: "composer-rich-text",
-    title: "Rich text composer",
-    to: "/settings/general",
-    searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
-  },
-  {
-    id: "composer-collapse",
-    title: "Collapse composer on scroll",
-    to: "/settings/general",
-    searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
+    title: msg("Rich text composer"),
+    to: "/settings/chat",
+    searchTerms: [msg("composer rich text tiptap bold italic markdown styled wysiwyg")],
   },
   {
     id: "send-shortcut",
-    title: "Send shortcut",
-    to: "/settings/general",
-    searchTerms: ["enter return command ctrl multiline prompt new line composer"],
+    title: msg("Send shortcut"),
+    to: "/settings/chat",
+    searchTerms: [msg("enter return command ctrl multiline prompt new line composer")],
   },
   {
     id: "follow-up-behavior",
-    title: "Follow-up behavior",
-    to: "/settings/general",
-    searchTerms: ["queue steer running turn send default behavior composer"],
+    title: msg("Follow-up behavior"),
+    to: "/settings/chat",
+    searchTerms: [msg("queue steer running turn send default behavior composer")],
   },
   {
     id: "provider-update-checks",
-    title: "Provider update checks",
-    to: "/settings/general",
-    searchTerms: ["installed cli versions newer available codex claude cursor grok opencode"],
+    title: msg("Provider update checks"),
+    to: "/settings/maintenance",
+    searchTerms: [
+      msg("installed cli versions newer available codex claude cursor grok fx kiro opencode"),
+    ],
     scope: "environment-defaults",
   },
   {
     id: "continue-threads-after-server-update",
-    title: "Continue threads after restarts",
-    to: "/settings/general",
+    title: msg("Continue threads after restarts"),
+    to: "/settings/maintenance",
     scope: "project-defaults",
     searchTerms: [
-      "resume running active interrupted work restart reboot machine crash desktop update automatically",
+      msg(
+        "resume running active interrupted work restart reboot machine crash desktop update automatically",
+      ),
     ],
   },
   {
+    id: "keep-awake-while-agents-work",
+    title: msg("Keep awake while agents work"),
+    to: "/settings/maintenance",
+    scope: "environment-defaults",
+    searchTerms: [msg("caffeinate sleep prevent stay awake power laptop lid inhibit")],
+  },
+  {
     id: "background-activity",
-    title: "Background activity",
-    to: "/settings/general",
+    title: msg("Background activity"),
+    to: "/settings/maintenance",
     scope: "environment-defaults",
     searchTerms: [
-      "balanced performance battery saver advanced git fetch provider health refresh host power monitor idle policy",
+      msg(
+        "balanced performance battery saver advanced git fetch provider health refresh host power monitor idle policy",
+      ),
     ],
   },
   {
     id: "new-threads",
-    title: "New threads",
-    to: "/settings/general",
+    title: msg("New threads"),
+    to: "/settings/threads",
     scope: "project-defaults",
-    searchTerms: ["default workspace mode draft local worktree"],
+    searchTerms: [msg("default workspace mode draft local worktree")],
   },
   {
     id: "worktree-submodules",
-    title: "Submodules",
-    to: "/settings/general",
+    title: msg("Submodules"),
+    to: "/settings/worktrees",
     scope: "project-defaults",
-    searchTerms: ["git submodule init recursive top-level none worktree t3.json"],
+    searchTerms: [msg("git submodule init recursive top-level none worktree t3.json")],
   },
   {
     id: "start-from-origin",
-    title: "Start from origin",
-    to: "/settings/general",
+    title: msg("Start from remote"),
+    to: "/settings/worktrees",
     scope: "project-defaults",
-    searchTerms: ["new worktrees latest matching remote branch local"],
+    searchTerms: [msg("new worktrees start remote origin latest fetched branch local")],
   },
   {
     id: "add-project-starts-in",
-    title: "Add project starts in",
-    to: "/settings/general",
+    title: msg("Add project starts in"),
+    to: "/settings/threads",
     scope: "environment-defaults",
-    searchTerms: ["base directory folder browser path home"],
+    searchTerms: [msg("base directory folder browser path home")],
+  },
+  {
+    id: "ghq-clone-layout",
+    title: msg("Clone into host folders"),
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: [msg("ghq clone destination host owner repository root layout")],
   },
   {
     id: "unpin-confirmation",
-    title: "Unpin confirmation",
+    title: msg("Unpin confirmation"),
     to: "/settings/general",
-    searchTerms: ["ask before thread pinned section"],
+    searchTerms: [msg("ask before thread pinned section")],
   },
   {
     id: "archive-confirmation",
-    title: "Archive confirmation",
+    title: msg("Archive confirmation"),
     to: "/settings/general",
-    searchTerms: ["ask before thread second click inline action"],
+    searchTerms: [msg("ask before thread second click inline action")],
   },
   {
     id: "delete-confirmation",
-    title: "Delete confirmation",
+    title: msg("Delete confirmation"),
     to: "/settings/general",
-    searchTerms: ["ask before thread chat history"],
+    searchTerms: [msg("ask before thread chat history")],
+  },
+  {
+    id: "terminal-close-confirmation",
+    title: msg("Terminal close confirmation"),
+    to: "/settings/general",
+    searchTerms: ["ask before delete stop process shell console history"],
   },
   {
     id: "quit-confirmation",
-    title: "Quit shortcut",
+    title: msg("Quit shortcut"),
     to: "/settings/general",
-    searchTerms: ["confirmation desktop app exit direct hold double click press twice"],
+    searchTerms: [msg("confirmation desktop app exit direct hold double click press twice")],
     desktopOnly: true,
   },
   {
     id: "text-generation-model",
-    title: "Text generation model",
-    to: "/settings/general",
+    title: msg("Text generation model"),
+    to: "/settings/threads",
     scope: "project-defaults",
-    searchTerms: ["generated thread titles source control content default provider"],
+    searchTerms: [msg("generated thread titles source control content default provider")],
+  },
+  {
+    id: "thread-title-instructions",
+    title: msg("Thread title instructions"),
+    to: "/settings/threads",
+    scope: "project-defaults",
+    searchTerms: [msg("generated thread titles prompt custom style naming rename regenerate")],
+  },
+  {
+    id: "app-version",
+    title: msg("Version"),
+    to: "/settings/about",
+    searchTerms: [msg("about check for updates download install upgrade release")],
+  },
+  {
+    id: "update-track",
+    title: msg("Update track"),
+    to: "/settings/about",
+    searchTerms: [msg("release channel stable latest nightly prerelease")],
+    releaseChannelOnly: true,
+  },
+  {
+    id: "cli-command",
+    title: msg("t3 command"),
+    to: "/settings/about",
+    searchTerms: [msg("cli terminal shell path install command line")],
+    desktopOnly: true,
+  },
+  {
+    id: "mobile-app",
+    title: msg("Mobile app"),
+    to: "/settings/about",
+    searchTerms: [msg("phone tablet iPhone iPad iOS Android App Store Google Play QR")],
+  },
+  {
+    id: "welcome-page",
+    title: msg("Welcome page"),
+    to: "/settings/about",
+    primaryEnvironmentOnly: true,
+    searchTerms: [msg("onboarding setup first run getting started agents import projects")],
+  },
+  {
+    id: "privacy-policy",
+    title: msg("Privacy policy"),
+    to: "/settings/about",
+    searchTerms: [msg("telemetry analytics usage data tracking legal opt out")],
+  },
+  {
+    id: "telemetry-export",
+    title: msg("OpenTelemetry export"),
+    to: "/settings/diagnostics",
+    targetId: "telemetry-export",
+    scope: "environment",
+    searchTerms: [msg("OTel OTLP telemetry export endpoints logs traces metrics Grafana")],
   },
   {
     id: "diagnostics",
-    title: "Diagnostics",
-    to: "/settings/general",
-    searchTerms: ["logs traces processes resource history failures spans cpu memory"],
+    title: msg("Diagnostics"),
+    to: "/settings/maintenance",
+    searchTerms: [msg("logs traces processes resource history failures spans cpu memory")],
   },
   {
     id: "open-source-licenses",
-    title: "Open source licenses",
-    to: "/settings/general",
-  },
-  {
-    id: "legacy-plan-mode",
-    title: "Plan mode (legacy)",
-    to: "/settings/general",
-    searchTerms: ["build plan composer old"],
-  },
-  {
-    id: "legacy-context-window-indicator",
-    title: "Context window indicator (legacy)",
-    to: "/settings/general",
-    searchTerms: ["composer meter usage tokens circle old"],
-  },
-  {
-    id: "legacy-sidebar",
-    title: "Sidebar (legacy)",
-    to: "/settings/general",
-    searchTerms: ["project thread tree old flat list"],
+    title: msg("Open source licenses"),
+    to: "/settings/about",
   },
   {
     id: "keybindings",
-    title: "Keybindings",
+    title: msg("Keybindings"),
     to: "/settings/keybindings",
-    searchTerms: ["keyboard shortcuts hotkeys commands bindings json"],
+    searchTerms: [msg("keyboard shortcuts hotkeys commands bindings json")],
   },
   ...KEYBINDING_SEARCH_ITEMS,
   {
     id: "snap-shot-enabled",
-    title: "SnapShots",
-    searchTerms: ["window capture screenshot"],
+    title: msg("SnapShots"),
+    searchTerms: [msg("window capture screenshot")],
     to: "/settings/snap-shot",
   },
   {
     id: "snap-shot-accessibility",
-    title: "Include app text",
+    title: msg("Include app text"),
     to: "/settings/snap-shot",
     targetId: "snap-shot-enabled",
     searchTerms: [
-      "capture accessibility data text UI structure elements privacy omit agent context",
+      msg("capture accessibility data text UI structure elements privacy omit agent context"),
     ],
   },
   {
     id: "snap-shot-shortcut",
-    title: "Capture shortcut",
+    title: msg("Capture shortcut"),
     to: "/settings/snap-shot",
     targetId: "snap-shot-enabled",
   },
   {
     id: "snap-shot-sound",
-    title: "Capture sound",
+    title: msg("Capture sound"),
     to: "/settings/snap-shot",
     targetId: "snap-shot-enabled",
   },
   {
     id: "snap-shot-flash",
-    title: "Capture flash",
+    title: msg("Capture flash"),
     to: "/settings/snap-shot",
     targetId: "snap-shot-enabled",
   },
   {
     id: "snap-shot-animations",
-    title: "Capture animations",
+    title: msg("Capture animations"),
     to: "/settings/snap-shot",
     targetId: "snap-shot-enabled",
   },
   {
     id: "providers",
-    title: isAldoCloud ? "AI subscriptions" : "Providers",
+    title: msg("Providers"),
     to: "/settings/providers",
     searchTerms: [
-      "agents cli codex claude cursor grok opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory endpoint arguments environment variables display name accent color custom favorite hidden auto compact",
+      msg(
+        "agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
+      ),
     ],
   },
   {
     id: "usage-providers",
-    title: "Usage providers",
+    title: msg("Usage providers"),
     to: "/settings/providers",
     searchTerms: [
-      "usage sources CLIProxyAPI CLI proxy hub quota subscription limits management key add remove",
+      msg(
+        "usage sources CLIProxyAPI CLI proxy hub quota subscription limits management key add remove",
+      ),
     ],
     providerSettingsOnly: true,
   },
   {
-    id: "cursor-keychain-usage",
-    title: "Cursor account usage",
+    id: "text-generators",
+    title: msg("Text generators"),
     to: "/settings/providers",
-    searchTerms: ["cursor macOS keychain usage tokens cost limits permission"],
+    searchTerms: [
+      msg(
+        "model api api key openai openrouter anthropic ollama lm studio custom endpoint base url thread titles commit messages",
+      ),
+    ],
     providerSettingsOnly: true,
-    macProviderSettingsOnly: true,
+    textGeneratorsOnly: true,
   },
   {
     id: "provider-health-check-interval",
-    title: "Health check interval",
+    title: msg("Health check interval"),
     to: "/settings/providers",
-    searchTerms: ["refresh availability versions auth state models background probes seconds off"],
+    searchTerms: [
+      msg("refresh availability versions auth state models background probes seconds off"),
+    ],
     providerSettingsOnly: true,
   },
   {
-    id: "aldo-integration-microsoft",
-    title: "Microsoft",
-    to: "/settings/connections",
-    searchTerms: [
-      "integrations accounts connect disconnect onedrive sharepoint excel office 365 work school personal",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-integration-link",
-    title: "Link",
-    to: "/settings/connections",
-    searchTerms: [
-      "link wallet stripe payments pay card credit debit buy purchase checkout approve approval spend connect disconnect",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-agent-inbox",
-    title: "Your agents' email",
-    to: "/settings/connections",
-    searchTerms: [
-      "agent inbox email address mail handle claim agentmail aldomail sender name display name from rename",
-    ],
-    aldoCloudOnly: true,
-    requiresAldoAgentInbox: true,
-  },
-  {
-    id: "aldo-organization",
-    title: "Organization",
-    to: "/settings/organization",
-    searchTerms: ["organization org company name rename seats owners leave delete"],
-    aldoCloudOnly: true,
-    requiresAldoOrganization: true,
-  },
-  {
-    id: "aldo-members",
-    title: "Members",
-    to: "/settings/members",
-    searchTerms: [
-      "members people team invite invites roles owner admin member remove step down resend revoke link credits usage limit pause",
-    ],
-    aldoCloudOnly: true,
-    requiresAldoOrganization: true,
-  },
-  {
-    id: "aldo-joining",
-    title: "Who can join",
-    to: "/settings/joining",
-    searchTerms: [
-      "who can join domain domains verify dns txt record invite link share link requests ask join right away invite only",
-    ],
-    aldoCloudOnly: true,
-    requiresAldoJoining: true,
-  },
-  {
-    id: "aldo-activity",
-    title: "Activity",
-    to: "/settings/activity",
-    searchTerms: ["activity log history audit who changed stopped paused invited removed"],
-    aldoCloudOnly: true,
-    requiresAldoOrganization: true,
-  },
-  {
-    id: "aldo-phone",
-    title: "Text and call Aldo",
-    to: "/settings/phone",
-    searchTerms: ["phone sms mms voice call text number verification pin disconnect"],
-    aldoCloudOnly: true,
-    requiresAldoPhone: true,
-  },
-  {
-    id: "aldo-apps",
-    title: "Apps",
-    to: "/settings/connections",
-    searchTerms: [
-      "apps mcp server connectors plugins connect disconnect zapier notion linear jira confluence atlassian airtable canva granola stripe paypal webflow supabase sentry hugging face",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-instructions",
-    title: "Instructions",
-    to: "/settings/instructions",
-    searchTerms: [
-      "instructions every project agents read preferences conventions how I like things done remember rules",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-memory",
-    title: "Memory",
-    to: "/settings/memory",
-    searchTerms: ["memory remembered facts what agents know about me notes forget"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-vault",
-    title: "Vault",
-    to: "/settings/vault",
-    searchTerms: [
-      "vault secrets api keys tokens passwords logins saved credentials environment variables files",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-shared",
-    title: "Shared files",
-    to: "/settings/shared",
-    searchTerms: [
-      "library shared files pages links public only me stop sharing unshare what agents made share_file",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-environments",
-    title: "Environments",
-    to: "/settings/code",
-    searchTerms: [
-      "environments ready-to-go setup install build workspace computer prebuilt dependencies",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-skills",
-    title: "Skills",
-    to: "/settings/skills",
-    searchTerms: [
-      "skills how agents do a task steps feedback do avoid teach save_skill skill.md new edit remove",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-generators",
-    title: "Image, video and audio",
-    to: "/settings/connections",
-    searchTerms: [
-      "generators media generation ai video image audio voice music speech api key runway higgsfield luma fal replicate elevenlabs flux black forest labs kling minimax hailuo ideogram veo imagen sora gpt image",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-integration-google",
-    title: "Google",
-    to: "/settings/connections",
-    searchTerms: [
-      "integrations accounts connect disconnect gmail mail calendar contacts drive docs sheets",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-account",
-    title: "Account",
-    to: "/settings/account",
-    searchTerms: ["profile name email picture password two-step verification devices manage"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-plan",
-    title: "Plan and billing",
-    to: "/settings/account",
-    searchTerms: [
-      "subscription upgrade downgrade cancel credits extra usage limit invoices receipts payment method card",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-subscription-limits",
-    title: "AI subscription limits",
-    to: "/settings/account",
-    searchTerms: ["claude codex chatgpt grok weekly limit resets usage left quota"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-sign-out",
-    title: "Sign out",
-    to: "/settings/account",
-    searchTerms: ["log out leave this device"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-subagents",
-    title: "Helper models",
-    to: "/settings/agents",
-    searchTerms: ["subagents helpers model reasoning effort claude code codex"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-provider-limit",
-    title: "When a subscription runs out mid-task",
-    to: "/settings/agents",
-    searchTerms: ["usage limit reached mid-task wait reset switch model"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-context-budget",
-    title: "Conversation length",
-    to: "/settings/agents",
-    searchTerms: ["long conversations context budget compact compaction tokens summarize"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-accounts",
-    title: "Sign up for sites",
-    to: "/settings/permissions",
-    searchTerms: [
-      "accounts in your name sign up signup register create account profile listing terms login vault ask me first never",
-    ],
-    aldoCloudOnly: true,
-    requiresAldoPolicyRule: "accounts",
-  },
-  {
-    id: "aldo-publishing",
-    title: "Publish",
-    to: "/settings/permissions",
-    searchTerms: ["publishing for you post listing page go live public show me first"],
-    aldoCloudOnly: true,
-    requiresAldoPolicyRule: "publishing",
-  },
-  {
-    id: "aldo-spend-threshold",
-    title: "Spending limit",
-    to: "/settings/permissions",
-    searchTerms: ["money spend without asking threshold dollars purchase buy approve budget"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-paid-fallback",
-    title: "Go past your plans' limits",
-    to: "/settings/permissions",
-    searchTerms: ["pay extra usage credits paid fallback model routing subscription"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-merge",
-    title: "Merge pull requests",
-    to: "/settings/permissions",
-    searchTerms: ["auto merge approve checks pass"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-merge-method",
-    title: "Merge method",
-    to: "/settings/permissions",
-    searchTerms: ["squash rebase merge commit repository pull request"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-reviews",
-    title: "Automated reviews",
-    to: "/settings/permissions",
-    searchTerms: ["codex reviewer findings comments fix"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-media-routing",
-    title: "Choosing a tool",
-    to: "/settings/permissions",
-    searchTerms: ["image video audio media generation choose ask default tool"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-always-allowed",
-    title: "Always allowed",
-    to: "/settings/permissions",
-    searchTerms: ["approval rules always allow without asking remove"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-quiet-hours",
-    title: "Quiet hours",
-    to: "/settings/notifications",
-    searchTerms: [
-      "night sleep do not disturb mute hold wait heads-ups finished threads push start end time",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-brief",
-    title: "Daily brief",
-    to: "/settings/notifications",
-    searchTerms: ["morning brief time push notification what needs you today off"],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-heads-ups",
-    title: "Heads-ups from Aldo",
-    to: "/settings/notifications",
-    searchTerms: [
-      "mail calendar events half hour what's worth knowing other apps tell me about don't tell me",
-    ],
-    aldoCloudOnly: true,
-  },
-  {
-    id: "aldo-preload",
-    title: "Have agents ready",
-    to: "/settings/general",
-    searchTerms: ["speed preload start computer wake open thread faster waiting"],
-    aldoCloudOnly: true,
+    id: "scheduled-tasks",
+    title: msg("Scheduled tasks"),
+    to: "/settings/scheduled-tasks",
   },
   {
     id: "agent-browser-access",
-    title: "Agent browser access",
-    to: "/settings/integrations",
+    title: msg("Agent browser access"),
+    to: "/settings/browser",
     scope: "project-defaults",
-    searchTerms: ["allow disable enable open drive preview tools sessions project override"],
+    searchTerms: [msg("allow disable enable open drive preview tools sessions project override")],
   },
   {
-    id: "device-hosts",
-    title: "Device hosts",
-    to: "/settings/integrations",
-    searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
+    id: "device-sources",
+    title: msg("Device sources"),
+    to: "/settings/devices",
+    searchTerms: [
+      msg(
+        "device hosts ssh remote mac mini identity key connection eas expo cloud simlock pool gateway local simulators",
+      ),
+    ],
   },
   {
     id: "agent-device-access",
-    title: "Agent device access",
-    to: "/settings/integrations",
+    title: msg("Agents can use devices"),
+    to: "/settings/devices",
     targetId: "devices",
-    searchTerms: ["allow simulator emulator ios android drive tools sessions"],
+    searchTerms: [msg("allow simulator emulator ios android drive tools sessions")],
   },
   {
     id: "device-hub",
-    title: "Device hub",
-    to: "/settings/integrations",
+    title: msg("Use devices"),
+    to: "/settings/devices",
     targetId: "devices",
-    searchTerms: ["simulator emulator ios android install start"],
+    searchTerms: [msg("device hub simulator emulator ios android install start version")],
   },
   {
     id: "device-platform-support",
-    title: "Simulator support",
-    to: "/settings/integrations",
-    targetId: "devices",
-    searchTerms: ["xcode android studio sdk avd runtime"],
+    title: msg("Local simulators"),
+    to: "/settings/devices",
+    targetId: "device-sources",
+    searchTerms: [msg("simulator support xcode android studio sdk avd runtime")],
   },
   {
     id: "browser-profiles",
-    title: "Browser profiles",
-    to: "/settings/integrations",
+    title: msg("Browser profiles"),
+    to: "/settings/browser",
     targetId: "browser",
   },
   {
     id: "browser-default-profile",
-    title: "Default browser profile",
-    to: "/settings/integrations",
+    title: msg("Default browser profile"),
+    to: "/settings/browser",
     targetId: "browser-profiles",
   },
   {
     id: "browser-default-viewport",
-    title: "Default browser viewport",
-    to: "/settings/integrations",
-    searchTerms: ["preview size width height device desktop mobile rotate"],
+    title: msg("Default browser viewport"),
+    to: "/settings/browser",
+    searchTerms: [msg("preview size width height device desktop mobile rotate")],
   },
   {
     id: "browser-default-zoom",
-    title: "Default browser zoom",
-    to: "/settings/integrations",
-    searchTerms: ["preview page scale tabs percent"],
+    title: msg("Default browser zoom"),
+    to: "/settings/browser",
+    searchTerms: [msg("preview page scale tabs percent")],
   },
   {
     id: "browser-default-appearance",
-    title: "Default browser appearance",
-    to: "/settings/integrations",
-    searchTerms: ["preview color scheme light dark system os"],
+    title: msg("Default browser appearance"),
+    to: "/settings/browser",
+    searchTerms: [msg("preview color scheme light dark system os")],
   },
   {
     id: "browser-recording-frame-rate",
-    title: "Browser recording frame rate",
-    to: "/settings/integrations",
+    title: msg("Browser recording frame rate"),
+    to: "/settings/browser",
   },
   {
     id: "browser-recording-key-presses",
-    title: "Show key presses in recordings",
-    to: "/settings/integrations",
-    searchTerms: ["browser preview keyboard shortcuts keystrokes overlay capture"],
+    title: msg("Show key presses in recordings"),
+    to: "/settings/browser",
+    searchTerms: [msg("browser preview keyboard shortcuts keystrokes overlay capture")],
   },
   {
     id: "browser-recording-mouse-presses",
-    title: "Show mouse presses in recordings",
-    to: "/settings/integrations",
-    searchTerms: ["browser preview clicks buttons drag overlay capture"],
+    title: msg("Show mouse presses in recordings"),
+    to: "/settings/browser",
+    searchTerms: [msg("browser preview clicks buttons drag overlay capture")],
   },
   {
     id: "browser-link-target",
-    title: "Open links in",
-    to: "/settings/integrations",
-    searchTerms: ["links default browser in-app browser external open"],
+    title: msg("Open links in"),
+    to: "/settings/browser",
+    searchTerms: [msg("links default browser in-app browser external open")],
+  },
+  {
+    id: "browser-search-engine",
+    title: msg("Search engine"),
+    to: "/settings/browser",
+    searchTerms: [msg("address bar duckduckgo google bing brave kagi ecosia custom url")],
+  },
+  {
+    id: "pull-request-links-open-in-app",
+    title: msg("Open pull requests in T3 Code"),
+    to: "/settings/diffs",
+    searchTerms: [
+      `pr commit links ${SOURCE_CONTROL_HOST_LABELS} browser external click default pull request view panel`,
+    ],
   },
   {
     id: "browser-auto-show-floating-preview",
-    title: "Auto-show floating preview",
-    to: "/settings/integrations",
-    searchTerms: ["agent opens browser device simulator pop into view hide"],
+    title: msg("Auto-show floating preview"),
+    to: "/settings/browser",
+    searchTerms: [msg("agent opens browser device simulator pop into view hide")],
   },
   {
     id: "automatic-pull",
-    title: "Automatically pull",
+    title: msg("Automatically pull"),
     to: "/settings/source-control",
     scope: "project-defaults",
-    searchTerms: ["auto pull default branch current checkout fast forward upstream"],
+    searchTerms: [msg("auto pull default branch current checkout fast forward upstream")],
+  },
+  {
+    id: "remove-agent-credits-on-merge",
+    title: msg("Remove agent credits when merging"),
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: [
+      `pull request ${SOURCE_CONTROL_HOST_LABELS} squash co-authored-by attribution claude codex generated`,
+    ],
   },
   {
     id: "pull-request-merge-method",
-    title: "Default merge method",
+    title: msg("Default merge method"),
     to: "/settings/source-control",
     scope: "project-defaults",
-    searchTerms: ["pull request merge squash rebase last selected"],
+    searchTerms: [msg("pull request merge squash rebase last selected")],
+  },
+  {
+    id: "issue-trackers",
+    title: msg("Issue trackers"),
+    to: "/settings/source-control",
+    scope: "environment-defaults",
+    searchTerms: [msg("linear jira issues tracker team api key connect bind project")],
   },
   {
     id: "source-control",
-    title: isAldoCloud ? "Git hosts" : "Source control",
+    title: msg("Source control"),
     to: "/settings/source-control",
-    // Aldo's Git hosts are the account's, at any selection.
-    ...(isAldoCloud ? {} : { scope: "environment-defaults" }),
+    scope: "environment-defaults",
     searchTerms: [
-      // Aldo has no Forgejo or Gitea hosts.
-      isAldoCloud
-        ? "version control git github gitlab bitbucket azure devops hosting integrations credentials scan server environment"
-        : "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
+      `version control git ${SOURCE_CONTROL_HOST_TERMS} hosting integrations credentials scan server environment`,
     ],
   },
   {
     id: "git-fetch-interval",
-    title: "Git fetch interval",
-    to: "/settings/source-control",
+    title: msg("Git fetch interval"),
+    to: "/settings/maintenance",
+    targetId: "background-activity",
     searchTerms: [
-      "automatic remote branch refresh background credentials security keys seconds off",
+      msg("automatic remote branch refresh background credentials security keys seconds off"),
     ],
     environmentOnly: true,
     scope: "environment-defaults",
   },
   {
-    id: "bitbucket-credentials",
-    title: "Bitbucket credentials",
-    to: "/settings/source-control",
-    searchTerms: ["bitbucket atlassian access token api token email credentials sign in"],
+    id: "worktree-branch-naming",
+    title: msg("Worktree branch naming"),
+    to: "/settings/worktrees",
+    searchTerms: [msg("static semantic prefix custom prompt instructions feat fix refactor chore")],
     environmentOnly: true,
-    scope: "environment-defaults",
+    scope: "project-defaults",
   },
+  ...sourceControlHostSearchItems(sourceControlClients.definitions),
   {
     id: "source-control-writing-style",
-    title: "Source control writing style",
+    title: msg("Commit and pull request writing"),
     to: "/settings/source-control",
     searchTerms: [
-      "repository conventions conventional commits custom instructions change descriptions request titles",
+      msg(
+        "repository conventions conventional commits custom instructions commit messages change pr pull request merge request titles descriptions body style prompt write my own",
+      ),
     ],
     environmentOnly: true,
   },
   {
     id: "follow-change-request-templates",
-    title: "Follow change request templates",
+    title: msg("Follow pull request templates"),
     to: "/settings/source-control",
-    searchTerms: ["repository pr pull request description structure"],
+    searchTerms: [
+      msg("repository pr pull request merge request change request description structure"),
+    ],
     environmentOnly: true,
   },
   {
     id: "source-control-writer-model",
-    title: "Source control writer model",
+    title: msg("Source control writer model"),
     to: "/settings/source-control",
     searchTerms: [
-      "override generated commit change request pr titles descriptions branch bookmark",
+      msg("override generated commit change request pr titles descriptions branch bookmark"),
     ],
     environmentOnly: true,
     scope: "project-defaults",
   },
   {
+    id: "review-guides",
+    title: msg("Review guides (beta)"),
+    to: "/settings/source-control",
+    searchTerms: [msg("pull request pr guided review guide tour beta experimental")],
+    environmentOnly: true,
+  },
+  {
+    id: "review-guide-model",
+    title: msg("Review guide model"),
+    to: "/settings/source-control",
+    // Hidden until review guides are on, so a search lands on the switch that shows it.
+    targetId: "review-guides",
+    searchTerms: [msg("pull request pr guided review guide brief maintainer")],
+    environmentOnly: true,
+    scope: "project-defaults",
+  },
+  {
+    id: "review-guide-instructions",
+    title: msg("Review guide instructions"),
+    to: "/settings/source-control",
+    targetId: "review-guides",
+    searchTerms: [msg("pull request pr guided review guide preferences taste prompt custom")],
+    environmentOnly: true,
+    scope: "project-defaults",
+  },
+  {
     id: "project-actions",
-    title: "Actions",
+    title: msg("Actions"),
     to: "/settings/projects",
-    searchTerms: ["commands scripts setup run dev server checkout worktree t3.json import"],
+    searchTerms: [msg("commands scripts setup run dev server checkout worktree t3.json import")],
   },
   {
     id: "environment-icon",
-    title: "Environment icon",
-    to: "/settings/connections",
+    title: msg("Environment icon"),
+    to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
-    localBackendManagementOnly: true,
+    searchTerms: [msg("machine glyph sidebar mac mini studio laptop desktop server cloud vm")],
   },
   {
     id: "local-environment",
-    title: "Local environment",
+    title: msg("Local environment"),
     to: "/settings/connections",
-    targetId: "connections-environment",
-    searchTerms: ["turn off on disable enable local server agents remote only restart"],
+    searchTerms: [msg("turn off on disable enable local server agents remote only restart")],
     desktopOnly: true,
   },
   {
     id: "network-access",
-    title: "Network access",
-    to: "/settings/connections",
+    title: msg("Network access"),
+    to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["expose backend remote pairing local machine interfaces host restart"],
+    searchTerms: [msg("expose backend remote pairing local machine interfaces host restart")],
     localBackendManagementOnly: true,
   },
   {
     id: "tailscale-https",
-    title: "Tailscale HTTPS",
-    to: "/settings/connections",
+    title: msg("Tailscale HTTPS"),
+    to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["serve magicdns endpoint remote secure network"],
+    searchTerms: [msg("serve magicdns endpoint remote secure network")],
     desktopOnly: true,
     localBackendManagementOnly: true,
   },
   {
     id: "wsl-backend",
-    title: "WSL backend",
-    to: "/settings/connections",
+    title: msg("WSL backend"),
+    to: "/settings/access",
     searchTerms: [
-      "windows subsystem linux distro second server projects stop windows backend restart",
+      msg(
+        "windows subsystem linux distro second server projects stop windows backend restart wsl only",
+      ),
     ],
     desktopOnly: true,
     windowsOnly: true,
@@ -1189,56 +1391,116 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "t3-connect",
     localEnvironmentOnly: true,
-    title: "T3 Connect",
-    to: "/settings/connections",
+    title: msg("T3 Connect"),
+    to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["managed tunnel cloud other devices remote"],
+    searchTerms: [msg("managed tunnel cloud other devices remote tunnels limit t3 chat")],
     desktopOnly: true,
     cloudOnly: true,
   },
   {
+    id: "connect-device-approval",
+    title: msg("Require approval for new devices"),
+    to: "/settings/access",
+    targetId: "connections-environment",
+    searchTerms: [
+      msg("t3 connect devices approve deny trust revoke pairing code security account"),
+    ],
+    cloudOnly: true,
+    managedTunnelOnly: true,
+  },
+  {
+    id: "hold-webhooks-while-offline",
+    localEnvironmentOnly: true,
+    title: msg("Hold webhooks while offline"),
+    to: "/settings/access",
+    targetId: "connections-environment",
+    searchTerms: [msg("webhook automations offline queue mailbox t3 connect")],
+    cloudOnly: true,
+    managedTunnelOnly: true,
+  },
+  {
     id: "publish-agent-activity",
     localEnvironmentOnly: true,
-    title: "Publish agent activity",
-    to: "/settings/connections",
+    title: msg("Publish agent activity"),
+    to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["mobile push notifications live activities cloud tunnel"],
+    searchTerms: [msg("mobile push notifications live activities cloud tunnel")],
     cloudOnly: true,
   },
   {
-    id: "connections-environment",
-    title: "This machine",
-    to: "/settings/connections",
+    id: "preview-tunnel",
+    title: msg("Preview tunnel"),
+    to: "/settings/access",
+    targetId: "connections-environment",
     searchTerms: [
-      "connections server backend local remote access administrative permissions scope pairing links qr code authorized clients sessions revoke endpoint",
+      msg("localhost loopback port forwarding open on this device browser tabs stream security"),
     ],
+  },
+  {
+    id: "connections-environment",
+    title: msg("This machine"),
+    to: "/settings/access",
+    searchTerms: [
+      msg(
+        "connections server backend local remote access administrative permissions scope pairing links qr code authorized clients sessions revoke endpoint",
+      ),
+    ],
+  },
+  {
+    id: "linked-environments",
+    peerLinksOnly: true,
+    title: msg("Linked environments"),
+    to: "/settings/connections",
+    targetId: "linked-environments",
+    searchTerms: [msg("link peer another machine vps agents work there handoff pairing code")],
   },
   {
     id: "remote-environments",
-    title: "Environments",
+    title: msg("Environments"),
     to: "/settings/connections",
-    searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
+    searchTerms: [msg("add pair backend host code ssh config agent tunnel saved t3 connect")],
   },
   {
     id: "load-balancing",
-    title: "Load balancing",
+    title: msg("Load balancing"),
     to: "/settings/connections",
     searchTerms: [
-      "automatic machine environment resources cpu memory capacity preference weight shared projects",
+      msg(
+        "automatic machine environment resources cpu memory capacity preference weight shared projects",
+      ),
     ],
   },
   {
-    id: "github-routing",
-    title: "GitHub sharing",
+    id: "pull-request-routing",
+    title: msg("Pull request sharing"),
     to: "/settings/connections",
-    searchTerms: ["pull request trusted environments shared credentials permissions read actions"],
+    searchTerms: [
+      `pull request routing trusted environments shared credentials permissions read actions source control ${SOURCE_CONTROL_HOST_LABELS}`,
+    ],
+  },
+  {
+    id: "secret-providers",
+    title: msg("Secret providers"),
+    to: "/settings/secrets",
+    searchTerms: [msg("1password vault credentials api key")],
+    secretsFeatureOnly: true,
+  },
+  {
+    id: "secret-providers-add",
+    title: msg("Add secret provider"),
+    to: "/settings/secrets",
+    targetId: "secret-providers",
+    searchTerms: [msg("new 1password vault op cli account")],
+    secretsFeatureOnly: true,
   },
   {
     id: "archive",
-    title: "Archived threads",
+    title: msg("Archived threads"),
     to: "/settings/archived",
-    searchTerms: ["restore reopen deleted history projects"],
+    searchTerms: [msg("restore reopen deleted history projects")],
   },
+  ...ALDO_SETTINGS_SEARCH_ITEMS,
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
 export type SettingsSearchItemId = (typeof SETTINGS_SEARCH_ITEMS)[number]["id"];
@@ -1246,41 +1508,65 @@ export type SettingsSearchItemId = (typeof SETTINGS_SEARCH_ITEMS)[number]["id"];
 const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id, item] as const));
 
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
+  "/settings/diagnostics": "environment",
   "/settings/projects": "project",
   "/settings/general": null,
+  "/settings/voice": null,
   "/settings/appearance": null,
-  "/settings/workspace": null,
+  "/settings/chat": null,
+  "/settings/diffs": null,
   "/settings/snap-shot": null,
-  // Keybindings fan out to the selection; Providers shows the representative
-  // environment at any selection. Neither needs a particular scope to render.
   "/settings/keybindings": null,
   "/settings/providers": null,
-  "/settings/integrations": null,
-  "/settings/source-control": isAldoCloud ? null : "environment-defaults",
-  // Aldo's own pages are the account's, at any selection.
-  "/settings/instructions": null,
-  "/settings/skills": null,
-  "/settings/memory": null,
-  "/settings/vault": null,
-  "/settings/shared": null,
-  "/settings/environments": null,
-  "/settings/storage": "project-defaults",
+  "/settings/threads": null,
+  "/settings/browser": null,
+  "/settings/devices": null,
+  "/settings/source-control": "environment-defaults",
+  "/settings/worktrees": "project-defaults",
   "/settings/connections": "connections",
+  "/settings/access": "connections",
+  "/settings/secrets": null,
+  "/settings/scheduled-tasks": null,
+  "/settings/maintenance": null,
+  "/settings/labs": null,
+  "/settings/about": null,
   "/settings/archived": "project-defaults",
-  "/settings/account": null,
-  "/settings/organization": null,
-  "/settings/members": null,
-  "/settings/running": null,
-  "/settings/activity": null,
-  "/settings/joining": null,
-  "/settings/agents": null,
-  "/settings/permissions": null,
-  "/settings/notifications": null,
-  "/settings/phone": null,
-  "/settings/code": null,
+  // Aldo's own pages are the account's, at any selection.
+  ...ALDO_SETTINGS_CATEGORY_SCOPES,
+  ...(isAldoCloud ? { "/settings/source-control": null } : {}),
 };
 
-/** Search keeps the selected target. A missing row can explain its owning scope instead. */
+const RENAMED_SETTINGS_PATHS: Readonly<Record<string, SettingsPath>> = {
+  "/settings/integrations": "/settings/browser",
+  "/settings/storage": "/settings/maintenance",
+  "/settings/beta": "/settings/labs",
+};
+const SPLIT_SETTINGS_PATHS: ReadonlySet<string> = new Set([
+  "/settings/general",
+  "/settings/appearance",
+  "/settings/source-control",
+  "/settings/connections",
+  ...Object.keys(RENAMED_SETTINGS_PATHS),
+]);
+// Section anchors that moved but are not search results themselves.
+const MOVED_SECTION_ANCHORS: Readonly<Record<string, SettingsPath>> = {
+  "authorized-clients": "/settings/access",
+  "text-generation": "/settings/threads",
+  about: "/settings/about",
+};
+
+/** Where an old settings link now lives. Its anchor finds the page its row moved to. */
+export function movedSettingsPath(pathname: string, hash: string): SettingsPath | null {
+  if (!SPLIT_SETTINGS_PATHS.has(pathname)) return null;
+  const items: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS;
+  const anchored = hash
+    ? (items.find((item) => item.id === hash) ?? items.find((item) => item.targetId === hash))
+    : undefined;
+  const to =
+    anchored?.to ?? MOVED_SECTION_ANCHORS[hash] ?? RENAMED_SETTINGS_PATHS[pathname] ?? null;
+  return to === pathname ? null : to;
+}
+
 export function getSettingsSearchTargetScope(targetId: string) {
   const items: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS;
   const item =
@@ -1298,14 +1584,9 @@ export function getSettingsSearchTargetScope(targetId: string) {
 interface AutoSettlementSearchEnvironment {
   readonly environmentId: EnvironmentId;
   readonly connection: { readonly phase: EnvironmentConnectionPhase };
-  readonly serverConfig: {
-    readonly environment: {
-      readonly capabilities: { readonly threadAutoSettlement?: boolean };
-    };
-  } | null;
+  readonly serverConfig: object | null;
 }
 
-/** Discovery needs one capable environment; the selected page needs every connected target to support it. */
 export function getThreadAutoSettlementSearchAvailability(
   environments: readonly AutoSettlementSearchEnvironment[],
   scope?: Pick<ResolvedSettingsScope, "kind" | "environmentIds">,
@@ -1314,12 +1595,7 @@ export function getThreadAutoSettlementSearchAvailability(
     (environment) =>
       environment.connection.phase === "connected" && environment.serverConfig !== null,
   );
-  const eligibleEnvironmentIds = connected
-    .filter(
-      (environment) =>
-        environment.serverConfig?.environment.capabilities.threadAutoSettlement === true,
-    )
-    .map((environment) => environment.environmentId);
+  const eligibleEnvironmentIds = connected.map((environment) => environment.environmentId);
   const selected = connected.filter((environment) =>
     scope?.environmentIds.includes(environment.environmentId),
   );
@@ -1358,47 +1634,66 @@ export function isSettingsSearchScopeAvailable(
   }
 }
 
-function settingsScopeKindFromSearch(search: SettingsScopeSearch): ResolvedSettingsScope["kind"] {
-  const target = validateSettingsScopeSearch({ ...search });
-  if (target.checkout && !target.project) return "unavailable";
-  if (target.project) return target.checkout ? "checkout" : "project";
-  return target.machine ? "environment" : "all";
-}
-
-export function isSettingsOverviewVisible(search: SettingsScopeSearch): boolean {
-  const kind = settingsScopeKindFromSearch(search);
-  return kind === "project" || kind === "checkout";
-}
-
-/**
- * `id` and `title` props for the element a search item anchors to. Panels
- * spread (or pick from) this instead of restating the strings, so the catalog
- * and the rendered settings cannot drift apart.
- */
+/** A row's anchor and title as stored; Aldo's own pages spread it, with titles in its own words. */
 export function searchableSetting(id: SettingsSearchItemId): {
   readonly id: string;
   readonly title: string;
 } {
   const item = SEARCH_ITEMS_BY_ID.get(id)!;
-  // Aldo's words for a row it shows on a page of its own; it keeps the row's id.
   return { id: item.id, title: isAldoCloud ? aldoSettingsSearchItem(item).title : item.title };
+}
+
+/** `searchableSetting` with its title in the active language, for spreading onto a row. */
+export function useSearchableSetting() {
+  const m = useMessages();
+  return (id: SettingsSearchItemId) => {
+    const setting = searchableSetting(id);
+    return { ...setting, title: m(setting.title) };
+  };
 }
 
 export function filterAvailableSettingsSearchItems(
   availability: SettingsSearchAvailability,
 ): ReadonlyArray<SettingsSearchItem> {
   const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS;
+  const available = items.filter(
+    (item) =>
+      (!item.cloudOnly || availability.hasCloudPublicConfig) &&
+      (!item.environmentOnly || availability.hasEnvironment) &&
+      (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
+      (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
+      (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
+      (!item.primaryEnvironmentOnly || availability.hasPrimaryEnvironment === true) &&
+      (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.managedTunnelOnly || availability.managedTunnelActive === true) &&
+      (!item.peerLinksOnly || availability.hasPeerLinkHost === true) &&
+      (!item.fastWorktreeCheckoutOnly ||
+        availability.hasFastWorktreeCheckoutEnvironment === true) &&
+      (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true) &&
+      !item.aldoCloudOnly,
+  );
+  return isAldoCloud ? filterAldoSettingsSearchItems(items, availability) : available;
+}
+
+/** Aldo's results: its own pages and rows, and T3's that apply to its machines, where Aldo shows them. */
+function filterAldoSettingsSearchItems(
+  items: ReadonlyArray<SettingsSearchItem>,
+  availability: SettingsSearchAvailability,
+): ReadonlyArray<SettingsSearchItem> {
   return items
     .filter(
       (item) =>
         (!item.cloudOnly || availability.hasCloudPublicConfig) &&
         (!item.environmentOnly || availability.hasEnvironment) &&
         (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
-        (!item.macProviderSettingsOnly || availability.hasMacProviderSettingsEnvironment) &&
-        (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
-        (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
-        (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
+        !item.localBackendManagementOnly &&
+        !item.wslAvailableOnly &&
+        !item.managedTunnelOnly &&
+        !item.peerLinksOnly &&
+        !item.fastWorktreeCheckoutOnly &&
         (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+        (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true) &&
         (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
         (!item.requiresAldoOrganization || availability.hasAldoOrganization === true) &&
         (!item.requiresAldoJoining || availability.hasAldoJoining === true) &&
@@ -1406,36 +1701,47 @@ export function filterAvailableSettingsSearchItems(
         (!item.requiresAldoOnboarding || availability.hasAldoOnboarding === true) &&
         (!item.requiresAldoPolicyRule ||
           availability.aldoPolicyRules?.includes(item.requiresAldoPolicyRule) === true) &&
-        // Aldo leaves out T3's pages and rows that don't apply to its machines.
-        (isAldoCloud ? aldoShowsSettingsSearchItem(item) : !item.aldoCloudOnly),
+        aldoShowsSettingsSearchItem(item),
     )
-    .map((item) => (isAldoCloud ? aldoSettingsSearchItem(item) : item))
-    .filter(
-      (item) =>
-        !isAldoCloud || availability.aldoDeveloperTools !== false || item.to !== "/settings/code",
-    );
+    .map(aldoSettingsSearchItem)
+    .filter((item) => availability.aldoDeveloperTools !== false || item.to !== "/settings/code");
+}
+
+/** The settings that exist on this platform and app channel. */
+export function settingsForThisPlatform(
+  items: ReadonlyArray<SettingsSearchItem>,
+): ReadonlyArray<SettingsSearchItem> {
+  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
+  return items.filter(
+    (item) =>
+      (isElectron || item.desktopOnly !== true) &&
+      (!item.releaseChannelOnly || isElectron || HOSTED_APP_CHANNEL !== null) &&
+      (!item.secretsFeatureOnly || isSecretsFeatureEnabled) &&
+      (!item.macOnly || isMacPlatform(platform)) &&
+      (!item.windowsOnly || isWindowsPlatform(platform)),
+  );
 }
 
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+  translate: (message: string) => string = (message) => message,
 ): ReadonlyArray<SettingsSearchItem> {
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
   const queryTokens = normalizedQuery.split(" ");
-  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
 
-  return items
+  return settingsForThisPlatform(items)
     .flatMap((item, index) => {
-      if (!isElectron && item.desktopOnly === true) return [];
-      if (item.macOnly && !isMacPlatform(platform)) return [];
-      if (item.windowsOnly && !isWindowsPlatform(platform)) return [];
-
-      const title = normalizeSearchText(item.title);
+      const title = normalizeSearchText(decodeMsg(item.title));
       const fields = [
         title,
         normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
+        // The labels as displayed, so search also works in the active language.
+        normalizeSearchText(translate(item.title)),
+        normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
+        ...(item.searchTerms ?? []).map((term) => normalizeSearchText(translate(term))),
       ];
       if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];
 
@@ -1461,4 +1767,25 @@ export function searchSettings(
         left.index - right.index,
     )
     .map(({ item }) => item);
+}
+
+// These rows only exist with separate fonts on, so a search jump to one turns them on.
+const ADVANCED_TYPOGRAPHY_TARGET_IDS: ReadonlySet<string> = new Set([
+  "prompt-font",
+  "terminal-font",
+]);
+
+export function isAdvancedTypographyTarget(targetId: string): boolean {
+  return ADVANCED_TYPOGRAPHY_TARGET_IDS.has(targetId);
+}
+
+/**
+ * Opens the persisted section a search result lives in before jumping to it, so
+ * its row is mounted to scroll to. The terminal reads the same flag, so it must
+ * stay on after the jump.
+ */
+export function revealSettingsSearchTarget(targetId: string): void {
+  if (isAdvancedTypographyTarget(targetId)) {
+    writeLocalStorageValue(TYPOGRAPHY_ADVANCED_STORAGE_KEY, true, false, Schema.Boolean);
+  }
 }

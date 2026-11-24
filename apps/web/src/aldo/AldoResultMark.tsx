@@ -11,7 +11,7 @@ import { cn } from "~/lib/utils";
 import { type AldoResultState } from "./finished.logic";
 
 /** Its color: amber for what failed, green only for what shipped, quiet for the rest. */
-export function toneClass(state: AldoResultState): string {
+function toneClass(state: AldoResultState): string {
   if (state.tone === "failing") return "text-warning-foreground";
   if (state.tone === "shipped") return "text-success-foreground";
   return "text-muted-foreground";
@@ -76,25 +76,5 @@ export function ResultIcon(props: { readonly state: AldoResultState }) {
   if (!marked(props.state)) return <ResultGlyph state={props.state} />;
   return (
     <StatusMark state={props.state} className={cn("size-4 shrink-0", toneClass(props.state))} />
-  );
-}
-
-/** Where it stands, with a mark that says it without the color: "2 checks failing", "Merges in 9 min". */
-export function ResultStatus(props: {
-  readonly state: AldoResultState;
-  readonly className?: string;
-}) {
-  const { state } = props;
-  return (
-    <span
-      className={cn(
-        "flex shrink-0 items-center gap-1.5 text-[12px] leading-[18px] tabular-nums",
-        resultToneClass(state),
-        props.className,
-      )}
-    >
-      <StatusMark state={state} className="size-3.5 shrink-0" />
-      <span>{state.words}</span>
-    </span>
   );
 }

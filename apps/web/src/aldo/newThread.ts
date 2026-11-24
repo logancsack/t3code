@@ -69,15 +69,50 @@ export async function openAldoThreadOnce(
   return done;
 }
 
+type AldoThreadCarry = { readonly from: DraftId; readonly prompt: string };
+
 /**
  * Opens a draft thread in `repos` (none: General) at once; `carry` moves a
  * draft's words into it, and `alone` opens one of its own (what was shared),
  * never the one another start opens. Resolves with the draft that opened, or null.
  */
+export function startAldoThread(
+  handleNewThread: ReturnType<typeof useNewThreadHandler>,
+  repos: ReadonlyArray<string>,
+  carry?: AldoThreadCarry,
+  alone = false,
+  onStarting?: (starting: boolean) => void,
+): Promise<Opened> {
+  // One alone is a place of its own: it waits for the others, and they for it.
+  const place = alone ? randomUUID() : repos.join("\n");
+  return openAldoThreadOnce(place, async () => {
+    onStarting?.(true);
+    try {
+      // When there's no machine to be had, startAldoSandbox says why.
+      const projectRef = await startAldoSandbox({ repos }).catch(() => null);
+      if (projectRef === null) return null;
+      if (carry) carryAldoDraft(carry.from, carry.prompt);
+      const opened = await handleNewThread(projectRef);
+      landAldoCarriedDraft(opened);
+      return opened;
+    } catch (cause) {
+      dropAldoCarriedDraft();
+      toastManager.add({
+        type: "error",
+        title: "Couldn't open a new thread",
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+      return null;
+    } finally {
+      onStarting?.(false);
+    }
+  });
+}
+
 export function useStartAldoThread(): {
   readonly start: (
     repos: ReadonlyArray<string>,
-    carry?: { readonly from: DraftId; readonly prompt: string },
+    carry?: AldoThreadCarry,
     alone?: boolean,
   ) => Promise<Opened>;
   readonly starting: boolean;
@@ -85,36 +120,8 @@ export function useStartAldoThread(): {
   const handleNewThread = useNewThreadHandler();
   const [starting, setStarting] = useState(false);
   const start = useCallback(
-    async (
-      repos: ReadonlyArray<string>,
-      carry?: { readonly from: DraftId; readonly prompt: string },
-      alone = false,
-    ) => {
-      // One alone is a place of its own: it waits for the others, and they for it.
-      const place = alone ? randomUUID() : repos.join("\n");
-      return openAldoThreadOnce(place, async () => {
-        setStarting(true);
-        try {
-          // When there's no machine to be had, startAldoSandbox says why.
-          const projectRef = await startAldoSandbox({ repos }).catch(() => null);
-          if (projectRef === null) return null;
-          if (carry) carryAldoDraft(carry.from, carry.prompt);
-          const opened = await handleNewThread(projectRef);
-          landAldoCarriedDraft(opened);
-          return opened;
-        } catch (cause) {
-          dropAldoCarriedDraft();
-          toastManager.add({
-            type: "error",
-            title: "Couldn't open a new thread",
-            description: cause instanceof Error ? cause.message : String(cause),
-          });
-          return null;
-        } finally {
-          setStarting(false);
-        }
-      });
-    },
+    (repos: ReadonlyArray<string>, carry?: AldoThreadCarry, alone = false) =>
+      startAldoThread(handleNewThread, repos, carry, alone, setStarting),
     [handleNewThread],
   );
   return { start, starting };

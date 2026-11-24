@@ -16,7 +16,13 @@ executors:
   # image's Node only runs the installer.
   node:
     docker:
-      - image: cimg/node:24.22
+      - image: cimg/node:26.13.1
+    resource_class: medium
+  # A virtual machine, for what a container lacks: an IPv6 loopback, which the
+  # server's socket tests listen on.
+  vm:
+    machine:
+      image: ubuntu-2404:current
     resource_class: medium
 
 commands:
@@ -47,7 +53,7 @@ commands:
       - run:
           name: Install Vite+
           command: |
-            version=$(sed -n 's/^  vite-plus: //p' pnpm-workspace.yaml)
+            version=$(sed -n 's/^  vite-plus: \([0-9][0-9.]*\)$/\1/p' pnpm-workspace.yaml)
             # The installer reads the npm registry and takes an error page (a 502
             # while npm is degraded) for metadata it can't parse: try again for
             # a few minutes, since such outages are often partial.
@@ -76,7 +82,7 @@ commands:
 jobs:
   scope:
     docker:
-      - image: cimg/node:24.22
+      - image: cimg/node:26.13.1
     resource_class: small
     steps:
       - checkout:
@@ -126,7 +132,9 @@ jobs:
           command: |
             changed=(--changed "$SCOPE_BASE")
             [ "$SCOPE_FULL" = 0 ] || changed=()
-            vp run --concurrency-limit 1 --filter 't3^...' test "${changed[@]}" --maxWorkers=2
+            vp run --concurrency-limit 1 --filter 't3^...' --filter '!@t3tools/web' test "${changed[@]}" --maxWorkers=2
+            # The web's own test script also runs its browser tests, which need a Chromium this job has none of.
+            cd apps/web && vp test run --passWithNoTests --project unit "${changed[@]}" --maxWorkers=2
       - run:
           name: Server tests that import client code
           # The server's projection tests import web, mobile and client-runtime
@@ -137,17 +145,23 @@ jobs:
 
   # apps/server sets `fileParallelism: false`, so its files run one at a time.
   test-server:
-    executor: node
+    executor: vm
     steps:
       - in-scope:
           flags: SCOPE_SERVER
       - setup
+      - run:
+          name: Install the Chromium the preview tests drive
+          working_directory: apps/server
+          command: vp exec playwright-core install --only-shell --with-deps chromium
       - run:
           name: Test
           command: vp run --filter t3 test
 
   build:
     executor: node
+    # The client's build peaks near 4 GB even on two threads; medium's 4 GB killed it.
+    resource_class: medium+
     steps:
       - in-scope:
           flags: SCOPE_SERVER SCOPE_CLIENT
@@ -162,7 +176,8 @@ jobs:
             T3CODE_WEB_SOURCEMAP: "0"
           command: |
             if [ "$SCOPE_CLIENT" = 0 ]; then echo "Nothing the client's build reads changed."; exit 0; fi
-            vp build
+            # The bundler sizes its thread pool by the host's cores, and memory grows with it.
+            taskset -c 0,1 vp build
       - run:
           name: Keep the home screen's JavaScript within its budget
           working_directory: apps/web

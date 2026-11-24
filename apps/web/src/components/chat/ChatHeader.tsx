@@ -1,10 +1,7 @@
-import { AldoThreadHeader } from "~/aldo/AldoThreadHeader";
-import { useAldoPlaceOf } from "~/aldo/places";
 import {
+  AuthOrchestrationOperateScope,
   type EnvironmentId,
-  type EditorId,
-  type ProjectScript,
-  type ResolvedKeybindingsConfig,
+  type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -13,37 +10,28 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { T, useGT, Var } from "gt-react";
 import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
-  useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
-  type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
-import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { Badge } from "../ui/badge";
+import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
-import ProjectScriptsControl, {
-  type NewProjectScriptInput,
-  type ProjectScriptActionResult,
-} from "../ProjectScriptsControl";
-import { OpenInPicker } from "./OpenInPicker";
-import { useRemoteOpenState, type RemoteOpenMode } from "../../remoteOpen";
-import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { readLocalApi } from "~/localApi";
 import { threadEnvironment } from "../../state/threads";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
+import { canShareWithGuestAtom } from "./guestShareAvailability";
+import { useAtomValue } from "@effect/atom-react";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   WorkspaceBreadcrumb,
@@ -51,46 +39,41 @@ import {
   WorkspaceBreadcrumbSeparator,
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
+import { textDirection } from "~/textDirection";
+import { useClientSettings } from "../../hooks/useSettings";
+import { GuestShareIndicator } from "./GuestShareControls";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/api";
+import { AldoThreadHeader } from "~/aldo/AldoThreadHeader";
 import { AldoMoveThreadPicker, useAldoMovesThreads } from "~/aldo/AldoThreadPlace";
-import { useAldoKeptRepo } from "~/aldo/keptRepo";
+import { useAldoPlaceOf } from "~/aldo/places";
 import { draftTitle } from "~/aldo/places.logic";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
-  draftId?: DraftId;
   activeThreadTitle: string;
-  /** Drafts have no server thread yet, so the title carries no action menu. */
+  activeThreadLinkOrigin?: string | null | undefined;
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
-  openInCwd: string | null;
-  activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
-  preferredScriptId: string | null;
-  keybindings: ResolvedKeybindingsConfig;
-  availableEditors: ReadonlyArray<EditorId>;
+  parentThreadLink: { threadId: ThreadId; title: string } | null;
+  onOpenThread: (threadId: ThreadId) => void;
   rightPanelOpen: boolean;
-  /** The thread's agent is working on a turn. */
-  working?: boolean;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
-  onRunProjectScript: (script: ProjectScript) => void;
-  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateProjectScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
-  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
-  /** Aldo: sends the user's message to a sent thread's agent (moving the thread is one it hands off). */
+  onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  /** Aldo: a draft's header reads its title from the composer. */
+  draftId?: DraftId | undefined;
+  /** Aldo: the thread's agent is working on a turn. */
+  working?: boolean;
+  /** Aldo: sends a message to a sent thread's agent (moving the thread is one it hands off). */
   onSendAldoMessage?: ((text: string) => Promise<boolean>) | undefined;
 }
 
-/**
- * Rename commit rule shared with the sidebar's inline rename: trim, reject
- * empty (the caller toasts), and skip the mutation when nothing changed.
- */
-export function resolveRenameCommit(input: {
+function resolveRenameCommit(input: {
   readonly title: string;
   readonly originalTitle: string;
 }): { action: "commit"; title: string } | { action: "reject-empty" } | { action: "noop" } {
@@ -100,96 +83,138 @@ export function resolveRenameCommit(input: {
   return { action: "commit", title: trimmed };
 }
 
-// How long a click on the thread title waits before opening the action menu,
-// so a double-click-to-rename can cancel it first. Only the native desktop
-// menu needs this: it swallows input while open, so the wait must cover the
-// OS double-click interval. The browser fallback menu keeps seeing DOM
-// events (the second click dismisses it and dblclick still fires), so it
-// opens immediately.
-const TITLE_MENU_OPEN_DELAY_MS = 500;
-// Matches the @3xl/header-actions container breakpoint owned by this header.
-const HEADER_ACTIONS_EXPANDED_BREAKPOINT_REM = 48;
-
-export function shouldShowOpenInPicker(input: {
-  readonly activeProjectName: string | undefined;
-  readonly activeThreadEnvironmentId: EnvironmentId;
-  readonly primaryEnvironmentId: EnvironmentId | null;
-  readonly remoteOpenMode: RemoteOpenMode;
-}): boolean {
-  if (!input.activeProjectName) return false;
-  if (
-    input.primaryEnvironmentId !== null &&
-    input.activeThreadEnvironmentId === input.primaryEnvironmentId
-  ) {
-    return true;
-  }
-  // Remote environments get the picker in deep-link mode (or its explicit
-  // "no SSH route" state). Non-primary local backends (e.g. WSL) keep it
-  // hidden, matching pre-remote behavior.
-  return input.remoteOpenMode !== "local-exec";
-}
-
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
-  draftId,
   activeThreadTitle,
+  activeThreadLinkOrigin,
   isServerThread,
   activeProject,
-  openInCwd,
-  activeProjectScripts,
-  preferredScriptId,
-  keybindings,
-  availableEditors,
+  parentThreadLink,
+  onOpenThread,
   rightPanelOpen,
-  working = false,
   onNewThreadInProject,
   onOpenProjectSettings,
-  onRunProjectScript,
-  onAddProjectScript,
-  onUpdateProjectScript,
-  onDeleteProjectScript,
+  onFindInThread,
+  draftId,
+  working = false,
   onSendAldoMessage,
 }: ChatHeaderProps) {
-  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
-    usePanelAnimationSettings();
-  const headerActionsRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const actions = headerActionsRef.current;
-    const container = actions?.parentElement;
-    if (!actions || !container) return;
-    return observeResponsiveBreakpointFade({
-      target: actions,
-      container,
-      active: panelAnimationsActive,
-      durationMs: panelAnimationDurationMs,
-      breakpoint: { value: HEADER_ACTIONS_EXPANDED_BREAKPOINT_REM, unit: "rem" },
-    });
-  }, [panelAnimationDurationMs, panelAnimationsActive]);
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const activeProjectName = activeProject?.title;
+  const gt = useGT();
+  const activeProjectName = activeProject?.isScratch ? gt("No project") : activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
-  const fileScripts = useT3ProjectFileScripts(
+  const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
+  const breadcrumbContainerRef = useRef<HTMLDivElement>(null);
+  const [collapseParentTitle, setCollapseParentTitle] = useState(false);
+  const activeThreadRef = scopeThreadRef(activeThreadEnvironmentId, activeThreadId);
+  const canOperateThread = useEnvironmentScope(
     activeThreadEnvironmentId,
-    activeProjectScripts ? activeProjectCwd : null,
+    AuthOrchestrationOperateScope,
   );
-  const remoteOpenState = useRemoteOpenState(activeThreadEnvironmentId);
-  // Aldo's machines have no SSH route from the user's computer to open an editor on.
-  const showOpenInPicker =
-    !isAldoEnvironmentId(activeThreadEnvironmentId) &&
-    shouldShowOpenInPicker({
-      activeProjectName,
-      activeThreadEnvironmentId,
-      primaryEnvironmentId,
-      remoteOpenMode: remoteOpenState.mode,
+  const canShareWithGuest = useAtomValue(canShareWithGuestAtom(activeThreadEnvironmentId));
+  const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const [renaming, setRenaming] = useState<{
+    threadId: ThreadId;
+    environmentId: EnvironmentId;
+    title: string;
+  } | null>(null);
+  if (
+    renaming !== null &&
+    (renaming.threadId !== activeThreadId ||
+      renaming.environmentId !== activeThreadEnvironmentId ||
+      !canOperateThread)
+  ) {
+    setRenaming(null);
+  }
+  const renamingTitle =
+    canOperateThread &&
+    renaming?.threadId === activeThreadId &&
+    renaming.environmentId === activeThreadEnvironmentId
+      ? renaming.title
+      : null;
+  const isRenamingTitle = renamingTitle !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the breadcrumb list DOM via ResizeObserver, a frame and font loads to collapse the parent title
+  useEffect(() => {
+    const list = breadcrumbContainerRef.current?.querySelector("ol");
+    if (!list || !parentThreadLink) return;
+    const measure = () => {
+      const gap = Number.parseFloat(getComputedStyle(list).columnGap) || 0;
+      const width = Array.from(list.children).reduce(
+        (total, item) => {
+          const label = item.querySelector('[data-slot="workspace-breadcrumb-text"]');
+          const ellipsis = item.querySelector("[data-parent-breadcrumb-ellipsis]");
+          return (
+            total +
+            (item.firstElementChild?.getBoundingClientRect().width ?? 0) +
+            (label && getComputedStyle(label).maxWidth === "none"
+              ? label.scrollWidth - label.clientWidth
+              : 0) -
+            (ellipsis?.getBoundingClientRect().width ?? 0)
+          );
+        },
+        gap * (list.children.length - 1),
+      );
+      setCollapseParentTitle(width > list.clientWidth);
+    };
+    measure();
+    const frame = requestAnimationFrame(measure);
+    document.fonts.addEventListener("loadingdone", measure);
+    const stopObserving = observeResize(list, measure);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.fonts.removeEventListener("loadingdone", measure);
+      stopObserving();
+    };
+  }, [
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Title, font and rename changes resize the breadcrumb text without resizing the list, so it re-measures.
+    activeProjectName,
+    activeThreadTitle,
+    parentThreadLink,
+    interfaceFont,
+    isRenamingTitle,
+  ]);
+  const renameCommittedRef = useRef(false);
+  const startRename = () => {
+    if (
+      !isServerThread ||
+      !readEnvironmentScope(activeThreadEnvironmentId, AuthOrchestrationOperateScope)
+    )
+      return;
+    renameCommittedRef.current = false;
+    setRenaming({
+      environmentId: activeThreadEnvironmentId,
+      threadId: activeThreadId,
+      title: activeThreadTitle,
     });
-  const activeThreadRef = useMemo(
-    () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
-    [activeThreadEnvironmentId, activeThreadId],
-  );
-  // Aldo: a General thread, or one in a project Aldo keeps, isn't software
-  // work (and Aldo syncs it itself), so no git actions, editors or scripts.
-  const aldoKeptRepo = useAldoKeptRepo(activeThreadEnvironmentId);
+  };
+  const commitRename = (title: string) => {
+    setRenaming(null);
+    if (!readEnvironmentScope(activeThreadEnvironmentId, AuthOrchestrationOperateScope)) return;
+    const resolution = resolveRenameCommit({
+      title,
+      originalTitle: renamingTitle ?? activeThreadTitle,
+    });
+    if (resolution.action === "reject-empty") {
+      toastManager.add({ type: "warning", title: gt("Thread title cannot be empty") });
+      return;
+    }
+    if (resolution.action === "noop") return;
+    void updateThreadMetadata({
+      environmentId: activeThreadEnvironmentId,
+      input: { threadId: activeThreadId, title: resolution.title },
+    }).then((result) => {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: gt("Failed to rename thread"),
+          description: error instanceof Error ? error.message : gt("An error occurred."),
+        });
+      }
+    });
+  };
   // Aldo: where the thread works leads the header. A draft moves from its
   // composer's chip; a sent thread moves here, as a handoff its agent makes.
   const aldoThread = isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId);
@@ -202,272 +227,96 @@ export const ChatHeader = memo(function ChatHeader({
   const aldoDraftPrompt = useComposerDraftStore((store) =>
     aldoDraft && draftId ? (store.getComposerDraft(draftId)?.prompt ?? "") : "",
   );
-  const aldoDraftTitle = aldoDraft
-    ? draftTitle(
+  const aldoTitle = aldoDraft
+    ? (draftTitle(
         replaceComposerContextReferences(aldoDraftPrompt, (occurrence) => occurrence.label),
-      )
-    : null;
-  const shownTitle = aldoDraft ? (aldoDraftTitle ?? "Untitled") : activeThreadTitle;
-  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
-    reportFailure: false,
-  });
-  // Inline rename, keyed by thread: navigating away drops an in-progress
-  // rename instead of committing stale text. Cleared on thread change (not
-  // just hidden) so returning to the thread doesn't revive the old draft.
-  const [renaming, setRenaming] = useState<{ threadId: ThreadId; title: string } | null>(null);
-  if (renaming !== null && renaming.threadId !== activeThreadId) {
-    setRenaming(null);
-  }
-  const renamingTitle = renaming?.threadId === activeThreadId ? renaming.title : null;
-  const renameCommittedRef = useRef(false);
-  const startRename = useCallback(() => {
-    renameCommittedRef.current = false;
-    setRenaming({ threadId: activeThreadId, title: activeThreadTitle });
-  }, [activeThreadId, activeThreadTitle]);
-  const commitRename = useCallback(
-    (title: string) => {
-      setRenaming(null);
-      const resolution = resolveRenameCommit({ title, originalTitle: activeThreadTitle });
-      if (resolution.action === "reject-empty") {
-        toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
-        return;
-      }
-      if (resolution.action === "noop") return;
-      void updateThreadMetadata({
-        environmentId: activeThreadEnvironmentId,
-        input: { threadId: activeThreadId, title: resolution.title },
-      }).then((result) => {
-        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          toastManager.add({
-            type: "error",
-            title: "Failed to rename thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          });
-        }
-      });
-    },
-    [activeThreadEnvironmentId, activeThreadId, activeThreadTitle, updateThreadMetadata],
-  );
+      ) ?? "Untitled")
+    : activeThreadTitle;
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
+    onFind: onFindInThread,
+    canShareWithGuest,
     onMoveThread: aldoMoves ? () => setAldoMoveOpen(true) : undefined,
   });
-  const titleButtonRef = useRef<HTMLButtonElement | null>(null);
-  const titleMenuTimerRef = useRef<number | null>(null);
-  const cancelPendingTitleMenu = useCallback(() => {
-    if (titleMenuTimerRef.current === null) return;
-    clearTimeout(titleMenuTimerRef.current);
-    titleMenuTimerRef.current = null;
-  }, []);
-  // Drop a pending menu-open when the thread changes or the header unmounts,
-  // so it can never fire for a thread the user already left.
-  useEffect(
-    () => () => {
-      cancelPendingTitleMenu();
-    },
-    [activeThreadId, cancelPendingTitleMenu],
-  );
-  const openTitleMenuNow = useCallback(() => {
-    cancelPendingTitleMenu();
-    const rect = titleButtonRef.current?.getBoundingClientRect();
-    if (!rect) return;
+  const openMenuFromTitle = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (isTrailingDoubleClick(event.detail)) return;
+    const rect = event.currentTarget.getBoundingClientRect();
     openMenu({ x: rect.left, y: rect.bottom + 4 });
-  }, [cancelPendingTitleMenu, openMenu]);
-  const openMenuFromTitle = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>) => {
-      // The trailing click of a double-click belongs to rename, not the menu.
-      if (isTrailingDoubleClick(event.detail)) return;
-      // Keyboard activation and the explicit chevron affordance can never be
-      // the first half of a double-click, so they open without waiting.
-      const clickedChevron =
-        (event.target as HTMLElement).closest("[data-thread-title-chevron]") !== null;
-      if (event.detail === 0 || clickedChevron || window.desktopBridge === undefined) {
-        openTitleMenuNow();
-        return;
-      }
-      // Stay pending long enough for dblclick to cancel the open before the
-      // native menu appears and swallows the second click.
-      cancelPendingTitleMenu();
-      titleMenuTimerRef.current = window.setTimeout(() => {
-        titleMenuTimerRef.current = null;
-        openTitleMenuNow();
-      }, TITLE_MENU_OPEN_DELAY_MS);
-    },
-    [cancelPendingTitleMenu, openTitleMenuNow],
-  );
-  const handleTitleDoubleClick = useCallback(
-    (event: ReactMouseEvent) => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      // The chevron is the explicit menu affordance; only the title text renames.
-      if ((event.target as HTMLElement).closest("[data-thread-title-chevron]") !== null) return;
-      cancelPendingTitleMenu();
-      closeMenu();
-      startRename();
-    },
-    [cancelPendingTitleMenu, closeMenu, startRename],
-  );
-  const handleHeaderContextMenu = useCallback(
-    (event: ReactMouseEvent) => {
-      if (renamingTitle !== null) return;
-      // The right-side controls (git, scripts, open-in) keep their own
-      // behavior; only the breadcrumb area opens the thread menu.
-      if ((event.target as HTMLElement).closest("[data-chat-header-actions]")) return;
-      if (!isServerThread && onOpenProjectSettings === undefined) return;
-      cancelPendingTitleMenu();
+  };
+  // A native menu takes the second click, so only the in-page menu lets a double-click reach here.
+  const handleTitleDoubleClick = (event: ReactMouseEvent) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if ((event.target as HTMLElement).closest("[data-thread-title-chevron]") !== null) return;
+    closeMenu();
+    startRename();
+  };
+  const handleHeaderContextMenu = (event: ReactMouseEvent) => {
+    if (renamingTitle !== null) return;
+    if (!isServerThread && onOpenProjectSettings === undefined) return;
+    event.preventDefault();
+    if (!isServerThread) {
+      const api = readLocalApi();
+      if (!api) return;
+      void api.contextMenu
+        .show([{ id: "project-settings", label: gt("Project settings"), icon: "settings" }], {
+          x: event.clientX,
+          y: event.clientY,
+        })
+        .then((action) => {
+          if (action === "project-settings") onOpenProjectSettings?.();
+        });
+      return;
+    }
+    openMenu({ x: event.clientX, y: event.clientY });
+  };
+  const handleRenameKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.key === "Enter") {
+      renameCommittedRef.current = true;
+      commitRename(event.currentTarget.value);
+    } else if (event.key === "Escape") {
       event.preventDefault();
-      if (!isServerThread) {
-        const api = readLocalApi();
-        if (!api) return;
-        void api.contextMenu
-          .show([{ id: "project-settings", label: "Project settings", icon: "settings" }], {
-            x: event.clientX,
-            y: event.clientY,
-          })
-          .then((action) => {
-            if (action === "project-settings") onOpenProjectSettings?.();
-          });
-        return;
-      }
-      openMenu({ x: event.clientX, y: event.clientY });
-    },
-    [cancelPendingTitleMenu, isServerThread, onOpenProjectSettings, openMenu, renamingTitle],
-  );
-  const handleRenameKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLInputElement>) => {
-      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-      if (event.key === "Enter") {
-        renameCommittedRef.current = true;
-        commitRename(event.currentTarget.value);
-      } else if (event.key === "Escape") {
-        renameCommittedRef.current = true;
-        setRenaming(null);
-      }
-    },
-    [commitRename],
-  );
-
-  const renderProjectMenu = (
-    openInMenuItems: ReactNode | null,
-    projectScriptMenuItems: ReactNode | null,
-  ) => (
-    <Menu>
-      <MenuTrigger
-        aria-label={`Project menu for ${activeProjectName}`}
-        render={
-          <button
-            type="button"
-            className="-mx-1 inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        }
-      >
-        {activeProject ? <ProjectFavicon project={activeProject} className="size-3.5" /> : null}
-        {/* A phone keeps the title readable: the project shows as its icon. */}
-        <span className="max-w-40 truncate text-sm font-medium max-sm:sr-only">
-          {activeProjectName}
-        </span>
-        <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />
-      </MenuTrigger>
-      <MenuPopup align="start" className="min-w-52">
-        <MenuItem onClick={onNewThreadInProject}>New thread</MenuItem>
-        {openInMenuItems || projectScriptMenuItems ? <MenuSeparator /> : null}
-        {openInMenuItems}
-        {openInMenuItems && projectScriptMenuItems ? <MenuSeparator /> : null}
-        {projectScriptMenuItems}
-      </MenuPopup>
-    </Menu>
-  );
-
-  let projectControl: ReactNode = null;
-  if (activeProjectName && aldoKeptRepo) {
-    projectControl = renderProjectMenu(null, null);
-  } else if (activeProjectName && activeProjectScripts) {
-    projectControl = (
-      <ProjectScriptsControl
-        scripts={activeProjectScripts}
-        fileScripts={fileScripts}
-        keybindings={keybindings}
-        preferredScriptId={preferredScriptId}
-        onRunScript={onRunProjectScript}
-        onAddScript={onAddProjectScript}
-        onUpdateScript={onUpdateProjectScript}
-        onDeleteScript={onDeleteProjectScript}
-        renderMenuItems={(projectScriptMenuItems) =>
-          showOpenInPicker ? (
-            <OpenInPicker
-              environmentId={activeThreadEnvironmentId}
-              keybindings={keybindings}
-              availableEditors={availableEditors}
-              openInCwd={openInCwd}
-              renderMenuItems={(openInMenuItems) =>
-                renderProjectMenu(openInMenuItems, projectScriptMenuItems)
-              }
-            />
-          ) : (
-            renderProjectMenu(null, projectScriptMenuItems)
-          )
-        }
-      />
-    );
-  } else if (activeProjectName && showOpenInPicker) {
-    projectControl = (
-      <OpenInPicker
-        environmentId={activeThreadEnvironmentId}
-        keybindings={keybindings}
-        availableEditors={availableEditors}
-        openInCwd={openInCwd}
-        renderMenuItems={(openInMenuItems) => renderProjectMenu(openInMenuItems, null)}
-      />
-    );
-  } else if (activeProject) {
-    projectControl = (
-      <span className="inline-flex min-w-0 items-center gap-1.5">
-        <ProjectFavicon project={activeProject} className="size-3.5" />
-        <span className="max-w-40 truncate text-sm font-medium text-muted-foreground max-sm:sr-only">
-          {activeProjectName}
-        </span>
-      </span>
-    );
-  }
-
+      renameCommittedRef.current = true;
+      setRenaming(null);
+    }
+  };
   const titleEditor =
     renamingTitle !== null ? (
       <input
         autoFocus
-        aria-label="Thread title"
-        className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-ring/50 focus:ring-ring"
+        dir="auto"
+        aria-label={gt("Thread title")}
+        className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
         defaultValue={renamingTitle}
         onBlur={(event) => {
           if (renameCommittedRef.current) return;
+          if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest("button")) {
+            setRenaming(null);
+            return;
+          }
           commitRename(event.currentTarget.value);
         }}
         onFocus={(event) => event.currentTarget.select()}
         onKeyDown={handleRenameKeyDown}
       />
     ) : null;
-  const actionsReserve = cn(
-    "@3xl/header-actions:gap-3",
-    // Reserve the right panel toggle (32px, 28px at sm) with its 1px edge inset, plus the
-    // same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the toggle
-    // does not sit against the last action. The page header adds 8px more right padding
-    // at sm. An Aldo thread on a phone opens the panel from its menu instead.
-    rightPanelOpen ? "pr-0" : "pr-10.25 sm:pr-7.25 @3xl/header-actions:pr-8.25",
-    aldoThread && "max-md:pr-0!",
-    "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
-  );
-  return (
-    <div
-      className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
-      onContextMenu={handleHeaderContextMenu}
-    >
-      {aldoThread ? (
+  if (aldoThread) {
+    return (
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+          // A phone opens the panels from the header's menu, so nothing is reserved for their toggles.
+          rightPanelOpen ? "pr-10 max-md:pr-0" : "pr-24 max-md:pr-0",
+        )}
+        onContextMenu={handleHeaderContextMenu}
+      >
         <span ref={aldoPlaceAnchorRef} className="flex min-w-0 flex-1 items-center gap-2">
           <AldoThreadHeader
             environmentId={activeThreadEnvironmentId}
             threadId={activeThreadId}
-            title={shownTitle}
+            title={aldoTitle}
             titleEditor={titleEditor}
             place={aldoPlace}
             working={working}
@@ -480,88 +329,168 @@ export const ChatHeader = memo(function ChatHeader({
                   }
                 : undefined
             }
-            actionsRef={headerActionsRef}
-            actionsClassName={actionsReserve}
+            actionsRef={null}
+            actionsClassName=""
           />
-          {aldoMoves ? (
+          {aldoMoves && onSendAldoMessage ? (
             <AldoMoveThreadPicker
               environmentId={activeThreadEnvironmentId}
               project={activeProject}
-              onSendMessage={onSendAldoMessage!}
+              onSendMessage={onSendAldoMessage}
               open={aldoMoveOpen}
               onOpenChange={setAldoMoveOpen}
               anchor={aldoPlaceAnchorRef}
             />
           ) : null}
         </span>
-      ) : (
-        <WorkspaceBreadcrumb
-          ariaLabel="Thread breadcrumb"
-          className="flex-1 overflow-clip [overflow-clip-margin:2px]"
-        >
-          {/* The project always leads the header: knowing which project a
-            thread lives in is priority zero, and the thread title alone
-            doesn't answer it. */}
-          {activeProject || aldoDraft ? (
-            <>
-              <WorkspaceBreadcrumbItem className="shrink">{projectControl}</WorkspaceBreadcrumbItem>
-              <WorkspaceBreadcrumbSeparator>
-                <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
-              </WorkspaceBreadcrumbSeparator>
-            </>
-          ) : null}
-          <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
-            {renamingTitle !== null ? (
-              titleEditor
-            ) : isServerThread ? (
+      </div>
+    );
+  }
+  return (
+    <div
+      ref={breadcrumbContainerRef}
+      className={cn(
+        "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+        rightPanelOpen ? "pr-10" : "pr-24",
+      )}
+      onContextMenu={handleHeaderContextMenu}
+    >
+      <WorkspaceBreadcrumb
+        ariaLabel={gt("Thread breadcrumb")}
+        className="flex-1 overflow-clip [overflow-clip-margin:2px]"
+      >
+        {activeProject ? (
+          <>
+            <WorkspaceBreadcrumbItem className="shrink">
               <Tooltip>
                 <TooltipTrigger
                   render={
                     <button
-                      ref={titleButtonRef}
                       type="button"
-                      aria-label={`Thread actions for ${activeThreadTitle}`}
-                      aria-haspopup="menu"
-                      onClick={openMenuFromTitle}
-                      onDoubleClick={handleTitleDoubleClick}
-                      onBlur={cancelPendingTitleMenu}
-                      className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={gt("New thread in {project}", { project: activeProjectName })}
+                      onClick={onNewThreadInProject}
+                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     />
                   }
                 >
-                  <h2 className="min-w-0">
-                    <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
-                  </h2>
-                  <ChevronDownIcon
-                    aria-hidden
-                    data-thread-title-chevron
-                    className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100 max-sm:hidden"
+                  <ProjectFavicon project={activeProject} className="size-3.5" />
+                  <MiddleTruncate
+                    data-slot="workspace-breadcrumb-text"
+                    value={activeProjectName ?? ""}
+                    showTitle={false}
+                    variant="cap-aligned"
                   />
                 </TooltipTrigger>
-                <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+                <TooltipPopup side="top">
+                  <T>
+                    New thread in <Var>{activeProjectName}</Var>
+                  </T>
+                </TooltipPopup>
               </Tooltip>
-            ) : aldoDraft && aldoDraftTitle === null ? (
-              <h2 className="min-w-0 flex-1 truncate text-muted-foreground/70 text-sm italic">
-                Untitled
-              </h2>
-            ) : (
+            </WorkspaceBreadcrumbItem>
+            <WorkspaceBreadcrumbSeparator>
+              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+            </WorkspaceBreadcrumbSeparator>
+          </>
+        ) : null}
+        {parentThreadLink ? (
+          <>
+            <WorkspaceBreadcrumbItem>
               <Tooltip>
-                <TooltipTrigger render={<h2 aria-label={shownTitle} className="min-w-0 flex-1" />}>
-                  <WorkspaceBreadcrumbText>{shownTitle}</WorkspaceBreadcrumbText>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label={gt("Open parent thread: {title}", {
+                        title: parentThreadLink.title,
+                      })}
+                      onClick={() => onOpenThread(parentThreadLink.threadId)}
+                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    />
+                  }
+                >
+                  <WorkspaceBreadcrumbText
+                    aria-hidden
+                    className={collapseParentTitle ? "w-0" : undefined}
+                  >
+                    {parentThreadLink.title}
+                  </WorkspaceBreadcrumbText>
+                  {collapseParentTitle ? (
+                    <span aria-hidden data-parent-breadcrumb-ellipsis>
+                      ...
+                    </span>
+                  ) : null}
                 </TooltipTrigger>
-                <TooltipPopup side="top">{shownTitle}</TooltipPopup>
+                <TooltipPopup side="top">{parentThreadLink.title}</TooltipPopup>
               </Tooltip>
-            )}
-          </WorkspaceBreadcrumbItem>
-        </WorkspaceBreadcrumb>
-      )}
-      {aldoThread ? null : (
-        <div
-          ref={headerActionsRef}
-          data-chat-header-actions
-          className={cn("flex shrink-0 items-center justify-end gap-2", actionsReserve)}
-        />
-      )}
+            </WorkspaceBreadcrumbItem>
+            <WorkspaceBreadcrumbSeparator>
+              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+            </WorkspaceBreadcrumbSeparator>
+          </>
+        ) : null}
+        <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
+          {renamingTitle !== null ? (
+            titleEditor
+          ) : isServerThread ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={gt("Thread actions for {title}", { title: activeThreadTitle })}
+                    aria-haspopup="menu"
+                    onClick={openMenuFromTitle}
+                    onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
+                    className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  />
+                }
+              >
+                <h2 className="min-w-0" dir={textDirection(activeThreadTitle)}>
+                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                </h2>
+                <ChevronDownIcon
+                  aria-hidden
+                  data-thread-title-chevron
+                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
+                />
+              </TooltipTrigger>
+              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+            </Tooltip>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <h2
+                    aria-label={activeThreadTitle}
+                    className="min-w-0 flex-1"
+                    dir={textDirection(activeThreadTitle)}
+                  />
+                }
+              >
+                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+              </TooltipTrigger>
+              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+            </Tooltip>
+          )}
+          {renamingTitle === null && activeThreadLinkOrigin ? (
+            <Tooltip>
+              <TooltipTrigger render={<Badge variant="info" size="sm" />}>
+                <T>
+                  From <Var>{activeThreadLinkOrigin}</Var>
+                </T>
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                <T>
+                  Started by an agent on <Var>{activeThreadLinkOrigin}</Var> through a linked
+                  environment.
+                </T>
+              </TooltipPopup>
+            </Tooltip>
+          ) : null}
+        </WorkspaceBreadcrumbItem>
+      </WorkspaceBreadcrumb>
+      {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );
 });

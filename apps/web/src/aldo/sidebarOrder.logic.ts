@@ -6,11 +6,9 @@
 // their shelves and theirs. Every device reads the same thread shells, so
 // they agree. Pure, so it's tested on its own (sidebarOrder.ts applies it).
 
-import {
-  firstValidTimestampMs,
-  resolveSidebarThreadStatus,
-  resolveThreadStatusPill,
-} from "../components/Sidebar.logic";
+import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+
+import { firstValidTimestampMs, resolveSidebarThreadStatus } from "../components/Sidebar.logic";
 import type { SidebarThreadSummary } from "../types";
 
 export type AldoSidebarTier = "working" | "waiting" | "done";
@@ -23,13 +21,16 @@ export type AldoSidebarOrderInput = Pick<
   | "environmentId"
   | "createdAt"
   | "updatedAt"
-  | "latestTurn"
-  | "session"
+  | "latestRun"
+  | "runtime"
+  | "blockedOnThreadWait"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
+  | "pendingSubagentRequest"
+  | "pendingGuestMessageCount"
   | "hasActionableProposedPlan"
   | "interactionMode"
-  | "backgroundLiveness"
+  | "pendingBackgroundTasks"
 >;
 
 /**
@@ -43,37 +44,38 @@ export interface AldoHeldMessage {
   readonly atMs: number;
 }
 
-/** A plan to accept, as its row says Plan Ready (in plan mode, once its turn is over). */
-function planWaits(thread: AldoSidebarOrderInput): boolean {
-  return resolveThreadStatusPill({ thread })?.label === "Plan Ready";
-}
-
 /**
- * Where a thread goes: "working" as its row says Working (or Monitoring), or
- * while Aldo holds a message for it (`held`: starting, queued or retrying);
+ * Where a thread goes: "working" while a run or background work is under way,
+ * or while Aldo holds a message for it (`held`: starting, queued or retrying);
  * "waiting" while it asks the user something (an approval or a question
- * outranks the turn it pauses; a plan prompt outranks background work, as
- * its status pill does); "done" otherwise, a failure included.
+ * outranks the turn it pauses; a plan to accept outranks background work);
+ * "done" otherwise, a failure included.
  */
-export function aldoSidebarTier(thread: AldoSidebarOrderInput, held = false): AldoSidebarTier {
+function aldoSidebarTier(thread: AldoSidebarOrderInput, held = false): AldoSidebarTier {
   if (held) return "working";
   const status = resolveSidebarThreadStatus(thread);
-  if (status === "approval" || status === "input" || planWaits(thread)) return "waiting";
-  return status === "working" || status === "monitoring" ? "working" : "done";
+  const working = status === "working" || status === "preparing";
+  const planWaits =
+    !working && thread.interactionMode === "plan" && thread.hasActionableProposedPlan;
+  if (status === "approval" || status === "input" || status === "request" || planWaits)
+    return "waiting";
+  return working || backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks)
+    ? "working"
+    : "done";
 }
 
 /**
- * When its work last ended: its latest turn's end, or that turn's start for
+ * When its work last ended: its latest run's end, or that run's start for
  * one T3 never saw end. A thread that never ran (a start that failed) goes by
  * its last change, then when it was made.
  */
-export function aldoThreadFinishedAtMs(thread: AldoSidebarOrderInput): number {
-  const turn = thread.latestTurn;
-  return turn
+function aldoThreadFinishedAtMs(thread: AldoSidebarOrderInput): number {
+  const run = thread.latestRun;
+  return run
     ? firstValidTimestampMs(
-        turn.completedAt,
-        turn.startedAt,
-        turn.requestedAt,
+        run.completedAt,
+        run.startedAt,
+        run.requestedAt,
         thread.updatedAt,
         thread.createdAt,
       )
@@ -81,19 +83,19 @@ export function aldoThreadFinishedAtMs(thread: AldoSidebarOrderInput): number {
 }
 
 /**
- * When its current work began: the running turn's start, else the session's
- * last change (a start Aldo makes, background work outliving its turn).
+ * When its current work began: the running run's start, else the runtime's
+ * last change (a start Aldo makes, background work outliving its run).
  */
 function workStartedAtMs(thread: AldoSidebarOrderInput): number {
-  const turn = thread.latestTurn;
-  return turn && turn.completedAt === null
+  const run = thread.latestRun;
+  return run && run.completedAt === null
     ? firstValidTimestampMs(
-        turn.startedAt,
-        turn.requestedAt,
-        thread.session?.updatedAt,
+        run.startedAt,
+        run.requestedAt,
+        thread.runtime?.updatedAt,
         thread.updatedAt,
       )
-    : firstValidTimestampMs(thread.session?.updatedAt, thread.updatedAt, thread.createdAt);
+    : firstValidTimestampMs(thread.runtime?.updatedAt, thread.updatedAt, thread.createdAt);
 }
 
 /**

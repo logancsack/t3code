@@ -3,11 +3,17 @@
 // search result must not lead to a page or row that isn't there), and the
 // settings scope Aldo keeps.
 
+import { createContext } from "react";
+
 import {
   validateSettingsScopeSearch,
   type SettingsScopeSearch,
 } from "../components/settings/settingsScope";
 import type { SettingsPath } from "../components/settings/settingsSearch";
+import { isAldoCloud } from "./api";
+
+/** Remounts the settings page after this device's settings are reset, so its fields reread them. */
+export const AldoSettingsRestoredContext = createContext<(() => void) | undefined>(undefined);
 
 /** Pages only Aldo has: T3's own nav and search leave them out. */
 export const ALDO_SETTINGS_PATHS: ReadonlySet<string> = new Set([
@@ -89,7 +95,7 @@ const PERSONALIZATION = {
  * phone's bar). Pages that aren't in the nav have one too, so none opens on a
  * bare section.
  */
-export const ALDO_SETTINGS_PAGES: Readonly<
+const ALDO_SETTINGS_PAGES: Readonly<
   Record<string, { readonly title: string; readonly intro: string }>
 > = {
   "/settings/account": {
@@ -251,6 +257,21 @@ export function aldoSettingsPage(
   return ALDO_SETTINGS_PAGES[path] ?? null;
 }
 
+/** T3 pages outside Aldo's nav that a thread still links to: snooze defaults, voice input, a thread's scheduled tasks. */
+const ALDO_LINKED_SETTINGS_PATHS: ReadonlySet<string> = new Set([
+  "/settings/threads",
+  "/settings/voice",
+  "/settings/scheduled-tasks",
+]);
+
+/** Whether Aldo shows a settings page: its own, and the few of T3's a thread links to. */
+export function aldoKeepsSettingsPage(pathname: string): boolean {
+  const path = pathname.replace(/\/+$/, "");
+  return (
+    path === "/settings" || aldoSettingsPage(path) !== null || ALDO_LINKED_SETTINGS_PATHS.has(path)
+  );
+}
+
 /** Whether a nav entry is the page shown, or one it opens onto. */
 export function aldoSettingsNavActive(
   item: { readonly to: string; readonly also?: ReadonlyArray<string> },
@@ -298,7 +319,7 @@ export function aldoSettingsRedirect(location: {
  * worktrees and logs that Aldo's machines don't keep. Aldo connects each
  * thread's machine itself, so T3's Connections page is its own connections.
  */
-export const ALDO_HIDDEN_SETTINGS_PATHS: ReadonlySet<string> = new Set([
+const ALDO_HIDDEN_SETTINGS_PATHS: ReadonlySet<string> = new Set([
   "/settings/snap-shot",
   "/settings/storage",
   // Its pages moved (aldoSettingsRedirect).
@@ -331,6 +352,10 @@ const ALDO_HIDDEN_SETTINGS_ROWS: ReadonlySet<string> = new Set([
   "project-grouping",
   "project-actions",
 ]);
+
+export function aldoHidesSettingsRow(id: string): boolean {
+  return ALDO_HIDDEN_SETTINGS_ROWS.has(id);
+}
 
 /**
  * T3's rows Aldo shows on a page of its own: the model new threads start on
@@ -398,4 +423,9 @@ export function aldoSettingsScopeSearch(
 ): SettingsScopeSearch {
   if (pathname !== undefined && !ALDO_PROJECT_PAGES.has(pathname.replace(/\/+$/, ""))) return {};
   return validateSettingsScopeSearch({ project: search.project });
+}
+
+/** Aldo on a phone opens Settings on its list of pages, as a phone's own settings do. */
+export function aldoSettingsOpensOnList(): boolean {
+  return isAldoCloud && window.matchMedia("(max-width: 767px)").matches;
 }

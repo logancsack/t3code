@@ -1,25 +1,13 @@
 import { CheckCircle2Icon } from "lucide-react";
-import { useCallback, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { disconnectAldoAccount, type AldoAccount, type AldoAccountKind } from "./accountApi";
 import { AldoBrandTile } from "./AldoBrandTile";
-import { settingsAccounts, settingsRepositories } from "./settingsData";
-import { useSettingsResource } from "./settingsResource";
+import { useAldoAccounts } from "./useAldoAccounts";
 import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";
-
-export { ALDO_ACCOUNT_SPECS };
-
-export function useAldoAccounts() {
-  const { data, error } = useSettingsResource(settingsAccounts);
-  const refresh = useCallback(() => {
-    void settingsAccounts.refresh().catch(() => undefined);
-    void settingsRepositories.refresh().catch(() => undefined);
-  }, []);
-  return { accounts: data ?? null, error, refresh };
-}
 
 export function AldoAccountButton(props: {
   readonly kind: AldoAccountKind;

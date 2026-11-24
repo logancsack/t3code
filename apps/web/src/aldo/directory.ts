@@ -26,7 +26,7 @@ import * as Stream from "effect/Stream";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
-import { type PreparedPlatformEnvironment } from "@t3tools/client-runtime/platform";
+import type { ClientCapabilities } from "@t3tools/client-runtime/platform";
 import { type AldoProjectHost } from "./accountApi";
 import { aldoWho } from "./who";
 
@@ -926,11 +926,11 @@ export const aldoEnvironmentGateway = {
     readonly connectionId: string;
     readonly environmentId: EnvironmentId;
   }): Effect.Effect<
-    Option.Option<PreparedPlatformEnvironment>,
+    Option.Option<ClientCapabilities.PreparedPlatformEnvironment>,
     ConnectionBlockedError | ConnectionTransientError
   > => {
     if (!input.connectionId.startsWith(CONNECTION_PREFIX)) {
-      return Effect.succeed(Option.none());
+      return Effect.succeedNone;
     }
     const threadId = input.connectionId.slice(CONNECTION_PREFIX.length);
     const environmentId = input.environmentId;
@@ -949,13 +949,11 @@ export const aldoEnvironmentGateway = {
             // Aldo answered: from here the directory does, unless it was asked for again meanwhile.
             if (asks.get(environmentId) === asked) asks.delete(environmentId);
             return response.state === "running"
-              ? Effect.succeed(
-                  Option.some({
-                    httpBaseUrl: response.httpBaseUrl,
-                    wsBaseUrl: response.wsBaseUrl,
-                    bearerToken: response.bearerToken,
-                  }),
-                )
+              ? Effect.succeedSome({
+                  httpBaseUrl: response.httpBaseUrl,
+                  wsBaseUrl: response.wsBaseUrl,
+                  bearerToken: response.bearerToken,
+                })
               : Effect.fail(asleep());
           }),
         );

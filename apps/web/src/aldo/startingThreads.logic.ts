@@ -7,7 +7,7 @@ export interface AldoNewThread {
   readonly id: string;
   readonly projectId: string;
   readonly title: string;
-  readonly modelSelection: { readonly instanceId: string };
+  readonly modelSelection: { readonly instanceId: string; readonly model: string };
   readonly runtimeMode: string;
   readonly interactionMode: string;
   readonly branch: string | null;
@@ -23,35 +23,38 @@ export interface AldoStartingShell {
   readonly threads: ReadonlyArray<{ readonly id: string }>;
 }
 
-/** The thread's shell entry: connecting, its message sent, as Aldo's own starts show (src/lib/threads.ts). */
+/** The thread's shell entry (encoded): starting, its message sent, as Aldo's own starts show (src/lib/threads.ts). */
 export function aldoStartingShellThread(thread: AldoNewThread) {
   return {
+    createdBy: "user",
+    creationSource: "web",
     id: thread.id,
     projectId: thread.projectId,
     title: thread.title,
+    providerInstanceId: thread.modelSelection.instanceId,
     modelSelection: thread.modelSelection,
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
-    latestTurn: null,
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: thread.id },
+    forkedFrom: null,
+    activeProviderThreadId: null,
+    latestRunId: null,
+    activeRunId: null,
+    status: "starting",
+    pendingRuntimeRequest: null,
+    latestVisibleMessage: null,
+    latestUserMessageAt: thread.sentAt,
+    hasActionableProposedPlan: false,
+    itemCount: 0,
+    visibleItemCount: 0,
     createdAt: thread.createdAt,
     updatedAt: thread.sentAt,
     archivedAt: null,
-    session: {
-      threadId: thread.id,
-      status: "starting",
-      providerName: null,
-      providerInstanceId: thread.modelSelection.instanceId,
-      runtimeMode: thread.runtimeMode,
-      activeTurnId: null,
-      lastError: null,
-      updatedAt: thread.sentAt,
-    },
-    latestUserMessageAt: thread.sentAt,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
+    settledOverride: null,
+    settledAt: null,
+    deletedAt: null,
   };
 }
 

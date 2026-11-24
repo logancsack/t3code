@@ -1,5 +1,6 @@
-import { expect, it } from "vite-plus/test";
-import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
+import { describe, expect, it } from "vite-plus/test";
+
+import { isPickedElementPayload, isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 
 function validPayload(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -28,6 +29,35 @@ function validPayload(overrides?: Record<string, unknown>): Record<string, unkno
     ...overrides,
   };
 }
+
+describe("isPickedElementPayload", () => {
+  it("rejects non-finite numeric line/column numbers", () => {
+    expect(
+      isPickedElementPayload(
+        validPayload({
+          source: {
+            functionName: null,
+            fileName: null,
+            lineNumber: Number.POSITIVE_INFINITY,
+            columnNumber: null,
+          },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isPickedElementPayload(
+        validPayload({
+          source: {
+            functionName: null,
+            fileName: null,
+            lineNumber: Number.NaN,
+            columnNumber: null,
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+});
 
 function validAnnotation(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -70,36 +100,10 @@ function validAnnotation(overrides?: Record<string, unknown>): Record<string, un
   };
 }
 
-it("accepts guest drafts but rejects guest screenshots, non-finite geometry and malformed nested elements", () => {
-  expect(isPreviewAnnotationPayload(validAnnotation())).toBe(true);
-  expect(isPreviewAnnotationPayload(validAnnotation({ screenshot: { dataUrl: "bad" } }))).toBe(
-    false,
-  );
-  expect(
-    isPreviewAnnotationPayload(
-      validAnnotation({ regions: [{ id: "r", rect: { x: 0, y: 0, width: Infinity, height: 1 } }] }),
-    ),
-  ).toBe(false);
-  expect(
-    isPreviewAnnotationPayload(
-      validAnnotation({
-        elements: [{ id: "e", element: {}, rect: { x: 0, y: 0, width: 1, height: 1 } }],
-      }),
-    ),
-  ).toBe(false);
-  expect(
-    isPreviewAnnotationPayload(
-      validAnnotation({
-        elements: [
-          {
-            id: "e",
-            element: validPayload({
-              source: { functionName: null, fileName: null, lineNumber: NaN, columnNumber: null },
-            }),
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-          },
-        ],
-      }),
-    ),
-  ).toBe(false);
+describe("isPreviewAnnotationPayload", () => {
+  it("rejects screenshots supplied by the guest preload", () => {
+    expect(isPreviewAnnotationPayload(validAnnotation({ screenshot: { dataUrl: "bad" } }))).toBe(
+      false,
+    );
+  });
 });

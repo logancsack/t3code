@@ -42,7 +42,7 @@ export type LensParams = Readonly<{
  * does), a rim a couple of pixels wide with bright arcs on the corners that
  * face the light, and a faint chromatic split at the edge.
  */
-export const LENS_CONTROL: LensParams = {
+const LENS_CONTROL: LensParams = {
   bezel: 0.35,
   bezelMax: 36,
   shift: 14,
@@ -124,7 +124,7 @@ export type LensMaps = Readonly<{
  * `height` CSS px with corner radius `radius`. Pure, so it is testable and
  * cacheable; encoding to images happens in the runtime.
  */
-export function buildLensMaps(
+function buildLensMaps(
   width: number,
   height: number,
   radius: number,
@@ -211,7 +211,7 @@ export function buildLensMaps(
 }
 
 /** The SVG filter: the map bends the backdrop, once per channel when chroma splits them. */
-export function lensFilterMarkup(
+function lensFilterMarkup(
   id: string,
   width: number,
   height: number,

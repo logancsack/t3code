@@ -1,33 +1,19 @@
-// @effect-diagnostics nodeBuiltinImport:off
-import * as NodeCrypto from "node:crypto";
-import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
-
 import type { ModelSelection, ProviderDriverKind } from "@t3tools/contracts";
 import { GrokReviewError } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import type { CodeReviewRunner } from "@t3tools/provider-core/server/codeReview";
+import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
+import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import * as FileSystem from "effect/FileSystem";
+import type * as Schema from "effect/Schema";
 
-import type { TextGeneration } from "../textGeneration/TextGeneration.ts";
-import type { CodeReviewRunner } from "./CodeReviewRunner.ts";
 import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
 import { runGrokReviewSwarm } from "./GrokReviewSwarm.ts";
 
 const CODEX_DRIVER = "codex";
 const CLAUDE_DRIVER = "claudeAgent";
-const nodeCrypto = Crypto.make({
-  randomBytes: (size) => new Uint8Array(NodeCrypto.randomBytes(size)),
-  digest: (algorithm, data) =>
-    Effect.sync(
-      () =>
-        new Uint8Array(
-          NodeCrypto.createHash(algorithm.toLowerCase().replace("-", "")).update(data).digest(),
-        ),
-    ),
-});
-
 function selectionForEffort(
   base: ModelSelection,
   driver: ProviderDriverKind,
@@ -49,11 +35,17 @@ function selectionForEffort(
   };
 }
 
+export type ProviderCodeReviewServices =
+  | Digest.Digest
+  | SecureRandom.SecureRandom
+  | FileSystem.FileSystem;
+
 export function makeProviderCodeReview(input: {
-  textGeneration: TextGeneration["Service"];
+  generateStructured: NonNullable<ProviderTextGeneration["generateStructured"]>;
   modelSelection: ModelSelection;
   driver: ProviderDriverKind;
   providerLabel: string;
+  services: Context.Context<ProviderCodeReviewServices>;
 }): CodeReviewRunner {
   const agent: GrokReviewAgent = {
     resolvedModel: input.modelSelection.model,
@@ -65,7 +57,7 @@ export function makeProviderCodeReview(input: {
       readonly outputSchema: S;
       readonly effort: "medium" | "high";
     }) =>
-      input.textGeneration
+      input
         .generateStructured({
           cwd: request.cwd,
           prompt: request.prompt,
@@ -83,26 +75,28 @@ export function makeProviderCodeReview(input: {
           ),
         ),
   };
-  const makeIsolatedReviewDirectory = Effect.try({
-    try: () => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-aldo-review-")),
-    catch: (cause) =>
-      new GrokReviewError({
-        operation: "AldoReviewAgent.isolate",
-        detail: "Aldo Review could not create an isolated provider workspace.",
-        cause,
-      }),
-  });
-  return {
-    run: (request) =>
-      Effect.acquireUseRelease(
-        makeIsolatedReviewDirectory,
-        (cwd) =>
-          runGrokReviewSwarm({
-            ...request,
-            request: { ...request.request, cwd },
-            agent,
-          }).pipe(Effect.provideService(Crypto.Crypto, nodeCrypto)),
-        (cwd) => Effect.sync(() => NodeFS.rmSync(cwd, { recursive: true, force: true })),
-      ),
-  } satisfies CodeReviewRunner;
+  const run: CodeReviewRunner["run"] = Effect.fn("ProviderCodeReview.run")(
+    function* (request) {
+      const fileSystem = yield* FileSystem.FileSystem;
+      // The provider sees only the redacted diff in its prompt, never the checkout.
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-aldo-review-" }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GrokReviewError({
+              operation: "AldoReviewAgent.isolate",
+              detail: "Aldo Review could not create an isolated provider workspace.",
+              cause,
+            }),
+        ),
+      );
+      return yield* runGrokReviewSwarm({
+        ...request,
+        request: { ...request.request, cwd },
+        agent,
+      });
+    },
+    Effect.scoped,
+    Effect.provide(input.services),
+  );
+  return { run };
 }
