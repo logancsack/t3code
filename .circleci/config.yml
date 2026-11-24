@@ -16,7 +16,7 @@ executors:
   # image's Node only runs the installer.
   node:
     docker:
-      - image: cimg/node:24.22
+      - image: cimg/node:26.13.1
     resource_class: medium
 
 commands:
@@ -47,7 +47,7 @@ commands:
       - run:
           name: Install Vite+
           command: |
-            version=$(sed -n 's/^  vite-plus: //p' pnpm-workspace.yaml)
+            version=$(sed -n 's/^  vite-plus: \([0-9][0-9.]*\)$/\1/p' pnpm-workspace.yaml)
             # The installer reads the npm registry and takes an error page (a 502
             # while npm is degraded) for metadata it can't parse: try again for
             # a few minutes, since such outages are often partial.
@@ -76,7 +76,7 @@ commands:
 jobs:
   scope:
     docker:
-      - image: cimg/node:24.22
+      - image: cimg/node:26.13.1
     resource_class: small
     steps:
       - checkout:

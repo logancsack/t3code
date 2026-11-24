@@ -17,7 +17,7 @@
 
 import type { EnvironmentPresentation } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
-import * as Atom from "effect/unstable/reactivity/Atom";
+import * as Atom from "effect/reactivity/Atom";
 
 import {
   readCachedShells,

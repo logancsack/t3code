@@ -62,7 +62,7 @@ vi.mock("../state/presentation", () => ({
   },
 }));
 vi.mock("../rpc/atomRegistry", async () => {
-  const { AsyncResult } = await import("effect/unstable/reactivity");
+  const { AsyncResult } = await import("effect/reactivity");
   const presented = (phase: string | undefined) => (phase ? { connection: { phase } } : null);
   return {
     appAtomRegistry: {

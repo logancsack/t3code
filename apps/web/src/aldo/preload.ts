@@ -21,7 +21,7 @@
 
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
