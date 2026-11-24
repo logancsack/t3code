@@ -733,6 +733,8 @@ export const ServerConfig = Schema.Struct({
   shellRevealInFileManager: Schema.optionalKey(Schema.Boolean),
   shellRevealInFileManagerKind: Schema.optionalKey(FileManagerRevealKind),
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /** Set only by a generation-1 server whose started threads can change model; V2 reports this per session. */
+  threadModelHandoff: Schema.optionalKey(Schema.Boolean),
   /** Send window fields only when advertised. */
   threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
   threadFind: Schema.optionalKey(Schema.Boolean),

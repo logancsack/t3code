@@ -885,11 +885,13 @@ export default function ChatView(props: ChatViewProps) {
   const isProviderSubagent =
     serverThread !== null && isProviderNativeSubagentThread(serverThread.source);
   const routeServerConfig = environmentById.get(environmentId)?.serverConfig;
-  // An older machine reached through the generation-1 adapter cannot fork or hand a thread over.
+  // An older machine reached through the generation-1 adapter cannot fork, and says itself
+  // whether a started thread can change model.
   const legacyEnvironment =
     routeServerConfig != null && isLegacyOrchestrationDescriptor(routeServerConfig.environment);
-  const supportsProviderSwitchingViaHandoff =
-    !legacyEnvironment && threadSupportsProviderHandoff(serverProjection);
+  const supportsProviderSwitchingViaHandoff = legacyEnvironment
+    ? routeServerConfig?.threadModelHandoff === true
+    : threadSupportsProviderHandoff(serverProjection);
   const activeLatestRun = isServerThread ? serverLatestRun : (activeThread?.latestRun ?? null);
   const activeActivityRun = isServerThread ? serverActivityRun : (activeThread?.latestRun ?? null);
   const activeRuntime = isServerThread ? serverRuntime : (activeThread?.runtime ?? null);

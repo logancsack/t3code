@@ -434,7 +434,7 @@ export function installAldoCommandDispatch(): void {
       return null;
     }
     lastSentAt.set(environmentId, Date.now());
-    const routed = v1.bootstrap !== undefined && aldoRoutesModels();
+    const routed = aldoRoutesModels();
     const heldCommand = routed
       ? {
           ...v1,

@@ -220,9 +220,15 @@ it.each([false, true])(
   },
 );
 
-it("keeps follow-ups on their existing model and supports a server without model routing", async () => {
+it("says on follow-ups whether the model was chosen, and supports a server without model routing", async () => {
+  host.explicit = true;
   expect(await send({ command: followUp() })).toEqual({ sequence: 0 });
-  expect(host.hold).toHaveBeenLastCalledWith("aldo-machine", held(false), null, true);
+  expect(host.hold).toHaveBeenLastCalledWith(
+    "aldo-machine",
+    { ...held(false), aldoModelExplicit: true },
+    null,
+    true,
+  );
   host.routes = false;
   expect(await send({ launch })).toEqual({ sequence: 0 });
   expect(host.hold).toHaveBeenLastCalledWith("aldo-machine", held(true), null, true);
@@ -233,7 +239,12 @@ it("holds an accepted plan's message with its source plan", async () => {
   expect(await send({ command: followUp({ sourcePlanRef }) })).toEqual({ sequence: 0 });
   expect(host.hold).toHaveBeenCalledWith(
     "aldo-machine",
-    { ...held(false), interactionMode: "default", sourceProposedPlan: sourcePlanRef },
+    {
+      ...held(false),
+      aldoModelExplicit: false,
+      interactionMode: "default",
+      sourceProposedPlan: sourcePlanRef,
+    },
     null,
     true,
   );
@@ -251,7 +262,12 @@ it.each([
     host.phase = "disconnected";
     host.hold.mockRejectedValue(new Error("held it"));
     await expect(send({ command: followUp(extra) })).rejects.toThrow("held it");
-    expect(host.hold).toHaveBeenCalledWith("aldo-machine", held(false), null, false);
+    expect(host.hold).toHaveBeenCalledWith(
+      "aldo-machine",
+      { ...held(false), aldoModelExplicit: false },
+      null,
+      false,
+    );
   },
 );
 
