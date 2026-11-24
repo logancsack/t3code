@@ -3,6 +3,7 @@ import { parseTurnInstructions } from "../turnInstructions.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
   type ChatAttachment,
+  getProviderAttachmentLimitError,
   CommandId,
   EventId,
   type MessageId,
@@ -50,6 +51,7 @@ import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderAuthService } from "../../provider/Services/ProviderAuthService.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import * as ProviderSessionDirectory from "../../provider/Services/ProviderSessionDirectory.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -228,6 +230,7 @@ const make = Effect.gen(function* () {
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const providerAuthService = yield* ProviderAuthService;
   const providerService = yield* ProviderService;
+  const sessionDirectory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -630,20 +633,21 @@ const make = Effect.gen(function* () {
         : thread.modelSelection.instanceId;
     const desiredModelSelection = requestedModelSelection ?? thread.modelSelection;
     const desiredInstanceId = desiredModelSelection.instanceId;
-    yield* providerService.getInstanceInfo(currentInstanceId).pipe(
-      Effect.mapError(
-        () =>
-          new ProviderAdapterRequestError({
-            provider: providerErrorLabelFromInstanceHint({
-              instanceId: String(currentInstanceId),
-              modelSelectionInstanceId: String(thread.modelSelection.instanceId),
-              sessionProvider: thread.session?.providerName ?? undefined,
+    if (!options?.fresh)
+      yield* providerService.getInstanceInfo(currentInstanceId).pipe(
+        Effect.mapError(
+          () =>
+            new ProviderAdapterRequestError({
+              provider: providerErrorLabelFromInstanceHint({
+                instanceId: String(currentInstanceId),
+                modelSelectionInstanceId: String(thread.modelSelection.instanceId),
+                sessionProvider: thread.session?.providerName ?? undefined,
+              }),
+              method: "thread.turn.start",
+              detail: `Thread '${threadId}' references unknown provider instance '${currentInstanceId}'. The instance is not configured in this build.`,
             }),
-            method: "thread.turn.start",
-            detail: `Thread '${threadId}' references unknown provider instance '${currentInstanceId}'. The instance is not configured in this build.`,
-          }),
-      ),
-    );
+        ),
+      );
     const desiredInfo = yield* providerService.getInstanceInfo(desiredInstanceId).pipe(
       Effect.mapError(
         () =>
@@ -749,7 +753,10 @@ const make = Effect.gen(function* () {
       });
 
     if (options?.fresh) {
-      if (activeSession) yield* providerService.stopSession({ threadId });
+      if (activeSession)
+        yield* providerService
+          .stopSession({ threadId })
+          .pipe(Effect.catchTag("ProviderUnsupportedError", () => Effect.void));
       const session = yield* startProviderSession();
       yield* bindSessionToThread(session);
       return session.threadId;
@@ -850,16 +857,24 @@ const make = Effect.gen(function* () {
     // session after a restart) owns the old provider's native resume state.
     const sessions = yield* providerService.listSessions();
     const active = sessions.find((session) => session.threadId === input.threadId);
-    const previousInstance = active?.providerInstanceId ?? thread.session?.providerInstanceId;
+    let previousInstance = active?.providerInstanceId ?? thread.session?.providerInstanceId;
+    if (previousInstance === undefined) {
+      // Imports have a native binding before their first T3 session exists.
+      const binding = yield* sessionDirectory.getBinding(input.threadId);
+      previousInstance = Option.getOrUndefined(binding)?.providerInstanceId;
+    }
     const desired = input.modelSelection ?? thread.modelSelection;
     let handoff = false;
     if (previousInstance !== undefined) {
-      const previous = yield* providerService.getInstanceInfo(previousInstance);
+      const previous = yield* providerService
+        .getInstanceInfo(previousInstance)
+        .pipe(Effect.catchTag("ProviderUnsupportedError", () => Effect.succeed(undefined)));
       const next = yield* providerService.getInstanceInfo(desired.instanceId);
       const capabilities = yield* providerService.getCapabilities(desired.instanceId);
       const modelChanged = desired.model !== (active?.model ?? thread.modelSelection.model);
       const providers = yield* providerRegistry.getProviders;
       handoff =
+        previous === undefined ||
         previous.driverKind !== next.driverKind ||
         previous.continuationIdentity.continuationKey !==
           next.continuationIdentity.continuationKey ||
@@ -897,6 +912,7 @@ const make = Effect.gen(function* () {
         .pipe(Effect.map(Option.getOrUndefined));
       if (!detail) return yield* Effect.die(new Error("Continuation history is missing."));
       if (
+        input.continuation &&
         detail.messages.some(
           (message) => message.role === "user" && message.createdAt > input.createdAt,
         )
@@ -919,6 +935,19 @@ const make = Effect.gen(function* () {
             .map((attachment) => [attachment.id, attachment]),
         ).values(),
       ];
+      // Reserve the current message first, then replay the most recent files
+      // that fit a single provider request. Every file stays in the transcript.
+      const pendingAttachments = input.attachments ?? [];
+      const pendingIds = new Set(pendingAttachments.map((attachment) => attachment.id));
+      const replay: ChatAttachment[] = [];
+      for (const attachment of continuationAttachments.toReversed()) {
+        if (pendingIds.has(attachment.id)) continue;
+        if (!getProviderAttachmentLimitError([...pendingAttachments, ...replay, attachment])) {
+          replay.unshift(attachment);
+        }
+      }
+      const omittedAttachments = continuationAttachments.length - replay.length;
+      continuationAttachments = replay;
       const transcript = history
         .map(
           (message) =>
@@ -954,7 +983,19 @@ const make = Effect.gen(function* () {
         (transcript.length + decisions.length <= 80000
           ? `${transcript}\n\nRecorded decisions: ${decisions}`
           : `Original brief (read its full text in the transcript if abbreviated):\n${history.find((message) => message.role === "user")?.text.slice(0, 16000) ?? ""}\n\nRecent context:\n${transcript.slice(-24000)}`) +
+        (omittedAttachments > 0
+          ? `\n\n${omittedAttachments} prior attachments were not replayed to stay within provider request limits; their full metadata is in the transcript above. Read those files from the workspace as needed.`
+          : "") +
         "\n\nContinuation:\n";
+    }
+    const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
+    const attachmentError = getProviderAttachmentLimitError(normalizedAttachments);
+    if (attachmentError) {
+      return yield* new ProviderAdapterValidationError({
+        provider: desired.instanceId,
+        operation: "thread.turn.start",
+        issue: attachmentError,
+      });
     }
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
@@ -962,10 +1003,10 @@ const make = Effect.gen(function* () {
       pendingTurnStart: true,
       ...(input.continuation || handoff ? { fresh: true } : {}),
     });
-    if (input.modelSelection !== undefined) {
-      threadModelSelections.set(input.threadId, input.modelSelection);
+    // A fresh session may pick up a saved selection without a model on this message.
+    if (input.modelSelection !== undefined || handoff || input.continuation) {
+      threadModelSelections.set(input.threadId, desired);
     }
-    const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
     const baseInput = toNonEmptyProviderInput(continuationContext + input.messageText);
     // Adapters can interpret slash input as native command arguments. Optional
     // prompt context must not become part of those arguments.
@@ -1541,13 +1582,13 @@ const make = Effect.gen(function* () {
       }
     }
 
-    let compactionSessionEnsured = false;
+    let compactionStarted = false;
     const handleCompactionFailure = (cause: Cause.Cause<unknown>) => {
       if (Cause.hasInterruptsOnly(cause)) {
         return Effect.void;
       }
       const detail = formatFailureDetail(cause);
-      if (!compactionSessionEnsured) {
+      if (!compactionStarted) {
         return setThreadSessionErrorOnTurnStartFailure({
           threadId: event.payload.threadId,
           detail,
@@ -1608,20 +1649,26 @@ const make = Effect.gen(function* () {
       );
       yield* holdTurnStart;
       yield* Effect.gen(function* () {
-        yield* ensureSessionForThread(
-          event.payload.threadId,
-          event.payload.createdAt,
-          event.payload.modelSelection !== undefined
-            ? { modelSelection: event.payload.modelSelection, pendingTurnStart: true }
-            : { pendingTurnStart: true },
-        );
-        compactionSessionEnsured = true;
-        if (event.payload.modelSelection !== undefined) {
-          threadModelSelections.set(event.payload.threadId, event.payload.modelSelection);
+        // Compact the binding that owns this conversation. The provider service
+        // recovers its saved session when needed; a draft selection must not
+        // replace it before the next message can perform a context handoff.
+        const current = yield* resolveThreadShell(event.payload.threadId);
+        if (current?.session && current.session.status !== "stopped") {
+          yield* setThreadSession({
+            threadId: event.payload.threadId,
+            session: {
+              ...current.session,
+              status: "starting",
+              activeTurnId: null,
+              updatedAt: event.payload.createdAt,
+            },
+            createdAt: event.payload.createdAt,
+          });
         }
+        compactionStarted = true;
         yield* providerService.compactThread(
           event.payload.threadId,
-          event.payload.modelSelection,
+          undefined,
           event.payload.messageId,
         );
       }).pipe(
@@ -2026,11 +2073,21 @@ const make = Effect.gen(function* () {
           return;
         }
         const cachedModelSelection = threadModelSelections.get(event.payload.threadId);
-        const resume = ensureSessionForThread(
-          event.payload.threadId,
-          event.occurredAt,
-          cachedModelSelection !== undefined ? { modelSelection: cachedModelSelection } : {},
-        );
+        const sessions = yield* providerService.listSessions();
+        const active = sessions.find((session) => session.threadId === event.payload.threadId);
+        const instanceId = active?.providerInstanceId ?? thread.session.providerInstanceId;
+        const modelSelection =
+          cachedModelSelection?.instanceId === instanceId
+            ? cachedModelSelection
+            : active?.model && active.providerInstanceId
+              ? { instanceId: active.providerInstanceId, model: active.model }
+              : undefined;
+        // After a restart only the saved binding may identify the old provider.
+        // Leave it intact until the next turn can seed any pending handoff.
+        if (modelSelection === undefined) return;
+        const resume = ensureSessionForThread(event.payload.threadId, event.occurredAt, {
+          modelSelection,
+        });
         yield* thread.worktreePath
           ? withWorkspaceLease(path.resolve(thread.worktreePath), resume)
           : resume;

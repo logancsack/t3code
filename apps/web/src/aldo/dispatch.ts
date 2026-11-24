@@ -408,10 +408,7 @@ export function installAldoCommandDispatch(): void {
     // files however the machine is: Aldo puts them on it, so only Aldo can send it.
     const files = command.type === "thread.turn.start" ? aldoFilesOf(command) : null;
     const connected = isAldoConnected(environmentId);
-    const routed =
-      command.type === "thread.turn.start" &&
-      Boolean(command.bootstrap?.createThread) &&
-      aldoRoutesModels();
+    const routed = command.type === "thread.turn.start" && aldoRoutesModels();
     const heldCommand = routed
       ? {
           ...command,
