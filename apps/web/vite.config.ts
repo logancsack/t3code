@@ -21,6 +21,7 @@ import {
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { resolveTaggedSourceVersion } from "../../scripts/lib/tagged-source-version";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
+import { aldoDeferredModulesPlugin } from "./vite/aldoDeferred";
 import { tailwindPlugins } from "./vite/tailwind";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 import { formatAppDisplayName, resolveWebAppStageLabel } from "./src/branding.logic";
@@ -448,7 +449,14 @@ export default defineConfig(({ command }) => {
     publicDir: aldoCloud ? "public-aldo" : "public",
     plugins: [
       bootstrapTitlePlugin(),
-      ...(aldoCloud ? [aldoBrandingPlugin(), aldoBootstrapPlugin(), aldoFontPreloadPlugin()] : []),
+      ...(aldoCloud
+        ? [
+            aldoBrandingPlugin(),
+            aldoBootstrapPlugin(),
+            aldoFontPreloadPlugin(),
+            aldoDeferredModulesPlugin(),
+          ]
+        : []),
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
       builtDev
@@ -566,11 +574,10 @@ export default defineConfig(({ command }) => {
           ...(aldoCloud
             ? {
                 codeSplitting: {
-                  // Aldo's entry imports the whole first screen (aldoBootstrapPlugin). It goes in
-                  // one chunk, and its libraries in another whose name and hash stay the same
-                  // across releases that change only app code, so returning devices keep it
-                  // cached. Vite's preload helper goes with the libraries: every chunk with an
-                  // import() imports it.
+                  // Aldo's entry imports the whole first screen (aldoBootstrapPlugin): one chunk,
+                  // and its libraries in another whose name and hash survive app-only releases, so
+                  // returning devices keep it cached. Vite's preload helper goes with the
+                  // libraries: every chunk with an import() imports it.
                   groups: [
                     {
                       name: "vendor",

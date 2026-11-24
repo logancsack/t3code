@@ -131,6 +131,7 @@ function EnvironmentForm(props: {
           Dev services (started with every thread, restarted after sleeps)
         </span>
         {draft.services.map((service, index) => (
+          // oxlint-disable-next-line react/no-array-index-key -- Rows are edited in place and have no id.
           <div key={index} className="grid grid-cols-[6rem_1fr_6rem_auto] gap-1.5">
             <Input
               size="compact"

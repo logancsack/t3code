@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/utils";
-import { aldoOffboarding } from "./accountApi";
+import { aldoOffboarding } from "./orgAdminApi";
 import { aldoReceivedLine, type AldoReceived } from "./offboarding.logic";
 
 /** How often a copy still being made is looked at again. */

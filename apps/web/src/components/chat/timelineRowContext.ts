@@ -34,6 +34,8 @@ import {
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import type { TurnItemDetailSource } from "../../state/queries";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
+import type { AldoShare } from "../../aldo/made.logic";
+import type { AldoRunProgress } from "../../aldo/workRows.logic";
 
 /**
  * Where an expanded row reads an item's detail and a command's output. The owner's rows read them
@@ -110,6 +112,8 @@ export interface TimelineRowSharedState {
   workGroupViewState: WorkGroupViewState;
   /** Aldo: steps in words, in threads that aren't code. */
   workWords: WorkWords | null;
+  /** Aldo: what each run shared, under its answer. */
+  aldoSharesByRunId: ReadonlyMap<string, ReadonlyArray<AldoShare>>;
 }
 
 export interface TimelineRowActivityState {
@@ -122,6 +126,8 @@ export interface TimelineRowActivityState {
   latestRunId: RunId | null;
   backgroundWorktreeSetup: WorktreeSetupSnapshot | null;
   liveAnswerPreview: string | null;
+  /** Aldo: where the run under way is, in threads that aren't code. */
+  aldoProgress: AldoRunProgress | null;
 }
 
 export const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);

@@ -39,7 +39,8 @@ import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { cn } from "../lib/utils";
-import { AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
+import { AldoAccountButton } from "./AldoAccountsPanel";
+import { useAldoAccounts } from "./useAldoAccounts";
 import {
   aldoLinksProjectCode,
   aldoSupportsGeneralThreads,

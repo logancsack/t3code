@@ -47,6 +47,9 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { DraftProjectName } from "./DraftProjectName";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
+import { isAldoCloud } from "~/aldo/api";
+import { useAldoGeneral, useAldoKeptRepo } from "~/aldo/keptRepo";
+import { aldoProjectForMovedDraft, useAldoGeneralThreads } from "~/aldo/newThread";
 import { TriageDraftHero } from "./TriageDraftHero";
 
 const ADD_PROJECT_VALUE = "add-project";
@@ -94,7 +97,8 @@ export function DraftHeroHeadline({
     environments.map((environment) => [environment.environmentId, environment.label] as const),
   );
   const projectGroups = useSortedProjectGroups(environmentLabelById);
-  const showProjectEnvironments = projectGroupsSpanEnvironments(projectGroups);
+  // Aldo: a project spans the machines of its threads, which the picker doesn't name.
+  const showProjectEnvironments = !isAldoCloud && projectGroupsSpanEnvironments(projectGroups);
   const environmentMachineById = new Map(
     environments.map(
       (environment) =>
@@ -141,6 +145,11 @@ export function DraftHeroHeadline({
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
 
+  // Aldo: a thread without a project is a General one, and a General draft is already without one.
+  const aldoGeneralThreads = useAldoGeneralThreads();
+  const aldoGeneralDraft = useAldoGeneral(activeProjectRef?.environmentId);
+  const aldoKeptRepo = useAldoKeptRepo(activeProjectRef?.environmentId);
+  const offersNoProject = isAldoCloud ? aldoGeneralThreads : scratchWorkspaceRoot !== null;
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
     [
@@ -186,7 +195,17 @@ export function DraftHeroHeadline({
     setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId);
     seedDraftModelSelection(draftId, projectRef);
   };
+  // Aldo: the draft moves to a machine of its own there (null: General), never onto another thread's.
+  const moveAldoDraft = async (target: ScopedProjectRef | null): Promise<boolean> => {
+    if (!draftId) return false;
+    pendingScratchRef.current = null;
+    const project = await aldoProjectForMovedDraft(draftId, target);
+    if (!project) return false;
+    selectProject(project, deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings));
+    return true;
+  };
   const startScratch = async (): Promise<boolean> => {
+    if (isAldoCloud) return moveAldoDraft(null);
     if (scratchTargetEnvironmentId === null || isScratchDraft) {
       return false;
     }
@@ -227,6 +246,11 @@ export function DraftHeroHeadline({
         }
         const entry = projectEntryByKey.get(item.value);
         if (!entry || item.value === activeProjectKey) {
+          return;
+        }
+        if (isAldoCloud) {
+          const { environmentId, id } = entry.targetProject;
+          void moveAldoDraft(scopeProjectRef(environmentId, id));
           return;
         }
         selectProject(entry.targetProject, entry.group.projectKey);
@@ -322,7 +346,10 @@ export function DraftHeroHeadline({
 
   const noProjectShortcut = shortcutLabelForCommand(keybindings, "chat.newWithoutProject");
   const orStartWithoutProject =
-    scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject) ? (
+    offersNoProject &&
+    !isScratchDraft &&
+    !aldoGeneralDraft &&
+    (hasResolvedProject || canChooseProject) ? (
       <Tooltip>
         <TooltipTrigger
           render={
@@ -360,7 +387,10 @@ export function DraftHeroHeadline({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       {hasResolvedProject && !isScratchDraft ? (
-        <DraftHeroProjectHeading projectName={activeProjectTitle ?? gt("Choose a project")}>
+        <DraftHeroProjectHeading
+          projectName={activeProjectTitle ?? gt("Choose a project")}
+          getDone={aldoKeptRepo}
+        >
           {projectSelector}
         </DraftHeroProjectHeading>
       ) : (
@@ -376,7 +406,7 @@ export function DraftHeroHeadline({
           )}
         </h1>
       )}
-      {scratchWorkspaceRoot === null ? null : (
+      {!offersNoProject ? null : (
         <p className="mt-2 flex h-6 w-full items-center justify-center text-sm">
           {isScratchDraft ? projectSelector : orStartWithoutProject}
         </p>

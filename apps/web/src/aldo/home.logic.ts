@@ -75,7 +75,7 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
  * turn's own ask (sandbox-agent/task-result.ts). Never the agent's notes:
  * those stay in its thread.
  */
-export const WAITING_CHOICES: ReadonlyArray<{ readonly label: string; readonly reply: string }> = [
+const WAITING_CHOICES: ReadonlyArray<{ readonly label: string; readonly reply: string }> = [
   {
     label: "Decide for me and carry on (Recommended)",
     reply:
@@ -214,7 +214,7 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   return "waiting";
 }
 
-export const WORKING_STATES = new Set(["working", "starting", "retrying"]);
+const WORKING_STATES = new Set(["working", "starting", "retrying"]);
 
 /** Use Aldo's shared activity read, with a conservative fallback for an older server. */
 export function isWorkingNow(c: AldoHomeConversation): boolean {

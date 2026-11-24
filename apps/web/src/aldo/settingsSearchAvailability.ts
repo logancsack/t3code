@@ -13,7 +13,7 @@ import { useSettingsResource } from "./settingsResource";
 export function useAldoSettingsSearchAvailability(): Partial<SettingsSearchAvailability> {
   const [hasAldoPhoneApi, setHasAldoPhoneApi] = useState(false);
   const [hasAldoAgentInbox, setHasAldoAgentInbox] = useState(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks Aldo's API, again on focus and reconnect
+  // Asks Aldo's API, again on focus and reconnect.
   useEffect(() => {
     if (!isAldoCloud) return;
     let current = true;

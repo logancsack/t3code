@@ -1,5 +1,4 @@
 import {
-  EnvironmentId,
   EventId,
   MessageId,
   ORCHESTRATION_V2_WS_METHODS,
@@ -34,21 +33,14 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
-import {
-  LANDING_DEMO_ENVIRONMENT_ID,
-  LANDING_DEMO_PROJECT_ID,
-  LANDING_DEMO_THREAD_ID,
-  isWorkReplay,
-} from "./mode";
+import { LANDING_DEMO_PROJECT_ID, demoEnvironmentId, demoThreadId, isWorkReplay } from "./mode";
 
 // The demo and the replay keep their script in the original thread shape; the
 // mapper that reads older machines turns it into what the app shows, loaded
 // only when one of them runs.
 const legacy = Effect.promise(() => import("@t3tools/client-runtime/legacyV1"));
 
-export const demoEnvironmentId = EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID);
 const demoProjectId = ProjectId.make(LANDING_DEMO_PROJECT_ID);
-export const demoThreadId = ThreadId.make(LANDING_DEMO_THREAD_ID);
 const demoProviderId = ProviderInstanceId.make("codex");
 const STARTED_AT = "2026-07-31T12:00:00.000Z";
 

@@ -27,7 +27,7 @@ export type AldoChartType =
   | "scatter"
   | "combo";
 
-export const CHART_TYPES: ReadonlyArray<AldoChartType> = [
+const CHART_TYPES: ReadonlyArray<AldoChartType> = [
   "bar",
   "column",
   "line",

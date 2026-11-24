@@ -245,28 +245,24 @@ describe("aldoCommandPatch", () => {
   });
 
   it("renames, but leaves any other meta update to the machine", () => {
-    expect(
-      patchFor(command("thread.metadata.update", { title: "New name" }), thread(), NOW),
-    ).toEqual({
+    expect(patchFor(command("thread.meta.update", { title: "New name" }), thread(), NOW)).toEqual({
       set: { title: "New name", updatedAt: NOW },
     });
     expect(
       patchFor(
-        command("thread.metadata.update", { title: "New name" }),
+        command("thread.meta.update", { title: "New name" }),
         thread({ titleRegeneration: { requestId: "r", startedAt: BEFORE } }),
         NOW,
       ),
     ).toEqual({ set: { title: "New name", titleRegeneration: null, updatedAt: NOW } });
     expect(
-      patchFor(command("thread.metadata.update", { regenerateTitle: true }), thread(), NOW),
+      patchFor(command("thread.meta.update", { regenerateTitle: true }), thread(), NOW),
     ).toBeNull();
-    expect(
-      patchFor(command("thread.metadata.update", { branch: "main" }), thread(), NOW),
-    ).toBeNull();
+    expect(patchFor(command("thread.meta.update", { branch: "main" }), thread(), NOW)).toBeNull();
   });
 
   it("has nothing to stop on a sleeping machine, and leaves the rest to it", () => {
-    expect(patchFor(command("thread.stop"), thread(), NOW)).toBe("nothing");
+    expect(patchFor(command("thread.session.stop"), thread(), NOW)).toBe("nothing");
     expect(patchFor(command("thread.turn.start"), thread(), NOW)).toBeNull();
     expect(patchFor(command("thread.unarchive"), null, NOW)).toBeNull();
   });
@@ -304,8 +300,8 @@ describe("aldoCommandPatch on work T3 won't park", () => {
   });
 
   it("stops no session only on a machine known to be asleep", () => {
-    expect(patchFor(command("thread.stop"), thread(), NOW, true)).toBe("nothing");
-    expect(patchFor(command("thread.stop"), thread(), NOW, false)).toBeNull();
+    expect(patchFor(command("thread.session.stop"), thread(), NOW, true)).toBe("nothing");
+    expect(patchFor(command("thread.session.stop"), thread(), NOW, false)).toBeNull();
   });
 });
 

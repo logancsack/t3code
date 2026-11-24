@@ -4,12 +4,8 @@ import type { AldoHome } from "../aldo/homeApi";
 import { useAldoAssistant, type AldoConversationEntry } from "../aldo/assistantSession";
 import { useAldoHomeFeed, useAldoHomeReadAt } from "../aldo/homeFeed";
 import { useAldoSimple } from "../aldo/simpleMode";
-import {
-  demoEnvironmentId,
-  demoThreadId,
-  setWorkReplayThread,
-  setWorkReplayHomeThreads,
-} from "./runtime";
+import { demoEnvironmentId, demoThreadId } from "./mode";
+import { setWorkReplayThread, setWorkReplayHomeThreads } from "./runtime";
 
 /** Data only. Layout and styling belong entirely to the production components. */
 export interface WorkReplayScript {

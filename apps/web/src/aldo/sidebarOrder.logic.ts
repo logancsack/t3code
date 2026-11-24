@@ -51,7 +51,7 @@ export interface AldoHeldMessage {
  * outranks the turn it pauses; a plan to accept outranks background work);
  * "done" otherwise, a failure included.
  */
-export function aldoSidebarTier(thread: AldoSidebarOrderInput, held = false): AldoSidebarTier {
+function aldoSidebarTier(thread: AldoSidebarOrderInput, held = false): AldoSidebarTier {
   if (held) return "working";
   const status = resolveSidebarThreadStatus(thread);
   const working = status === "working" || status === "preparing";
@@ -69,7 +69,7 @@ export function aldoSidebarTier(thread: AldoSidebarOrderInput, held = false): Al
  * one T3 never saw end. A thread that never ran (a start that failed) goes by
  * its last change, then when it was made.
  */
-export function aldoThreadFinishedAtMs(thread: AldoSidebarOrderInput): number {
+function aldoThreadFinishedAtMs(thread: AldoSidebarOrderInput): number {
   const run = thread.latestRun;
   return run
     ? firstValidTimestampMs(

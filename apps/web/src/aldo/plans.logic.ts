@@ -142,10 +142,7 @@ export function planPutOff(plan: Pick<AldoPlan, "status" | "deferredUntil">, now
 }
 
 /** Whether a plan is back from being put off: it waits for the user's Start, never starting on its own. */
-export function planBack(
-  plan: Pick<AldoPlan, "status" | "deferredUntil" | "back">,
-  now: number,
-): boolean {
+function planBack(plan: Pick<AldoPlan, "status" | "deferredUntil" | "back">, now: number): boolean {
   if (plan.status !== "proposed") return false;
   // Aldo says so (brought back early, or its time came), or its time came since the read.
   return (

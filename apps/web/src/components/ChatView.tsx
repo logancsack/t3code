@@ -1,5 +1,6 @@
 import { m } from "../i18n/messages";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
+import { aldoRetryAfterReconnect } from "../aldo/retry.logic";
 import { useAldoPreload } from "../aldo/preload";
 import { useAldoFocusReport } from "../aldo/focus";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
@@ -75,7 +76,7 @@ import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import type { ChatAttachment, UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
@@ -296,6 +297,7 @@ import {
   usePrimaryEnvironment,
 } from "../state/environments";
 import {
+  readThreadTurnItems,
   resolveThreadDetailRef,
   useEnvironmentSupportsServerBrowser,
   useProject,
@@ -424,7 +426,6 @@ import {
   isCompactCommandMessage,
   type LocalThreadErrorEntry,
   makeThreadErrorSetter,
-  shouldQuietlyRecoverManagedPrimaryEnvironment,
 } from "./ChatView.logic";
 import { formatShortTimestamp } from "../timestampFormat";
 
@@ -1260,13 +1261,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeEnvironmentUnavailable =
     activeEnvironment !== null &&
     activeEnvironment.connection.phase !== "connected" &&
-    !aldoAgentOffline &&
-    !shouldQuietlyRecoverManagedPrimaryEnvironment({
-      managed: false,
-      activeEnvironmentId: activeEnvironment.environmentId,
-      primaryEnvironmentId: primaryEnvironment?.environmentId ?? null,
-      connectionPhase: activeEnvironment.connection.phase,
-    });
+    !aldoAgentOffline;
   // Aldo: opening a thread starts its cloud agent in the background, so sending
   // doesn't wait; one with no copy anywhere to show wakes it regardless.
   const aldoThreadDetailMissing = useAldoThreadDetailMissing(
@@ -2013,7 +2008,11 @@ export default function ChatView(props: ChatViewProps) {
     scheduleComposerFocusStable();
   };
   const insertArtifactTemplateStable = useStableCallback(insertArtifactTemplate);
-  const sendAppMessage = async (text: string) => {
+  const sendAppMessage = async (
+    text: string,
+    dispatchMode: "queue" | "auto" = "queue",
+    attachments: ReadonlyArray<ChatAttachment> = [],
+  ) => {
     if (!isServerThread || activeThreadId === null) {
       throw new Error(gt("Messages from apps need a started thread."));
     }
@@ -2021,10 +2020,10 @@ export default function ChatView(props: ChatViewProps) {
       environmentId,
       input: {
         threadId: activeThreadId,
-        message: { messageId: newMessageId(), role: "user", text, attachments: [] },
+        message: { messageId: newMessageId(), role: "user", text, attachments },
         runtimeMode,
         interactionMode: DEFAULT_INTERACTION_MODE,
-        dispatchMode: "queue",
+        dispatchMode,
       },
     });
     if (result._tag === "Failure") {
@@ -2034,20 +2033,24 @@ export default function ChatView(props: ChatViewProps) {
   };
   const sendAppMessageStable = useStableCallback(sendAppMessage);
   // Aldo: a move or an offered follow-up, sent as the next message.
-  const sendAldoMessageStable = useStableCallback((text: string) =>
-    sendAppMessage(text).then(
-      () => true,
-      (error: unknown) => {
-        toastManager.add({
-          type: "error",
-          title: gt("Couldn't send the message"),
-          description: error instanceof Error ? error.message : undefined,
-        });
-        return false;
-      },
-    ),
+  const sendAldoMessageStable = useStableCallback(
+    (text: string, dispatchMode?: "auto", attachments?: ReadonlyArray<ChatAttachment>) =>
+      sendAppMessage(text, dispatchMode, attachments).then(
+        () => true,
+        (error: unknown) => {
+          toastManager.add({
+            type: "error",
+            title: gt("Couldn't send the message"),
+            description: error instanceof Error ? error.message : undefined,
+          });
+          return false;
+        },
+      ),
   );
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
+  // A nudge has to reach the turn that stalled, so it goes as a typed message would.
+  const nudgeAldoStable = useStableCallback((text: string) => sendAldoMessageStable(text, "auto"));
+  const aldoStallActions = { send: nudgeAldoStable, stop: onInterruptStable };
 
   const {
     activatePanelTerminalStable,
@@ -3096,6 +3099,26 @@ export default function ChatView(props: ChatViewProps) {
     scrollToEnd,
     setThreadError,
   });
+  // Aldo: the turn an expired sign-in cut short runs again once the user reconnects.
+  const onProviderReconnectedStable = useStableCallback((before: ServerProvider) => {
+    const run = serverLatestRun;
+    const retry = aldoRetryAfterReconnect({
+      provider: before,
+      latestRunStatus: run?.status ?? null,
+      canResume,
+      userMessage:
+        run && routeThreadDetailRef
+          ? (readThreadTurnItems(routeThreadDetailRef)
+              .map(({ item }) => item)
+              .findLast(
+                (item): item is Extract<typeof item, { type: "user_message" }> =>
+                  item.type === "user_message" && item.runId === run.runId,
+              ) ?? null)
+          : null,
+    });
+    if (retry?.kind === "resume") void onResume();
+    else if (retry) void sendAldoMessageStable(retry.text, undefined, retry.attachments);
+  });
   const { onSend } = useComposerSend({
     environmentId,
     routeThreadKey,
@@ -3609,6 +3632,9 @@ export default function ChatView(props: ChatViewProps) {
               providerStatus={visibleProviderStatus}
               providerStatusDismissalKey={providerStatusDismissalKey}
               onOpenProviderSetup={openProviderSetupStable}
+              onProviderReconnected={
+                isAldoCloud && isServerThread ? onProviderReconnectedStable : undefined
+              }
               threadId={activeThread.id}
               threadError={timelineThreadError}
               threadErrorClass={
@@ -3632,6 +3658,7 @@ export default function ChatView(props: ChatViewProps) {
                   respondingRequestIds={respondingRequestIds}
                   onRespondToApproval={onRespondToApprovalStable}
                   canOperateThread={canOperateThread}
+                  aldoStall={isAldoCloud && isServerThread ? aldoStallActions : null}
                   threadDetailRef={routeThreadDetailRef}
                   entriesInput={timelineEntriesInput}
                   draftEntries={isServerThread ? null : draftTimelineEntries}

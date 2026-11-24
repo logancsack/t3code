@@ -26,7 +26,7 @@ import { Radio, RadioGroup } from "../components/ui/radio-group";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
-import { aldoOrgJoining } from "./accountApi";
+import { aldoOrgJoining } from "./orgAdminApi";
 import { AldoIconTile } from "./AldoBrandTile";
 import { ErrorLine, OpenRow, useJoiningChange, useLoadedOrg } from "./AldoOrgParts";
 import { aldoOrgManages, type AldoOrg } from "./organization.logic";

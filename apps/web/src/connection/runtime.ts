@@ -14,7 +14,6 @@ import { isAldoCloud } from "../aldo/api";
 import { aldoThreadSnapshotLoaderLayer } from "../aldo/pendingThreads";
 import { isGuestPage } from "../guestPage";
 import { isLandingDemo } from "../landingDemo/mode";
-import { landingDemoRpcSessionLayer } from "../landingDemo/runtime";
 
 import * as Runtime from "../lib/runtime";
 import * as BackgroundActivityReporter from "../lib/backgroundActivityReporter";
@@ -52,7 +51,14 @@ const layerSnapshotLoader = Layer.mergeAll(
 );
 
 const layerConnectionServices = isLandingDemo()
-  ? Connection.makeLayer(landingDemoRpcSessionLayer)
+  ? Connection.makeLayer(
+      // The demo's scripted session loads only for a visit that asks for it.
+      Layer.unwrap(
+        Effect.promise(() =>
+          import("../landingDemo/runtime").then((module) => module.landingDemoRpcSessionLayer),
+        ),
+      ),
+    )
   : Connection.layerWithOptions({
       environmentThemes: true,
       usageLimitSources: true,

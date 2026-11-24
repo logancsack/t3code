@@ -691,6 +691,7 @@ const layerPlatformConnectionSource = Layer.effect(
           new PrimaryConnectionRegistration({
             target: new PrimaryConnectionTarget({
               environmentId: EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID),
+              // oxlint-disable-next-line t3code/no-untranslated-copy -- Aldo's build is English-only.
               label: "Aldo browser demo",
               httpBaseUrl: origin,
               wsBaseUrl: origin.replace(/^http/, "ws"),

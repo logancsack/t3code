@@ -36,6 +36,9 @@ import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts"
 import { useAtomValue } from "@effect/atom-react";
 import { isAldoCloud } from "../../aldo/api";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
+import { AldoMadeCards } from "../../aldo/AldoMadeCards";
+import type { AldoShare } from "../../aldo/made.logic";
+import { aldoLiveShots } from "../../aldo/results.logic";
 import AldoTaskResult from "../../aldo/AldoTaskResult";
 import { splitAldoNext } from "../../aldo/next.logic";
 import { splitTaskResult } from "../../aldo/taskResult.logic";
@@ -44,6 +47,8 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { vcsEnvironment } from "../../state/vcs";
 
 const NO_VCS_STATUS = Atom.make(AsyncResult.initial());
+const NO_TURN_FILES: TurnDiffSummary["files"] = [];
+const NO_TURN_SHARES: ReadonlyArray<AldoShare> = [];
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -60,6 +65,21 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const aldoNext = isAldoCloud ? splitAldoNext(fullText) : null;
   const aldoResult = isAldoCloud ? splitTaskResult(aldoNext?.text ?? fullText) : null;
   const messageText = aldoResult?.text ?? aldoNext?.text ?? fullText;
+  // Not code: what the run made shows under its answer, and the answer's shots of live pages as cards.
+  const results = ctx.workWords !== null && row.showAssistantMeta;
+  const live = results ? aldoLiveShots(messageText) : null;
+  const nextRow =
+    aldoNext && aldoNext.next.length > 0 && row.showAssistantMeta ? (
+      <AldoNextRow runId={row.message.runId} next={aldoNext.next} />
+    ) : null;
+  const changedFiles = ctx.onOpenTurnDiff ? (
+    <AssistantChangedFilesSection
+      turnSummary={row.assistantTurnDiffSummary}
+      routeThreadKey={ctx.routeThreadKey}
+      resolvedTheme={ctx.resolvedTheme}
+      onOpenTurnDiff={ctx.onOpenTurnDiff}
+    />
+  ) : null;
 
   return (
     <>
@@ -74,7 +94,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             listRef={ctx.listRef}
           >
             <ChatMarkdown
-              text={messageText}
+              text={live?.text ?? messageText}
               renderInsights
               cwd={ctx.markdownCwd}
               agentDirectories={() =>
@@ -101,17 +121,22 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           ) : null}
         </div>
-        {aldoNext && aldoNext.next.length > 0 && row.showAssistantMeta ? (
-          <AldoNextRow runId={row.message.runId} next={aldoNext.next} />
-        ) : null}
-        {ctx.onOpenTurnDiff ? (
-          <AssistantChangedFilesSection
-            turnSummary={row.assistantTurnDiffSummary}
-            routeThreadKey={ctx.routeThreadKey}
-            resolvedTheme={ctx.resolvedTheme}
-            onOpenTurnDiff={ctx.onOpenTurnDiff}
+        {results ? (
+          <AldoMadeCards
+            files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
+            shares={
+              (row.message.runId && ctx.aldoSharesByRunId.get(row.message.runId)) || NO_TURN_SHARES
+            }
+            threadRef={ctx.threadRef}
+            workspaceRoot={ctx.workspaceRoot}
+            answer={messageText}
+            shots={live?.shots}
+            onImageExpand={ctx.onImageExpand}
+            allChanges={changedFiles}
           />
         ) : null}
+        {nextRow}
+        {results ? null : changedFiles}
         {!row.showAssistantMeta && row.projectedItem?.item.status === "interrupted" ? (
           <div className="mt-1.5 flex">
             <AssistantStatusBadge status="interrupted" />

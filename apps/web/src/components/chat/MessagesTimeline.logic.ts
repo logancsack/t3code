@@ -148,6 +148,11 @@ function workEntryReadPaths(entry: WorkLogEntry, workspaceRoot: string | undefin
  * Aldo: steps in words, for threads that aren't code (aldo/workRows.logic.ts).
  * Each returns null to keep the timeline's own label.
  */
+export interface AldoFoldedWork {
+  readonly entries: ReadonlyArray<WorkLogEntry>;
+  readonly endedAt: string | null;
+}
+
 export interface WorkWords {
   /** One step, under way or done. */
   readonly step: (entry: WorkLogEntry, active: boolean) => string | null;
@@ -621,6 +626,8 @@ type MessagesTimelineRowContent =
       runId: RunId;
       label: string;
       expanded: boolean;
+      /** Aldo: the work it folds, opened as plain-word groups before the log. */
+      aldoWork?: AldoFoldedWork;
     }
   | {
       kind: "attempt-fold";
@@ -802,6 +809,7 @@ interface TurnFold {
   /** Every entry in the segment, including the cards a fold never hides. */
   entryIds: ReadonlySet<string>;
   label: string;
+  aldoWork?: AldoFoldedWork;
 }
 
 interface SupersededAttemptFold {
@@ -1103,6 +1111,7 @@ function deriveTurnFolds(input: {
   liveSubagentEntryIds: ReadonlySet<string>;
   retainedAssistantReplyEntryIds: ReadonlySet<string>;
   resolve: MessageResolver;
+  workWords?: WorkWords | null;
 }): ReadonlyMap<string, TurnFold> {
   const interruptedRunIds = new Set<RunId>();
   const promptIndexByRunId = new Map<RunId, number>();
@@ -1285,13 +1294,21 @@ function deriveTurnFolds(input: {
           );
     const { resolve } = input;
     const duration = elapsedMs !== null ? formatDuration(elapsedMs, resolve) : null;
-    const label = isLatestInterruptedTurn
-      ? duration
-        ? resolve(msg("You stopped after {duration}", { duration }))
-        : resolve(msg("You stopped this response"))
-      : duration
-        ? resolve(msg("Worked for {duration}", { duration }))
-        : resolve(msg("Worked"));
+    const worked = input.workWords?.worked;
+    const hiddenWork = worked
+      ? group.entries.flatMap((entry) =>
+          entry.kind === "work" && hiddenEntryIds.has(entry.id) ? [entry.entry] : [],
+        )
+      : [];
+    const label = worked
+      ? worked(hiddenWork, elapsedMs, isLatestInterruptedTurn)
+      : isLatestInterruptedTurn
+        ? duration
+          ? resolve(msg("You stopped after {duration}", { duration }))
+          : resolve(msg("You stopped this response"))
+        : duration
+          ? resolve(msg("Worked for {duration}", { duration }))
+          : resolve(msg("Worked"));
 
     // The top row keeps the whole turn's time, steers included. Work after a
     // steer folds under its own row below that steer, keyed apart from the run
@@ -1306,6 +1323,9 @@ function deriveTurnFolds(input: {
       hiddenEntryIds: segmentHiddenIds(firstSegment),
       entryIds: new Set(firstSegment.map((entry) => entry.id)),
       label,
+      ...(hiddenWork.length > 0
+        ? { aldoWork: { entries: hiddenWork, endedAt: lastEntryEnd } }
+        : {}),
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
@@ -1651,6 +1671,8 @@ export function deriveMessagesTimelineRows(
     worktreeSetup?: WorktreeSetupSnapshot | null;
     toolCallVisibility?: ToolCallVisibility;
     revealedMessageId?: MessageId | null;
+    /** Aldo: steps in words, in threads that aren't code. */
+    workWords?: WorkWords | null;
   },
   resolve: MessageResolver = m,
 ): MessagesTimelineRow[] {
@@ -1717,6 +1739,7 @@ export function deriveMessagesTimelineRows(
           liveSubagentEntryIds,
           retainedAssistantReplyEntryIds: retainedAssistantReplyIds,
           resolve,
+          workWords: input.workWords ?? null,
         });
   const timelineEntryById = new Map(timelineEntries.map((entry) => [entry.id, entry]));
   const collapsedEntryIds = new Set<string>();
@@ -1995,6 +2018,7 @@ export function deriveMessagesTimelineRows(
         runId: turnFold.runId,
         label: turnFold.label,
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
+        ...(turnFold.aldoWork ? { aldoWork: turnFold.aldoWork } : {}),
       });
     }
 
@@ -2202,7 +2226,8 @@ export function deriveMessagesTimelineRows(
             summary:
               singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
                 ? singleEntry.label
-                : summarizeToolGroup(visibleGroupedEntries, resolve).summary,
+                : (input.workWords?.recap(visibleGroupedEntries) ??
+                  summarizeToolGroup(visibleGroupedEntries, resolve).summary),
             summaryKind,
             ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
             ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
@@ -2834,7 +2859,11 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       const bf = b as typeof a;
       const anchors = a.deferredWorkItemIds ?? [];
       const nextAnchors = bf.deferredWorkItemIds ?? [];
+      const work = a.kind === "turn-fold" ? a.aldoWork : undefined;
+      const nextWork = bf.kind === "turn-fold" ? bf.aldoWork : undefined;
       return (
+        work?.endedAt === nextWork?.endedAt &&
+        shallow(work?.entries, nextWork?.entries) &&
         a.createdAt === bf.createdAt &&
         a.label === bf.label &&
         a.expanded === bf.expanded &&

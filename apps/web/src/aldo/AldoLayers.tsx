@@ -27,10 +27,10 @@ function escapeIsFree(event: KeyboardEvent) {
 
 export function AldoLayers({
   target,
-  thread,
+  renderThread,
 }: {
   readonly target: ThreadRouteTarget | null;
-  readonly thread: (target: ThreadRouteTarget) => ReactNode;
+  readonly renderThread: (target: ThreadRouteTarget) => ReactNode;
 }) {
   const open = target !== null;
   /** The thread that last lay over Home, kept while it slides away. */
@@ -101,7 +101,7 @@ export function AldoLayers({
           data-still={still.current && open ? "true" : undefined}
           inert={!open}
         >
-          {thread(shown)}
+          {renderThread(shown)}
         </div>
       ) : null}
     </div>

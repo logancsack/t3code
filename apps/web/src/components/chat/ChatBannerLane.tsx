@@ -21,6 +21,7 @@ export function ChatBannerLane(props: {
   providerStatus: ServerProvider | null;
   providerStatusDismissalKey: string | null;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
+  onProviderReconnected?: ((before: ServerProvider) => void) | undefined;
   threadId: ThreadId;
   threadError: string | null;
   threadErrorClass: OrchestrationV2ProviderFailureClass | null;
@@ -48,6 +49,7 @@ export function ChatBannerLane(props: {
         status={providerStatus}
         onDismiss={() => dismissProviderStatusBannerForSession(providerStatusDismissalKey)}
         onOpenProviderSetup={onOpenProviderSetup}
+        onReconnected={props.onProviderReconnected}
       />
       <ThreadErrorBanner
         error={threadError}

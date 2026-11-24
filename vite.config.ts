@@ -59,6 +59,23 @@ const RESTRICTED_IMPORT_PATHS = [
   },
 ];
 
+/** Files only the Aldo fork has; see their lint override. */
+const ALDO_PRODUCT_FILES = [
+  "apps/web/src/aldo/**",
+  "apps/web/src/landingDemo/**",
+  "apps/web/src/prismGlass.ts",
+  "apps/web/src/components/GitHubRepositoryBrowser.tsx",
+  "apps/web/src/components/RightPanelTabs.aldo.dom.test.tsx",
+  "apps/web/src/components/settings/AuthConnectorDialog.tsx",
+  "apps/web/src/components/settings/authConnectorMethods.ts",
+  "apps/web/src/components/usage/AldoWorkspaceUsage.tsx",
+  "apps/web/src/components/usage/aldoWorkspaceUsageView.ts",
+  "apps/web/src/hooks/useAfterPaint.ts",
+  "apps/web/src/hooks/useAfterPaint.test.tsx",
+  "apps/web/src/routes/_chat.settings.skills.tsx",
+  "apps/web/src/state/aldoWorkspaceUsage.ts",
+];
+
 const RESTRICTED_UI_VARIANT_PATTERNS = [
   {
     group: ["**/components/ui/*", "**/ui/*", "./ui/*"],
@@ -565,6 +582,8 @@ export default defineConfig({
                 "fill-[#0F0F0F]",
                 "fill-[#F5F5F5]",
                 "fill-[#d97757]",
+                "fill-[#0467DF]",
+                "fill-[#0b0f14]",
                 "text-[#d97757]",
               ],
             },
@@ -676,6 +695,35 @@ export default defineConfig({
         ],
         rules: {
           "t3code/no-mobile-uniwind-theme-escape-hatches": ["error", { allowUniwindTheme: true }],
+        },
+      },
+      {
+        // Aldo's cloud product: English-only, its own look and its own jsdom tests. Upstream's
+        // copy, design-system, memoization and test-harness policies stop at its files.
+        files: ALDO_PRODUCT_FILES,
+        rules: {
+          "t3code/no-untranslated-copy": "off",
+          "t3code/no-em-dash-copy": "off",
+          "t3code/no-low-value-comments": "off",
+          "t3code/no-manual-memo": "off",
+          "t3code/no-unreasoned-state-sync": "off",
+          "t3code/no-sparkles-icon": "off",
+          "t3code/no-outset-state-indicators": "off",
+          "t3code/require-centered-scroll-gutter": "off",
+          "t3code/no-raw-resize-observer": "off",
+          "shadcn/no-restyle": "off",
+          "shadcn/no-arbitrary-values": "off",
+          "shadcn/no-raw-colors": "off",
+          "t3code/no-dom-test-environment": "off",
+          "t3code/require-disposable-render": "off",
+          "t3code/no-wall-clock-in-tests": "off",
+          "t3code/no-real-time-wait-in-tests": "off",
+          // These report React Compiler bailouts; Aldo's components run unmemoized where it bails.
+          "react/exhaustive-effect-dependencies": "off",
+          "react/immutability": "off",
+          "react/purity": "off",
+          "react/refs": "off",
+          "react/set-state-in-effect": "off",
         },
       },
     ],

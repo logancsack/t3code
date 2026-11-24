@@ -45,7 +45,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { Skeleton } from "../components/ui/skeleton";
 import { SidebarInset } from "../components/ui/sidebar";
 import { cn } from "~/lib/utils";
-import { useAldoAccounts } from "./AldoAccountsPanel";
+import { useAldoAccounts } from "./useAldoAccounts";
 import { AldoAtAGlance, useAldoAssistantAvailable } from "./AldoAssistant";
 import { AldoConversationPage } from "./AldoConversationPage";
 import {

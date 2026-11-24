@@ -194,7 +194,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
               type: "info",
               title: m(msg("Preview is desktop-only")),
               description: isAldoCloud
-                ? `Open ${APP_BASE_NAME} in the desktop app to use the in-app preview.`
+                ? // oxlint-disable-next-line t3code/no-untranslated-copy -- Aldo's build is English-only.
+                  `Open ${APP_BASE_NAME} in the desktop app to use the in-app preview.`
                 : m(msg("Open T3 Code in the desktop app to use the in-app preview.")),
             }),
           );

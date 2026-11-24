@@ -88,7 +88,7 @@ export function aldoCommandPatch(
   now: string,
   asleep: boolean,
 ): AldoShellPatch | AldoCommandRefusal | "nothing" | null {
-  if (command.type === "thread.stop") return asleep ? "nothing" : null;
+  if (command.type === "thread.session.stop") return asleep ? "nothing" : null;
   // Archived threads (not in the shell) can still be deleted.
   if (command.type === "thread.delete") return { remove: true };
   if (thread === null) return null;
@@ -219,7 +219,7 @@ export function aldoCommandPatch(
       };
     }
 
-    case "thread.metadata.update": {
+    case "thread.meta.update": {
       // A rename; anything else a meta update does needs the machine.
       const fields = Object.keys(command).filter(
         (key) => !["type", "commandId", "threadId", "createdAt"].includes(key),

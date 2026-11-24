@@ -396,28 +396,30 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: AldoSurfaceProps & {
-  onAddBrowser: () => void;
-  onAddBrowserInProfile: (profileId: string) => void;
-  browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
-  onAddTerminal: () => void;
-  onAddDiff: () => void;
-  onAddFiles: () => void;
-  onAddPullRequest: () => void;
-  onAddPullRequests: () => void;
-  onAddDevice: () => void;
-  /** Absent where side chats are not offered. */
-  onAddSideChat?: (() => void) | undefined;
-  browserAvailable: boolean;
-  terminalAvailable: boolean;
-  diffAvailable: boolean;
-  filesAvailable: boolean;
-  pullRequestAvailable: boolean;
-  pullRequestsAvailable: boolean;
-  deviceAvailable: boolean;
-  sideChatAvailable: boolean;
-  sideChatDisabledReason: string | null;
-}) {
+function RightPanelEmptyState(
+  props: AldoSurfaceProps & {
+    onAddBrowser: () => void;
+    onAddBrowserInProfile: (profileId: string) => void;
+    browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+    onAddTerminal: () => void;
+    onAddDiff: () => void;
+    onAddFiles: () => void;
+    onAddPullRequest: () => void;
+    onAddPullRequests: () => void;
+    onAddDevice: () => void;
+    /** Absent where side chats are not offered. */
+    onAddSideChat?: (() => void) | undefined;
+    browserAvailable: boolean;
+    terminalAvailable: boolean;
+    diffAvailable: boolean;
+    filesAvailable: boolean;
+    pullRequestAvailable: boolean;
+    pullRequestsAvailable: boolean;
+    deviceAvailable: boolean;
+    sideChatAvailable: boolean;
+    sideChatDisabledReason: string | null;
+  },
+) {
   const gt = useGT();
   const messages = useMessages();
   const [highlight, setHighlight] = useState(-1);
@@ -425,78 +427,78 @@ function RightPanelEmptyState(props: AldoSurfaceProps & {
 
   const arranged = aldoSurfaceActions(
     [
-    {
-      label: msg("Browser"),
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.browser),
-      onClick: props.onAddBrowser,
-    },
-    {
-      label: msg("Terminal"),
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.terminal),
-      onClick: props.onAddTerminal,
-    },
-    {
-      label: msg("Files"),
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.files),
-      onClick: props.onAddFiles,
-    },
-    {
-      label: msg("Diff"),
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.diff),
-      onClick: props.onAddDiff,
-    },
-    {
-      label: msg("Pull request"),
-      icon: PullRequestGlyph.pullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.pullRequest),
-      onClick: props.onAddPullRequest,
-    },
-    {
-      label: msg("Linked items"),
-      icon: PullRequestGlyph.link,
-      shortcut: "L",
-      available: props.pullRequestsAvailable,
-      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.pullRequests),
-      onClick: props.onAddPullRequests,
-    },
-    {
-      label: msg("Device"),
-      description: msg("Watch an iOS Simulator or Android Emulator."),
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.device),
-      onClick: props.onAddDevice,
-    },
-    ...(props.onAddSideChat
-      ? [
-          {
-            label: msg("Side chat"),
-            description: msg("Ask a side question while this thread keeps working."),
-            icon: MessagesSquare,
-            shortcut: "S",
-            available: props.sideChatAvailable && !props.sideChatDisabledReason,
-            disabledReason:
-              props.sideChatDisabledReason ?? messages(SURFACE_UNAVAILABLE_HINTS.sideChat),
-            onClick: props.onAddSideChat,
-          },
-        ]
-      : []),
-  ],
+      {
+        label: msg("Browser"),
+        icon: Globe2,
+        shortcut: "B",
+        available: props.browserAvailable,
+        disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.browser),
+        onClick: props.onAddBrowser,
+      },
+      {
+        label: msg("Terminal"),
+        icon: TerminalSquare,
+        shortcut: "T",
+        available: props.terminalAvailable,
+        disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.terminal),
+        onClick: props.onAddTerminal,
+      },
+      {
+        label: msg("Files"),
+        icon: Files,
+        shortcut: "F",
+        available: props.filesAvailable,
+        disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.files),
+        onClick: props.onAddFiles,
+      },
+      {
+        label: msg("Diff"),
+        icon: FileDiff,
+        shortcut: "D",
+        available: props.diffAvailable,
+        disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.diff),
+        onClick: props.onAddDiff,
+      },
+      {
+        label: msg("Pull request"),
+        icon: PullRequestGlyph.pullRequest,
+        shortcut: "P",
+        available: props.pullRequestAvailable,
+        disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.pullRequest),
+        onClick: props.onAddPullRequest,
+      },
+      {
+        label: msg("Linked items"),
+        icon: PullRequestGlyph.link,
+        shortcut: "L",
+        available: props.pullRequestsAvailable,
+        disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.pullRequests),
+        onClick: props.onAddPullRequests,
+      },
+      {
+        label: msg("Device"),
+        description: msg("Watch an iOS Simulator or Android Emulator."),
+        icon: Smartphone,
+        shortcut: "M",
+        available: props.deviceAvailable,
+        disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.device),
+        onClick: props.onAddDevice,
+      },
+      ...(props.onAddSideChat
+        ? [
+            {
+              label: msg("Side chat"),
+              description: msg("Ask a side question while this thread keeps working."),
+              icon: MessagesSquare,
+              shortcut: "S",
+              available: props.sideChatAvailable && !props.sideChatDisabledReason,
+              disabledReason:
+                props.sideChatDisabledReason ?? messages(SURFACE_UNAVAILABLE_HINTS.sideChat),
+              onClick: props.onAddSideChat,
+            },
+          ]
+        : []),
+    ],
     props,
     developer,
   );
@@ -604,7 +606,9 @@ function RightPanelEmptyState(props: AldoSurfaceProps & {
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate",
-                      action.onClick === props.onAddBrowser && props.browserProfiles.length > 1 && "pr-7",
+                      action.onClick === props.onAddBrowser &&
+                        props.browserProfiles.length > 1 &&
+                        "pr-7",
                     )}
                   >
                     {messages(action.label)}
@@ -1258,76 +1262,76 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const developer = useAldoDeveloperTools();
   const arrangedAddActions = aldoSurfaceActions(
     [
-    {
-      label: msg("Browser"),
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: messages(SURFACE_DISABLED_REASONS.browser),
-      onClick: props.onAddBrowser,
-    },
-    {
-      label: msg("Terminal"),
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: messages(SURFACE_DISABLED_REASONS.terminal),
-      onClick: props.onAddTerminal,
-    },
-    {
-      label: msg("Files"),
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: messages(SURFACE_DISABLED_REASONS.files),
-      onClick: props.onAddFiles,
-    },
-    {
-      label: msg("Diff"),
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: messages(SURFACE_DISABLED_REASONS.diff),
-      onClick: props.onAddDiff,
-    },
-    {
-      label: msg("Pull request"),
-      icon: PullRequestGlyph.pullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: messages(SURFACE_DISABLED_REASONS.pullRequest),
-      onClick: props.onAddPullRequest,
-    },
-    {
-      label: msg("Linked items"),
-      icon: PullRequestGlyph.link,
-      shortcut: "L",
-      available: props.pullRequestsAvailable,
-      disabledReason: messages(SURFACE_DISABLED_REASONS.pullRequests),
-      onClick: props.onAddPullRequests,
-    },
-    {
-      label: msg("Device"),
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: messages(SURFACE_DISABLED_REASONS.device),
-      onClick: props.onAddDevice,
-    },
-    ...(props.onAddSideChat
-      ? [
-          {
-            label: msg("Side chat"),
-            icon: MessagesSquare,
-            shortcut: "S",
-            available: props.sideChatAvailable === true && !props.sideChatDisabledReason,
-            disabledReason:
-              props.sideChatDisabledReason ?? messages(SURFACE_DISABLED_REASONS.sideChat),
-            onClick: props.onAddSideChat,
-          },
-        ]
-      : []),
-  ],
+      {
+        label: msg("Browser"),
+        icon: Globe2,
+        shortcut: "B",
+        available: props.browserAvailable,
+        disabledReason: messages(SURFACE_DISABLED_REASONS.browser),
+        onClick: props.onAddBrowser,
+      },
+      {
+        label: msg("Terminal"),
+        icon: TerminalSquare,
+        shortcut: "T",
+        available: props.terminalAvailable,
+        disabledReason: messages(SURFACE_DISABLED_REASONS.terminal),
+        onClick: props.onAddTerminal,
+      },
+      {
+        label: msg("Files"),
+        icon: Files,
+        shortcut: "F",
+        available: props.filesAvailable,
+        disabledReason: messages(SURFACE_DISABLED_REASONS.files),
+        onClick: props.onAddFiles,
+      },
+      {
+        label: msg("Diff"),
+        icon: FileDiff,
+        shortcut: "D",
+        available: props.diffAvailable,
+        disabledReason: messages(SURFACE_DISABLED_REASONS.diff),
+        onClick: props.onAddDiff,
+      },
+      {
+        label: msg("Pull request"),
+        icon: PullRequestGlyph.pullRequest,
+        shortcut: "P",
+        available: props.pullRequestAvailable,
+        disabledReason: messages(SURFACE_DISABLED_REASONS.pullRequest),
+        onClick: props.onAddPullRequest,
+      },
+      {
+        label: msg("Linked items"),
+        icon: PullRequestGlyph.link,
+        shortcut: "L",
+        available: props.pullRequestsAvailable,
+        disabledReason: messages(SURFACE_DISABLED_REASONS.pullRequests),
+        onClick: props.onAddPullRequests,
+      },
+      {
+        label: msg("Device"),
+        icon: Smartphone,
+        shortcut: "M",
+        available: props.deviceAvailable,
+        disabledReason: messages(SURFACE_DISABLED_REASONS.device),
+        onClick: props.onAddDevice,
+      },
+      ...(props.onAddSideChat
+        ? [
+            {
+              label: msg("Side chat"),
+              icon: MessagesSquare,
+              shortcut: "S",
+              available: props.sideChatAvailable === true && !props.sideChatDisabledReason,
+              disabledReason:
+                props.sideChatDisabledReason ?? messages(SURFACE_DISABLED_REASONS.sideChat),
+              onClick: props.onAddSideChat,
+            },
+          ]
+        : []),
+    ],
     props,
     developer,
   );

@@ -20,6 +20,7 @@ import {
 import { CheckIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { isAldoCloud } from "../../aldo/api";
 import { unlistedModelLabel } from "../../aldo/modelNames";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -255,10 +256,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       entry,
       label: model
         ? withUnavailable(getTriggerDisplayModelName(model, entry?.driverKind), model.isUnavailable)
-        : selection.model,
+        : unlistedModelLabel(selection.model),
       fullLabel: model
         ? withUnavailable(getDisplayModelName(model), model.isUnavailable)
-        : selection.model,
+        : unlistedModelLabel(selection.model),
     };
   });
   const multipleLabel = selectedEntries
@@ -472,6 +473,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           : {})}
         className="before:hidden"
         padding="none"
+        animateContent={!isAldoCloud}
         touchBackdrop
       >
         {props.automaticOption ? (

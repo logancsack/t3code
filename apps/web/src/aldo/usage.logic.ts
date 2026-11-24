@@ -19,8 +19,8 @@ interface UsageStatus {
  */
 export type AldoUsageAnswers = "loading" | "failed" | Readonly<Record<string, unknown>>;
 
-export const ALDO_UNREPORTED_USAGE = "This thread's computer hasn't reported its usage yet.";
-export const ALDO_UNREAD_USAGE = "This thread's computer's usage couldn't be read.";
+const ALDO_UNREPORTED_USAGE = "This thread's computer hasn't reported its usage yet.";
+const ALDO_UNREAD_USAGE = "This thread's computer's usage couldn't be read.";
 
 const decodeSummary = Schema.decodeUnknownOption(UsageSummary);
 

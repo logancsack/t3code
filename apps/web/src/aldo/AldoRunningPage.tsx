@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
-import { aldoOrgAdmin } from "./accountApi";
+import { aldoOrgAdmin } from "./orgAdminApi";
 import { RunningRow, StopAllSheet, StopSheet, useOrgRead } from "./AldoOrgAdminParts";
 import { useLoadedOrg } from "./AldoOrgParts";
 import { aldoClock, aldoRunningLine, type AldoRunningThread } from "./orgAdmin.logic";

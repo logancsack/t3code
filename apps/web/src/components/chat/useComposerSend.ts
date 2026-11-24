@@ -1321,7 +1321,8 @@ export function useComposerSend(input: ComposerSendInput) {
         usesAttachmentUploads: turnUsesAttachmentUploads,
         draftTarget: composerDraftTarget,
       });
-    const turnAttachmentsPromise = aldoAgentUploads?.then(prepareAttachments) ?? prepareAttachments();
+    const turnAttachmentsPromise =
+      aldoAgentUploads?.then(prepareAttachments) ?? prepareAttachments();
     if (multipleModelSelections !== null) {
       await sendToMultipleModels({
         threadId: threadIdForSend,

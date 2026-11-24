@@ -6,8 +6,10 @@ import {
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
-  type ClientOrchestrationCommand,
+  type OrchestrationV2Command,
+  type OrchestrationV2ThreadLaunchInput,
 } from "@t3tools/contracts";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
 import type { AldoOutgoing } from "./outbox";
@@ -17,6 +19,8 @@ const host = vi.hoisted(() => ({
     Parameters<typeof setOrchestrationCommandDispatchOverride>[0]
   > | null,
   routes: true,
+  phase: "connected",
+  keep: vi.fn(async (_environmentId: string, _command: unknown) => null),
   api: vi.fn(async () => ({})),
   explicit: false,
   hold: vi.fn(async () => "held"),
@@ -51,7 +55,10 @@ vi.mock("../composerDraftStore", () => ({
 }));
 vi.mock("../connection/catalog", () => ({ environmentCatalog: {} }));
 vi.mock("../rpc/atomRegistry", () => ({
-  appAtomRegistry: { get: () => ({ connection: { phase: "connected" } }) },
+  appAtomRegistry: { get: () => ({ connection: { phase: host.phase } }) },
+}));
+vi.mock("../state/entities", () => ({
+  readThreadShell: () => ({ runtimeMode: "full-access", interactionMode: "plan" }),
 }));
 vi.mock("../state/presentation", () => ({
   environmentPresentations: { presentationAtom: () => null },
@@ -59,7 +66,7 @@ vi.mock("../state/presentation", () => ({
 vi.mock("../components/ui/toast", () => ({
   toastManager: { add: host.toast, close: host.closeToast },
 }));
-vi.mock("./threadCommands", () => ({ keepAldoCommand: async () => null }));
+vi.mock("./threadCommands", () => ({ keepAldoCommand: host.keep }));
 vi.mock("./files", () => ({ aldoFilesOf: () => null }));
 vi.mock("./outbox", () => ({
   outgoing: async () => [...host.entries.values()],
@@ -100,15 +107,50 @@ vi.mock("./threadApi", () => ({ holdAldoTurn: host.hold }));
 
 import { installAldoCommandDispatch, resumeAldoOutbox, isAldoRefusal } from "./dispatch";
 
-function command(first: boolean): ClientOrchestrationCommand {
-  const modelSelection = ModelSelection.make({
-    instanceId: ProviderInstanceId.make("codex"),
-    model: "inherited-model",
-  });
+const modelSelection = ModelSelection.make({
+  instanceId: ProviderInstanceId.make("codex"),
+  model: "inherited-model",
+});
+const ids = {
+  commandId: CommandId.make("command"),
+  threadId: ThreadId.make("thread"),
+};
+
+/** A new thread's first message, as the client launches it. */
+const launch: OrchestrationV2ThreadLaunchInput & { threadId: ThreadId } = {
+  ...ids,
+  projectId: ProjectId.make("project"),
+  title: "Research",
+  modelSelection,
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  workspaceStrategy: { type: "root" },
+  initialMessage: { messageId: MessageId.make("message"), text: "Research this", attachments: [] },
+};
+
+type MessageDispatch = Extract<OrchestrationV2Command, { type: "message.dispatch" }>;
+
+function followUp(extra: Partial<MessageDispatch> = {}): OrchestrationV2Command {
+  return {
+    type: "message.dispatch",
+    createdBy: "user",
+    creationSource: "web",
+    ...ids,
+    messageId: MessageId.make("message"),
+    text: "Research this",
+    attachments: [],
+    modelSelection,
+    deliveryIntent: "auto",
+    dispatchMode: { type: "start_immediately" },
+    ...extra,
+  };
+}
+
+/** The V1 turn start Aldo holds for either. */
+function held(first: boolean) {
   return {
     type: "thread.turn.start",
-    commandId: CommandId.make("command"),
-    threadId: ThreadId.make("thread"),
+    ...ids,
     message: {
       messageId: MessageId.make("message"),
       role: "user",
@@ -117,10 +159,11 @@ function command(first: boolean): ClientOrchestrationCommand {
     },
     modelSelection,
     runtimeMode: "full-access",
-    interactionMode: "default",
-    createdAt: "2026-10-16T00:00:00.000Z",
+    interactionMode: first ? "default" : "plan",
+    createdAt: first ? "2026-10-16T00:00:00.000Z" : expect.any(String),
     ...(first
       ? {
+          createdAt: expect.any(String),
           bootstrap: {
             createThread: {
               projectId: ProjectId.make("project"),
@@ -130,7 +173,7 @@ function command(first: boolean): ClientOrchestrationCommand {
               interactionMode: "default",
               branch: null,
               worktreePath: null,
-              createdAt: "2026-10-16T00:00:00.000Z",
+              createdAt: expect.any(String),
             },
           },
         }
@@ -138,11 +181,20 @@ function command(first: boolean): ClientOrchestrationCommand {
   };
 }
 
+/** A first message a page left on the device, V1 as Aldo holds it. */
+const saved = { ...held(true), createdAt: "2026-10-16T00:00:00.000Z" };
+
+const send = (input: { command: OrchestrationV2Command } | { launch: typeof launch }) =>
+  host.dispatch!({ environmentId: "aldo-machine", primary: true, ...input });
+
 beforeEach(async () => {
   vi.stubGlobal("window", new EventTarget());
   vi.stubGlobal("document", new EventTarget());
   host.routes = true;
   host.explicit = false;
+  host.phase = "connected";
+  host.api.mockClear();
+  host.keep.mockClear();
   host.hold.mockReset().mockResolvedValue("held");
   host.outgoing.mockClear();
   host.entries.clear();
@@ -153,16 +205,13 @@ beforeEach(async () => {
 });
 
 it.each([false, true])(
-  "routes a connected machine's first message with explicit=%s, and acknowledges it without sending the original",
+  "routes a connected machine's first message with explicit=%s as a V1 turn start, without launching it over the socket",
   async (explicit) => {
     host.explicit = explicit;
-    const first = command(true);
-    expect(
-      await host.dispatch!({ environmentId: "aldo-machine", command: first, primary: true }),
-    ).toEqual({ sequence: 0 });
+    expect(await send({ launch })).toEqual({ sequence: 0 });
     expect(host.hold).toHaveBeenCalledWith(
       "aldo-machine",
-      { ...first, aldoModelExplicit: explicit },
+      { ...held(true), aldoModelExplicit: explicit },
       null,
       true,
     );
@@ -172,37 +221,64 @@ it.each([false, true])(
 );
 
 it("keeps follow-ups on their existing model and supports a server without model routing", async () => {
-  expect(
-    await host.dispatch!({ environmentId: "aldo-machine", command: command(false), primary: true }),
-  ).toEqual({ sequence: 0 });
+  expect(await send({ command: followUp() })).toEqual({ sequence: 0 });
+  expect(host.hold).toHaveBeenLastCalledWith("aldo-machine", held(false), null, true);
   host.routes = false;
-  expect(
-    await host.dispatch!({ environmentId: "aldo-machine", command: command(true), primary: true }),
-  ).toEqual({ sequence: 0 });
-  expect(host.hold).toHaveBeenCalledTimes(2);
+  expect(await send({ launch })).toEqual({ sequence: 0 });
+  expect(host.hold).toHaveBeenLastCalledWith("aldo-machine", held(true), null, true);
 });
 
-it("routes an implementation thread's bootstrap while preserving its source plan", async () => {
-  const first = {
-    ...command(true),
-    sourceProposedPlan: { threadId: ThreadId.make("source-thread"), planId: "plan" },
-  };
-  expect(
-    await host.dispatch!({ environmentId: "aldo-machine", command: first, primary: true }),
-  ).toEqual({ sequence: 0 });
+it("holds an accepted plan's message with its source plan", async () => {
+  const sourcePlanRef = { threadId: ThreadId.make("source-thread"), planId: "plan" as never };
+  expect(await send({ command: followUp({ sourcePlanRef }) })).toEqual({ sequence: 0 });
   expect(host.hold).toHaveBeenCalledWith(
     "aldo-machine",
-    { ...first, aldoModelExplicit: false },
+    { ...held(false), interactionMode: "default", sourceProposedPlan: sourcePlanRef },
     null,
     true,
   );
 });
 
+it.each([
+  ["queued", { dispatchMode: { type: "queue_after_active" } }],
+  ["steered", { dispatchMode: { type: "steer_active", targetRunId: RunId.make("run") } }],
+  ["fresh-session", { freshContext: true }],
+] as const)(
+  "leaves a %s message to a connected machine, and holds it for one this page can't reach",
+  async (_name, extra) => {
+    expect(await send({ command: followUp(extra) })).toBeNull();
+    expect(host.hold).not.toHaveBeenCalled();
+    host.phase = "disconnected";
+    host.hold.mockRejectedValue(new Error("held it"));
+    await expect(send({ command: followUp(extra) })).rejects.toThrow("held it");
+    expect(host.hold).toHaveBeenCalledWith("aldo-machine", held(false), null, false);
+  },
+);
+
+it("offers Aldo the V1 form of a command it keeps for a sleeping machine", async () => {
+  const rename: OrchestrationV2Command = { type: "thread.metadata.update", ...ids, title: "New" };
+  expect(await send({ command: rename })).toBeNull();
+  expect(host.keep).toHaveBeenCalledWith("aldo-machine", {
+    type: "thread.meta.update",
+    ...ids,
+    title: "New",
+  });
+});
+
+it("never wakes a machine to record that its thread was opened", async () => {
+  host.phase = "disconnected";
+  expect(
+    await send({
+      command: { type: "thread.visit", ...ids, visitedAt: "2026-10-16T00:00:00.000Z" as never },
+    }),
+  ).toEqual({ sequence: 0 });
+  expect(host.api).not.toHaveBeenCalled();
+  expect(host.keep).not.toHaveBeenCalled();
+});
+
 it("surfaces a routing refusal instead of sending the inherited model directly", async () => {
   host.hold.mockRejectedValue(new Error("That model is out of room"));
-  await expect(
-    host.dispatch!({ environmentId: "aldo-machine", command: command(true), primary: true }),
-  ).rejects.toThrow("out of room");
+  await expect(send({ launch })).rejects.toThrow("out of room");
   expect(host.entries.size).toBe(0); // The live send restores its composer.
 });
 
@@ -214,7 +290,7 @@ it.each([
 ] as const)(
   "retains a resumed routed first prompt after a %s refusal (files=%s), then removes it once accepted",
   async (status, withFiles) => {
-    const first = { ...command(true), aldoModelExplicit: false };
+    const first = { ...saved, aldoModelExplicit: false };
     const files = withFiles ? new Map([["file", new Blob(["user attachment"])]]) : null;
     host.entries.set(first.commandId, {
       commandId: first.commandId,
@@ -244,9 +320,8 @@ it.each([
 );
 
 it("retains a refused legacy entry too, and continues with the other saved messages", async () => {
-  const first = command(true);
-  const second = { ...first, commandId: CommandId.make("second-command") };
-  for (const next of [first, second])
+  const second = { ...saved, commandId: CommandId.make("second-command") };
+  for (const next of [saved, second])
     host.entries.set(next.commandId, {
       commandId: next.commandId,
       environmentId: "aldo-machine",
@@ -255,20 +330,18 @@ it("retains a refused legacy entry too, and continues with the other saved messa
     });
   host.hold.mockResolvedValueOnce("refused");
   await resumeAldoOutbox();
-  expect([...host.entries.keys()]).toEqual([first.commandId]);
+  expect([...host.entries.keys()]).toEqual([saved.commandId]);
   expect(host.hold).toHaveBeenCalledTimes(2);
 });
 
 it("records the user stop before acknowledging an interrupt", async () => {
-  installAldoCommandDispatch();
   const result = await host.dispatch!({
     environmentId: EnvironmentId.make("aldo-test"),
     primary: true,
     command: {
-      type: "thread.turn.interrupt",
+      type: "thread.stop",
       commandId: CommandId.make("stop"),
       threadId: ThreadId.make("t"),
-      createdAt: new Date().toISOString(),
     },
   });
   expect(host.api).toHaveBeenCalledWith(

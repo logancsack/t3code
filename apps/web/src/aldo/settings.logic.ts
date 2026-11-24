@@ -10,6 +10,7 @@ import {
   type SettingsScopeSearch,
 } from "../components/settings/settingsScope";
 import type { SettingsPath } from "../components/settings/settingsSearch";
+import { isAldoCloud } from "./api";
 
 /** Remounts the settings page after this device's settings are reset, so its fields reread them. */
 export const AldoSettingsRestoredContext = createContext<(() => void) | undefined>(undefined);
@@ -422,4 +423,9 @@ export function aldoSettingsScopeSearch(
 ): SettingsScopeSearch {
   if (pathname !== undefined && !ALDO_PROJECT_PAGES.has(pathname.replace(/\/+$/, ""))) return {};
   return validateSettingsScopeSearch({ project: search.project });
+}
+
+/** Aldo on a phone opens Settings on its list of pages, as a phone's own settings do. */
+export function aldoSettingsOpensOnList(): boolean {
+  return isAldoCloud && window.matchMedia("(max-width: 767px)").matches;
 }

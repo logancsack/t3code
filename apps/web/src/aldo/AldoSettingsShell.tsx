@@ -19,7 +19,6 @@ import {
 import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
 import { isElectron } from "../env";
 import { cn } from "../lib/utils";
-import { isAldoCloud } from "./api";
 import { aldoSettingsPage, aldoSettingsParent } from "./settings.logic";
 
 declare module "@tanstack/react-router" {
@@ -27,11 +26,6 @@ declare module "@tanstack/react-router" {
     /** Opened from the phone's list of settings, which is the entry before it. */
     aldoFromSettingsList?: boolean;
   }
-}
-
-/** Aldo on a phone opens Settings on its list of pages, as a phone's own settings do. */
-export function aldoSettingsOpensOnList(): boolean {
-  return isAldoCloud && window.matchMedia("(max-width: 767px)").matches;
 }
 
 /**

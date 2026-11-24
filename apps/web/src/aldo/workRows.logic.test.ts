@@ -4,6 +4,7 @@ import type { WorkLogEntry } from "../session-logic";
 import {
   aldoDurationWords,
   aldoQuietWork,
+  aldoRunProgress,
   aldoStepCount,
   aldoWorkedLabel,
   aldoWorkGroups,
@@ -269,5 +270,24 @@ describe("aldoWorkGroups", () => {
     expect(aldoWorkGroups(entries, at(5))[0]!.elapsedMs).toBe(5 * 60_000);
     expect(aldoWorkGroups(entries)[0]!.elapsedMs).toBe(2 * 60_000);
     expect(aldoWorkGroups([open("https://www.fiverr.com", 0)])[0]!.elapsedMs).toBeNull();
+  });
+
+  it("reads the run under way: its latest todo list and its step in plain words", () => {
+    const entry = (work: WorkLogEntry) =>
+      ({ kind: "work", id: work.id, createdAt: work.createdAt, entry: work }) as const;
+    const todo = (text: string, status: string, runId: string) =>
+      entry({
+        ...command("true", 0),
+        runId,
+        structuredPayload: { type: "todo_list", steps: [{ text, status }] },
+      } as unknown as WorkLogEntry);
+    const step = { ...command("pip install openpyxl", 1), runId: "run-2" } as WorkLogEntry;
+    const progress = aldoRunProgress(
+      [todo("Old plan", "completed", "run-1"), todo("Build it", "running", "run-2"), entry(step)],
+      "run-2",
+    );
+    expect(progress.plan).toEqual([{ step: "Build it", status: "inProgress" }]);
+    expect(progress.words).toBe(aldoQuietWork.working([step]));
+    expect(aldoRunProgress([], "run-2")).toEqual({ plan: null, words: null });
   });
 });

@@ -4352,7 +4352,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           if (
             existing &&
             existing.persistedAttachments.length === attachments.length &&
-            existing.persistedAttachments.every((attachment, index) => attachment === attachments[index]) &&
+            existing.persistedAttachments.every(
+              (attachment, index) => attachment === attachments[index],
+            ) &&
             !existing.nonPersistedImageIds.some((id) => attachmentIdSet.has(id))
           ) {
             // Staged as they are already (opening a thread with images did this

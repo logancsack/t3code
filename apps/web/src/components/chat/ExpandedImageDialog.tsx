@@ -1,4 +1,4 @@
-import { memo, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
+import { memo, useRef, useState, type ReactNode, type KeyboardEvent, type TouchEvent } from "react";
 import { flushSync } from "react-dom";
 import { T, useGT } from "gt-react";
 import {
@@ -26,6 +26,8 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ZoomableImage, type ZoomableImageHandle } from "./ZoomableImage";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import { isAldoCloud } from "../../aldo/api";
+import { swipeStep } from "../../aldo/swipe.logic";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -127,8 +129,46 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       }
     : source;
 
+  // Aldo: an image the opener had no URL for yet (still being signed, or not in view there) is signed here.
+  const unsignedAsset =
+    isAldoCloud && item && item.type !== "video" && item.src === null
+      ? item.actionsSource?.asset
+      : undefined;
+  const signedImage = useAssetUrlState(
+    unsignedAsset?.environmentId ?? null,
+    unsignedAsset?.resource ?? null,
+  );
+  const imageSrc = item?.src ?? (signedImage._tag === "Success" ? signedImage.url : null);
+  const imageSigning = unsignedAsset !== undefined && signedImage._tag === "Loading";
+
   const navigateImage = (direction: -1 | 1) => {
     setImageOffset((current) => current + direction);
+  };
+
+  // One finger's quick sideways stroke goes to the next or previous item.
+  const strokeRef = useRef<{ x: number; y: number; at: number } | null>(null);
+  const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches.length === 1 ? event.touches[0] : undefined;
+    const onControl =
+      event.target instanceof Element &&
+      event.target.closest("video, button, input, [role=slider]");
+    strokeRef.current =
+      isAldoCloud && touch && !onControl
+        ? { x: touch.clientX, y: touch.clientY, at: event.timeStamp }
+        : null;
+  };
+  const onTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const stroke = strokeRef.current;
+    const touch = event.changedTouches[0];
+    strokeRef.current = null;
+    if (!stroke || !touch || event.touches.length > 0 || imageCount <= 1) return;
+    if (zoomableImageRef.current?.zoomed()) return;
+    const step = swipeStep({
+      dx: touch.clientX - stroke.x,
+      dy: touch.clientY - stroke.y,
+      ms: event.timeStamp - stroke.at,
+    });
+    if (step) navigateImage(step);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -188,6 +228,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         bottomStickOnMobile={false}
         className="row-start-1 h-full max-h-[92vh] w-[92vw] max-w-[92vw] items-center justify-center overflow-visible [--media-width:92vw] [--media-height:min(calc((100vh-var(--native-titlebar-height,0px))*0.86),calc(100vh-var(--native-titlebar-height,0px)-160px))] sm:[--media-width:calc(92vw-96px)]"
         onKeyDown={onKeyDown}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={() => {
+          strokeRef.current = null;
+        }}
         initialFocus={closeButtonRef}
         finalFocus={() => returnFocus.target}
         onClick={(event) => {
@@ -232,7 +277,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
+            ) : imageSigning ? (
+              <div aria-busy="true" className={EXPANDED_MEDIA_STATE_CLASS_NAME} />
+            ) : imageSrc === null || failedImageSrc === imageSrc ? (
               <ExpandedMediaFailure>
                 <p>
                   {openOriginalLink
@@ -244,11 +291,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             ) : (
               <ZoomableImage
                 ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
+                key={`${index}:${imageSrc}`}
+                src={imageSrc}
                 name={item.name}
                 mimeType={itemMimeType(item)}
-                onError={() => setFailedImageSrc(item.src)}
+                onError={() => setFailedImageSrc(imageSrc)}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">

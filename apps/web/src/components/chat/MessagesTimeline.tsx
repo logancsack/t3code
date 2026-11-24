@@ -1,5 +1,8 @@
 import { useAldoQuietWork } from "../../aldo/keptRepo";
-import { aldoQuietWork } from "../../aldo/workRows.logic";
+import { aldoQuietWork, aldoRunProgress } from "../../aldo/workRows.logic";
+import { AldoWorkGroups } from "../../aldo/AldoWorkGroups";
+import type { AldoShare } from "../../aldo/made.logic";
+import { aldoSharesByTurn } from "../../aldo/workLabels.logic";
 import { AldoThreadApproval } from "../../aldo/AldoApprovals";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { threadErrorText } from "@t3tools/client-runtime/state/threads";
@@ -766,6 +769,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
     toolCallVisibility,
     revealedMessageId,
+    workWords,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
@@ -1110,8 +1114,18 @@ const ConversationTimeline = memo(function ConversationTimeline({
       .filter(isVisiblePendingApproval)
       .map((approval) => [approval.requestId, approval]),
   );
+  // One value until a share changes, so rows don't re-render as the agent streams.
+  const aldoSharesKey = workWords
+    ? JSON.stringify(
+        aldoSharesByTurn(
+          timelineEntries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])),
+        ),
+      )
+    : "[]";
+  const aldoSharesByRunId = new Map<string, ReadonlyArray<AldoShare>>(JSON.parse(aldoSharesKey));
   const sharedState: TimelineRowSharedState = {
     workWords,
+    aldoSharesByRunId,
     pendingApprovals: pendingApprovalsByRequestId,
     respondingRequestIds,
     canOperateThread,
@@ -1195,6 +1209,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     latestRunId: latestRun?.runId ?? null,
     liveAnswerPreview:
       isWorking && toolCallVisibility === "zen" ? liveAnswerPreview(timelineEntries) : null,
+    aldoProgress:
+      workWords && isWorking ? aldoRunProgress(timelineEntries, latestRun?.runId ?? null) : null,
   };
   // Mounted in both the empty and filled timeline so a thread's first turn
   // starts from a baseline instead of a fresh, silent region.
@@ -1878,8 +1894,16 @@ function WorkHistorySkeleton() {
 
 function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
   const ctx = use(TimelineRowCtx);
-  const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
-    ctx.onToggleTurnFold(row.runId),
+  // Aldo: a quiet thread's fold opens to its groups first; their log is the fold's own rows.
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const open = row.aldoWork ? groupsOpen || row.expanded : row.expanded;
+  const { loading, error, toggle } = useDeferredWorkLoading(
+    row.aldoWork ? { ...row, expanded: open } : row,
+    () => {
+      if (!row.aldoWork) return ctx.onToggleTurnFold(row.runId);
+      if (row.expanded) ctx.onToggleTurnFold(row.runId);
+      setGroupsOpen(!open);
+    },
   );
 
   return (
@@ -1887,7 +1911,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
       <div className="relative flex items-center gap-1">
         <button
           type="button"
-          aria-expanded={row.expanded}
+          aria-expanded={open}
           data-scroll-anchor-ignore
           onClick={toggle}
           aria-busy={loading}
@@ -1897,7 +1921,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
             {row.label}
             {error ? ` · ${error}` : ""}
           </span>
-          {row.expanded ? (
+          {open ? (
             <ChevronDownIcon className="size-3.5" />
           ) : (
             <ChevronRightIcon className="size-3.5" />
@@ -1910,6 +1934,14 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         />
       </div>
       {loading ? <WorkHistorySkeleton /> : null}
+      {row.aldoWork && open && !loading ? (
+        <AldoWorkGroups
+          entries={row.aldoWork.entries}
+          endedAt={row.aldoWork.endedAt}
+          logOpen={row.expanded}
+          onToggleLog={() => ctx.onToggleTurnFold(row.runId)}
+        />
+      ) : null}
     </div>
   );
 }

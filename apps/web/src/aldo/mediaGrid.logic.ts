@@ -80,7 +80,7 @@ function authoredMarkdown(node: MediaGridNode, source: string): string | null {
  * still opens the page), or a link to a video file, as an image of it (the renderer plays a video
  * by its extension) that still copies as the link it was written as. Null for anything else.
  */
-export function aldoMediaItem(
+function aldoMediaItem(
   node: MediaGridNode,
   videoLinks: AldoVideoLinks,
   source = "",

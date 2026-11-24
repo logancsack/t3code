@@ -64,7 +64,7 @@ export function appsNote(tuning: AldoHeadsUpsTuning): string | null {
 }
 
 /** A topic as Aldo keeps it: spaces collapsed, trimmed. */
-export function topicSaid(text: string): string {
+function topicSaid(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 

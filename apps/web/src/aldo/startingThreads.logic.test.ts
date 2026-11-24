@@ -31,11 +31,11 @@ const shell = (threads: Array<{ id: string }> = []) => ({
   updatedAt: CREATED,
 });
 
+const decodeShellThread = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson);
+
 describe("aldoStartingShellThread", () => {
   it("is starting, with its message sent, so the sidebar shows it working from the send", () => {
-    const entry = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson)(
-      aldoStartingShellThread(thread),
-    );
+    const entry = decodeShellThread(aldoStartingShellThread(thread));
     expect(entry).toMatchObject({
       id: "t-new",
       projectId: "p1",

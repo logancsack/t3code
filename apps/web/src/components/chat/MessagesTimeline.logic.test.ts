@@ -37,6 +37,7 @@ import {
   type MessagesTimelineRow,
   workEntryDisplayLabel,
   workEntryReadOutput,
+  type WorkWords,
 } from "./MessagesTimeline.logic";
 import { workEntryIconName } from "./TimelineWorkEntryRow.logic";
 
@@ -1595,8 +1596,9 @@ describe("deriveMessagesTimelineRows", () => {
       createdAt: time(second),
       entry: { id, createdAt: time(second), runId, label: "Ran command", tone: "tool" },
     });
-    const rows = (expandedRunIds: ReadonlySet<RunId>) =>
+    const rows = (expandedRunIds: ReadonlySet<RunId>, workWords?: WorkWords) =>
       deriveMessagesTimelineRows({
+        ...(workWords ? { workWords } : {}),
         timelineEntries: [
           message("prompt", 0, "user", "turn_start"),
           work("work-before-steer", 4),
@@ -1635,6 +1637,19 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
     expect(collapsed[1]).toMatchObject({ label: "Worked for 30s" });
     expect(collapsed[3]).toMatchObject({ label: "Continued for 20s", createdAt: time(10) });
+
+    // Aldo's quiet threads word the fold themselves and get its hidden work for plain-word groups.
+    const quiet = rows(new Set(), {
+      step: () => "",
+      recap: () => "",
+      working: () => null,
+      worked: (entries, elapsedMs, stopped) => `${entries.length} steps/${elapsedMs}/${stopped}`,
+    })[1];
+    expect(quiet).toMatchObject({
+      label: "2 steps/30000/false",
+      aldoWork: { entries: [{ id: "work-before-steer" }, { id: "work-after-steer" }] },
+    });
+    expect(collapsed[1]).not.toHaveProperty("aldoWork");
 
     expect(rows(new Set([segmentKey])).map((row) => row.id)).toEqual([
       "prompt",

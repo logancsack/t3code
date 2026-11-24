@@ -7,6 +7,7 @@
 import type { AppRouter } from "../router";
 import { loadThreadRouteView } from "../threadRoutes";
 import { isAldoCloud } from "./api";
+import { warmDeferred } from "./deferred";
 
 type RouteId = keyof AppRouter["routesById"];
 
@@ -65,6 +66,7 @@ async function prefetch(router: AppRouter): Promise<void> {
     route("/_chat/$environmentId/$threadId"),
     route("/_chat/draft/$draftId"),
     route("/_chat/"),
+    ...warmDeferred(),
     () => import("../components/files/ProjectFilePicker"),
     () => import("../components/search/ProjectContentSearchDialog"),
     ...(isAldoCloud ? [() => import("./AldoRepositoryDialog")] : []),

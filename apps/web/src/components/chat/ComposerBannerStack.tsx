@@ -24,6 +24,8 @@ export interface ComposerBannerStackItem {
   readonly actions?: ReactNode;
   readonly dismissLabel?: string;
   readonly onDismiss?: () => void;
+  /** Aldo: a passing status, as a small centered pill instead of a card. */
+  readonly pill?: boolean;
 }
 
 const GROUPS = ["environment", "attention"] as const;
@@ -53,11 +55,32 @@ export function ComposerBannerStack({
       </div>
     ));
   }
-  return ordered.map((item) => (
-    <ComposerBanner.Attachment key={item.id} data-composer-banner-stack="true" className={FADE_IN}>
-      <NoticeCard item={item} />
-    </ComposerBanner.Attachment>
-  ));
+  return ordered.map((item) =>
+    item.pill ? (
+      <div
+        key={item.id}
+        data-composer-banner-stack="true"
+        className={`${FADE_IN} flex justify-center pb-2`}
+      >
+        <div
+          role="status"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground text-sm shadow-sm"
+        >
+          {item.icon}
+          {item.title}
+          {item.actions}
+        </div>
+      </div>
+    ) : (
+      <ComposerBanner.Attachment
+        key={item.id}
+        data-composer-banner-stack="true"
+        className={FADE_IN}
+      >
+        <NoticeCard item={item} />
+      </ComposerBanner.Attachment>
+    ),
+  );
 }
 
 const SUBPIXEL_ROUNDING = 0.001;

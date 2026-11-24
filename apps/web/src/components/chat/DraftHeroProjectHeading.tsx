@@ -8,16 +8,21 @@ const PROJECT_SLOT = "\uE000";
 export function DraftHeroProjectHeading({
   children,
   projectName,
+  getDone = false,
 }: {
   children: ReactNode;
   projectName: string;
+  /** Aldo: work that isn't software isn't built. */
+  getDone?: boolean;
 }) {
   const gt = useGT();
   // One sentence for translators; the layout places the project picker at the placeholder.
   // The flex gap stands in for the space before it; the suffix keeps its own leading space.
-  const [before = "", after = ""] = gt("What should we build in {project}?", {
-    project: PROJECT_SLOT,
-  }).split(PROJECT_SLOT);
+  const [before = "", after = ""] = (
+    getDone
+      ? gt("What should we get done in {project}?", { project: PROJECT_SLOT })
+      : gt("What should we build in {project}?", { project: PROJECT_SLOT })
+  ).split(PROJECT_SLOT);
   const buildIn = before.trim();
   const buildInSuffix = after.trimEnd();
   const containerRef = useRef<HTMLDivElement>(null);

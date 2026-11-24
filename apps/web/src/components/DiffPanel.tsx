@@ -346,6 +346,7 @@ export default function DiffPanel({
   const latestTurn = orderedTurnDiffSummaries[0];
   // Work Aldo keeps a repository for has one branch, so no branch comparison.
   const aldoKeptRepo = useAldoKeptRepo(activeThread?.environmentId);
+  const uncommittedLabel = aldoKeptRepo ? gt("Current changes") : gt("Uncommitted");
   const latestRunId = latestTurn?.runId;
   const onBranchScope = diffSelection.kind === "branch";
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the persisted diff scope lives in the panel store and defaults to the branch
@@ -456,7 +457,7 @@ export default function DiffPanel({
     selectedCommitSha !== null
       ? (selectedCommitSubject ?? gt("Commit {sha}", { sha: selectedCommitSha.slice(0, 7) }))
       : selectedGitScope === "unstaged"
-        ? gt("Uncommitted")
+        ? uncommittedLabel
         : gt("Changes");
   const selectedTurnLabel = gt("Turn {count}", { count: selectedCheckpointTurnCount ?? "?" });
   const selectedScopeLabel = toolCallSelection
@@ -906,9 +907,7 @@ export default function DiffPanel({
                 </DropdownMenuRadioItem>
               )}
               <DropdownMenuRadioItem value="unstaged" closeOnClick>
-                <span>
-                  <T>Uncommitted</T>
-                </span>
+                <span>{uncommittedLabel}</span>
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="latest" closeOnClick>
                 <span>
@@ -1457,13 +1456,15 @@ export default function DiffPanel({
                   label={
                     toolCallSelection
                       ? gt("Loading tool call diff...")
-                      : selectedTurn
-                        ? gt("Loading checkpoint diff...")
-                        : selectedGitScope === "unstaged"
-                          ? gt("Loading uncommitted changes...")
-                          : selectedGitScope === "commit"
-                            ? gt("Loading commit...")
-                            : gt("Loading changes...")
+                      : aldoKeptRepo
+                        ? gt("Loading changes...")
+                        : selectedTurn
+                          ? gt("Loading checkpoint diff...")
+                          : selectedGitScope === "unstaged"
+                            ? gt("Loading uncommitted changes...")
+                            : selectedGitScope === "commit"
+                              ? gt("Loading commit...")
+                              : gt("Loading changes...")
                   }
                 />
               ) : (

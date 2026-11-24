@@ -960,19 +960,15 @@ export function PullRequestDetailPanel({
     task: ThreadTask | null,
   ) => {
     setHandoff(kind);
-    try {
-      await openAldoPullRequestThread(
-        environmentId,
-        pr,
-        newThread,
-        task === null ? null : (target) => writeHandoffToComposer(target, task),
-        async (target) => {
-          await navigate({ to: "/$environmentId/$threadId", params: target });
-        },
-      );
-    } finally {
-      setHandoff(null);
-    }
+    await openAldoPullRequestThread(
+      environmentId,
+      pr,
+      newThread,
+      task === null ? null : (target) => writeHandoffToComposer(target, task),
+      async (target) => {
+        await navigate({ to: "/$environmentId/$threadId", params: target });
+      },
+    ).finally(() => setHandoff(null));
   };
   const canPrepareWorktree = prepareThread.isAllowed && canOperateThread;
   const canFixFindings = isAldoCloud || attachTarget !== null || canPrepareWorktree;

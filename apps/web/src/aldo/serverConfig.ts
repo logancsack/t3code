@@ -191,7 +191,7 @@ export async function aldoServerConfigTemplate(): Promise<EncodedConfig | null> 
 }
 
 /** A machine's copy of the template (aldoServerConfigTemplate). */
-export function aldoServerConfigOf(config: EncodedConfig, environmentId: string): EncodedConfig {
+function aldoServerConfigOf(config: EncodedConfig, environmentId: string): EncodedConfig {
   return { ...config, environment: { ...config.environment, environmentId } };
 }
 

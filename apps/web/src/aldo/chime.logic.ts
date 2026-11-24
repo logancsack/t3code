@@ -10,7 +10,7 @@ import { putAway } from "./decisions.logic";
 import { needsYouKind, sameTarget } from "./home.logic";
 
 /** The closest two sounds come. */
-export const CHIME_GAP_MS = 5_000;
+const CHIME_GAP_MS = 5_000;
 
 /** What the sound remembers of a conversation between reads. */
 export interface ChimeSeen {

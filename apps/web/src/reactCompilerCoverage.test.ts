@@ -16,6 +16,10 @@ const webSourceFiles = NodeFS.readdirSync(NodePath.join(repoRoot, "apps/web/src"
   .map(String)
   .filter((file) => /\.tsx?$/.test(file) && !/\.(test|browser)\.tsx?$/.test(file))
   .filter((file) => !file.endsWith(".gen.ts"))
+  // Aldo's product files run unmemoized where the compiler bails; the lint override lists them.
+  .filter(
+    (file) => !/^(aldo|landingDemo)\/|\/(AuthConnectorDialog|AldoWorkspaceUsage)\.tsx$/.test(file),
+  )
   .map((file) => `apps/web/src/${file}`);
 
 // ChatView is ~9k lines. Compiling it takes ~9s on a fast machine and can pass the

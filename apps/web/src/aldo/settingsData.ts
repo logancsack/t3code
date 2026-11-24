@@ -1,8 +1,5 @@
 import {
   aldoInstructions,
-  aldoOffboarding,
-  aldoOrgAdmin,
-  aldoOrgJoining,
   aldoSkills,
   aldoVault,
   fetchAldoAccounts,
@@ -16,6 +13,7 @@ import {
   fetchAldoPhone,
   listAldoRepositories,
 } from "./accountApi";
+import { aldoOffboarding, aldoOrgAdmin, aldoOrgJoining } from "./orgAdminApi";
 import { aldoMemory } from "./assistantApi";
 import { aldoPrebuilds } from "./workspaceApi";
 import { fetchAldoApprovalRules, fetchAldoPolicy } from "./homeApi";

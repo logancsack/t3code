@@ -18,7 +18,7 @@ export type AldoNotificationsAvailability = "available" | "add-to-home-screen" |
  * a browser with push. An iPhone or iPad has push only in a web app added to
  * the Home Screen, so a Safari tab there is told how to get it.
  */
-export function aldoNotificationsAvailability(input: {
+function aldoNotificationsAvailability(input: {
   key: string | null;
   push: boolean;
   appleMobile: boolean;

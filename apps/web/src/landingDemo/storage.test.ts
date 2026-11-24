@@ -9,7 +9,8 @@ vi.mock("./mode", async (original) => ({
   ...(await original<typeof import("./mode")>()),
   isWorkReplay: () => true,
 }));
-import { demoEnvironmentId, demoThreadId, setWorkReplayThread, workReplaySource } from "./runtime";
+import { demoEnvironmentId, demoThreadId } from "./mode";
+import { setWorkReplayThread, workReplaySource } from "./runtime";
 import { workReplayStorageLayer } from "./storage";
 
 const encodeConfig = Schema.encodeEffect(ServerConfig);

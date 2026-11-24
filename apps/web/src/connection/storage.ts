@@ -1427,7 +1427,7 @@ function storedServerConfigOf(
  * Splits stored server configs into those that show the Aldo template (none,
  * the marker, or a copy that differs only by id) and a machine's own.
  */
-export function aldoTemplateCopies(
+function aldoTemplateCopies(
   cached: ReadonlyMap<EnvironmentId, unknown>,
   stored: string,
 ): { readonly template: EnvironmentId[]; readonly own: EnvironmentId[] } {

@@ -23,9 +23,10 @@ import { isAldoCloud } from "../aldo/api";
 import {
   AldoSettingsRestoredContext,
   aldoKeepsSettingsPage,
+  aldoSettingsOpensOnList,
   aldoSettingsRedirect,
 } from "../aldo/settings.logic";
-import { AldoSettingsPhoneBar, aldoSettingsOpensOnList } from "../aldo/AldoSettingsShell";
+import { AldoSettingsPhoneBar } from "../aldo/AldoSettingsShell";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import {
@@ -221,7 +222,7 @@ export const Route = createFileRoute("/_chat/settings")({
         (aldoKeepsSettingsPage(location.pathname) ? null : "/settings/general");
       if (href) throw redirect({ href, replace: true });
     }
-    const moved = movedSettingsPath(location.pathname, location.hash);
+    const moved = await movedSettingsPath(location.pathname, location.hash);
     if (moved) throw redirect({ to: moved, search: true, hash: true, replace: true });
   },
   component: SettingsRouteLayout,

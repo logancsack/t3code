@@ -256,6 +256,8 @@ vi.mock("../uiStateStore", () => ({
   useUiStateStore: () => [],
 }));
 vi.mock("./useSettings", () => ({ getClientSettings: () => ({}) }));
+vi.mock("../aldo/api", () => ({ isAldoCloud: false }));
+vi.mock("../aldo/threads", () => ({ aldoProjectRefForNewThread: vi.fn() }));
 
 import { resolveDefaultProjectRef, useNewThreadHandler } from "./useHandleNewThread";
 

@@ -148,11 +148,14 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   environmentId,
   onDismiss,
   onOpenProviderSetup,
+  onReconnected,
   status,
 }: {
   environmentId: EnvironmentId;
   onDismiss: () => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
+  /** Aldo: the user signed the provider back in from this banner. */
+  onReconnected?: ((before: ServerProvider) => void) | undefined;
   status: ServerProvider | null;
 }) {
   const gt = useGT();
@@ -236,7 +239,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
                     triggerLabel={gt("Reconnect {service}", {
                       service: aldoReconnect.serviceName,
                     })}
-                    onConnected={() => void refresh()}
+                    onConnected={() => void refresh().then(() => onReconnected?.(status))}
                   />
                 </Suspense>
               ) : onOpenProviderSetup && hasProviderSetup(status) ? (

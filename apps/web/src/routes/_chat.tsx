@@ -51,7 +51,7 @@ function ChatRouteLayout() {
       {aldoLayersActive() && (shownTarget || onHome || modalOpen) ? (
         <AldoLayers
           target={shownTarget}
-          thread={(target) => <ThreadRoute target={target} background={modalOpen} />}
+          renderThread={(target) => <ThreadRoute target={target} background={modalOpen} />}
         />
       ) : shownTarget ? (
         <ThreadRoute target={shownTarget} background={modalOpen} />

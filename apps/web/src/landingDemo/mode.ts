@@ -1,6 +1,10 @@
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+
 export const LANDING_DEMO_ENVIRONMENT_ID = "aldo-browser-demo";
 export const LANDING_DEMO_PROJECT_ID = "aldo-demo-project";
-export const LANDING_DEMO_THREAD_ID = "aldo-demo-thread";
+const LANDING_DEMO_THREAD_ID = "aldo-demo-thread";
+export const demoEnvironmentId = EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID);
+export const demoThreadId = ThreadId.make(LANDING_DEMO_THREAD_ID);
 
 export function isLandingDemo(url?: URL): boolean {
   let resolved = url ?? null;

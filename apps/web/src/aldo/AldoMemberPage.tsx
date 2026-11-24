@@ -23,7 +23,8 @@ import {
 import { Input } from "../components/ui/input";
 import { Radio, RadioGroup } from "../components/ui/radio-group";
 import { toastManager } from "../components/ui/toast";
-import { aldoOrg, aldoOrgAdmin } from "./accountApi";
+import { aldoOrg } from "./accountApi";
+import { aldoOrgAdmin } from "./orgAdminApi";
 import { MemberSheet, opensFor, YourRoleSheet } from "./AldoMembersPage";
 import {
   refreshOrgUsage,

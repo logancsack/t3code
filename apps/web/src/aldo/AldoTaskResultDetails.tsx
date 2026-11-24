@@ -18,6 +18,7 @@ export default function AldoTaskResult(props: {
           <p className="font-medium">Checked</p>
           <ul className="space-y-1">
             {r.checked.map((line, i) => (
+              // oxlint-disable-next-line react/no-array-index-key -- Lines are fixed once reported, and may repeat.
               <li key={`${i}:${line}`}>
                 <ChatMarkdown cwd={props.cwd} threadRef={props.threadRef} text={line} />
               </li>
@@ -30,6 +31,7 @@ export default function AldoTaskResult(props: {
           <p className="font-medium">Not checked</p>
           <ul className="space-y-1">
             {r.notChecked.map((line, i) => (
+              // oxlint-disable-next-line react/no-array-index-key -- Lines are fixed once reported, and may repeat.
               <li key={`${i}:${line}`}>
                 <ChatMarkdown cwd={props.cwd} threadRef={props.threadRef} text={line} />
               </li>
@@ -42,6 +44,7 @@ export default function AldoTaskResult(props: {
           <p className="font-medium">Decisions</p>
           <ul className="space-y-2">
             {r.decided.map((d, i) => (
+              // oxlint-disable-next-line react/no-array-index-key -- Lines are fixed once reported, and may repeat.
               <li key={`${i}:${d.what}`}>
                 <ChatMarkdown cwd={props.cwd} threadRef={props.threadRef} text={d.what} />
                 <p>{d.why}</p>
@@ -75,6 +78,7 @@ export default function AldoTaskResult(props: {
       ) : null}
       <ul className="space-y-3">
         {r.doneWhen.map((item, i) => (
+          // oxlint-disable-next-line react/no-array-index-key -- Lines are fixed once reported, and may repeat.
           <li key={`${i}:${item.criterion}`} className="flex min-w-0 gap-2">
             {item.met ? (
               <CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-success-foreground" />

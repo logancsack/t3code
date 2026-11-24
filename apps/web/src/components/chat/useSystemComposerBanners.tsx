@@ -26,6 +26,8 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
+import { isAldoCloud } from "../../aldo/api";
 import { ServerUpdateAction, serverUpdateStageLabel } from "../ServerUpdateAction";
 import { useAutoBalanceUpdateBanner } from "./useAutoBalanceUpdateBanner";
 import { ComposerServerUpdateIcon } from "./ComposerServerUpdateStatus";
@@ -195,7 +197,49 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
       activeEnvironmentUnavailableState !== null &&
       unavailableConnection !== null &&
       !suppressUnavailableBanner;
-    if (showUnavailableBanner) {
+    // Aldo: a cloud connection coming back is a quiet status, and one that is gone says so plainly.
+    if (showUnavailableBanner && isAldoCloud && !awaitingApproval) {
+      const id = `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`;
+      items.push(
+        environmentReconnecting
+          ? {
+              id,
+              variant: "info",
+              group: "environment",
+              pill: true,
+              icon: <Spinner size="sm" />,
+              title:
+                unavailableConnection.phase === "connecting"
+                  ? gt("Connecting to the cloud…")
+                  : gt("Reconnecting to the cloud…"),
+              ...(disconnectAction ? { actions: disconnectAction } : {}),
+            }
+          : {
+              id,
+              variant: unavailableConnection.phase === "error" ? "error" : "warning",
+              group: "environment",
+              icon: <WifiOffIcon />,
+              title: gt("Can't reach this thread's computer"),
+              description: unavailableConnection.error ?? gt("Reconnect to keep working."),
+              actions: (
+                <>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() =>
+                      void handleReconnectActiveEnvironmentStable(
+                        activeEnvironmentUnavailableState.environmentId,
+                      )
+                    }
+                  >
+                    <T>Reconnect</T>
+                  </Button>
+                  {disconnectAction}
+                </>
+              ),
+            },
+      );
+    } else if (showUnavailableBanner) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
         variant: unavailableConnection.phase === "error" ? "error" : "warning",

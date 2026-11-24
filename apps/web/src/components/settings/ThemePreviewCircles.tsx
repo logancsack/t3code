@@ -81,6 +81,7 @@ export function getThemeCardDefinition(theme: ThemeDefinition): ThemeCardDefinit
     id: theme.id,
     // Aldo's build renames its sibling product to Aldo, which is the default
     // card's name already; its pink palette goes by its color there.
+    // oxlint-disable-next-line t3code/no-untranslated-copy -- Aldo's build is English-only.
     label: isAldoCloud && theme.id === T3_CHAT_THEME_ID ? "Rose" : theme.label,
     previews: getThemeModes(theme).map((mode) => {
       const colors = getThemeColorsForMode(theme, mode) ?? theme.colors;

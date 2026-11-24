@@ -54,11 +54,8 @@ export function createDeferredStorage<TValue>(
       try {
         resolvedStorage.setItem(name, serialized);
       } catch {
-        // Writing a composer draft that carries a large attachment can exceed
-        // the origin's storage quota. That is a recoverable outcome — the draft
-        // store reads the keys back and marks what did not survive, so the
-        // composer can warn that those attachments may be lost on navigation.
-        // Throwing here would only surface as an unhandled error from a timer.
+        // A draft with a large attachment can exceed the origin's quota. The draft store reads
+        // the keys back and marks what did not survive; throwing here only reaches a timer.
       }
     },
     { wait: debounceMs },

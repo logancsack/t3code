@@ -191,7 +191,7 @@ export function describePendingUserInputOption(
 }
 
 /** How long a question the provider gave a recommended answer waits for one. */
-export const PENDING_USER_INPUT_CARRY_ON_DELAY_MS = 10 * 60 * 1000;
+const PENDING_USER_INPUT_CARRY_ON_DELAY_MS = 10 * 60 * 1000;
 
 export interface PendingUserInputCarryOn {
   /** The recommended answer to each question, as the provider expects it. */

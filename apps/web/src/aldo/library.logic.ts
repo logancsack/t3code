@@ -89,7 +89,7 @@ const ALDO_LIBRARY_WHEN_LABEL: Record<AldoLibraryWhen | "pinned", string> = {
 };
 
 /** Today (since midnight, here), this week (the six days before), or older. */
-export function aldoLibraryWhen(at: string, now: Date): AldoLibraryWhen {
+function aldoLibraryWhen(at: string, now: Date): AldoLibraryWhen {
   const time = Date.parse(at);
   if (!Number.isFinite(time)) return "older";
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());

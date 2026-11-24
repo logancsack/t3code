@@ -1,5 +1,7 @@
 import { isAldoCloud } from "../../aldo/api";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
+import { AldoProgressLine } from "../../aldo/AldoProgressLine";
+import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogButton, WorkLogList, WorkLogRow } from "./WorkLog";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
@@ -351,33 +353,61 @@ function ExpandedWorkGroupEntries({
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup, providerStartingLabel } =
-    use(TimelineRowActivityCtx);
+  const {
+    isCompacting,
+    isPreparingWorktree,
+    backgroundWorktreeSetup,
+    providerStartingLabel,
+    aldoProgress,
+  } = use(TimelineRowActivityCtx);
+  const { routeThreadKey } = use(TimelineRowCtx);
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
-  const label =
-    isAldoCloud && providerStartingLabel && row.createdAt ? (
-      // Aldo: the thread's cloud agent is coming up; say that rather than "Working".
-      <>
-        {providerStartingLabel} (<WorkingTimer createdAt={row.createdAt} />)
-      </>
-    ) : isPreparingWorktree ? (
-      <T>Setting up worktree…</T>
-    ) : compacting ? (
-      <CompactingLabel createdAt={row.createdAt} />
-    ) : row.createdAt ? (
-      <T>
-        Working for <WorkingTimer createdAt={row.createdAt} />
-      </T>
-    ) : (
-      <T>Working...</T>
-    );
+  const starting = isAldoCloud && providerStartingLabel !== null && row.createdAt !== null;
+  // Aldo: in threads that aren't code, the line says where the turn is, and when it has stopped moving.
+  const aldoLine =
+    aldoProgress !== null &&
+    row.createdAt !== null &&
+    !starting &&
+    !isPreparingWorktree &&
+    !compacting
+      ? aldoProgress
+      : null;
+  const aldoStall = useAldoStall({
+    threadKey: routeThreadKey,
+    enabled: aldoLine !== null,
+    startedAt: row.createdAt,
+    words: aldoLine?.words ?? null,
+  });
+  const label = aldoStall ? (
+    <AldoStallLine stall={aldoStall} />
+  ) : starting && row.createdAt ? (
+    // Aldo: the thread's cloud agent is coming up; say that rather than "Working".
+    <>
+      {providerStartingLabel} (<WorkingTimer createdAt={row.createdAt} />)
+    </>
+  ) : isPreparingWorktree ? (
+    <T>Setting up worktree…</T>
+  ) : compacting ? (
+    <CompactingLabel createdAt={row.createdAt} />
+  ) : aldoLine && row.createdAt ? (
+    <AldoProgressLine plan={aldoLine.plan} words={aldoLine.words} startedAt={row.createdAt} />
+  ) : row.createdAt ? (
+    <T>
+      Working for <WorkingTimer createdAt={row.createdAt} />
+    </T>
+  ) : (
+    <T>Working...</T>
+  );
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
-          className="relative shrink-0 overflow-hidden whitespace-nowrap"
+          className={cn(
+            "relative overflow-hidden whitespace-nowrap",
+            aldoLine ? "min-w-0 shrink truncate" : "shrink-0",
+          )}
         >
           {label}
           {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}

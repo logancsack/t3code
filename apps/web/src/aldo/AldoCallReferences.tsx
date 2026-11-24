@@ -5,30 +5,21 @@ import {
   MessageSquareIcon,
 } from "lucide-react";
 import { lazy, Suspense } from "react";
-import { create } from "zustand";
 
 import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
-import type { AldoChartArtifact, AldoTableArtifact } from "./artifacts.logic";
 import { openAldoVoiceThread, useAldoAssistant } from "./assistantSession";
+import { closeAldoCallArtifact, useCallArtifact } from "./callArtifact";
 import { minimizeAldoCall } from "./callView";
 import { openAldoShare } from "./shareViewer";
 import { FOCUS } from "./surface";
 import { voiceReferenceKey, type AldoVoiceReference } from "./voiceReferences";
 
-const useCallArtifact = create<{
-  artifact: AldoChartArtifact | AldoTableArtifact | null;
-  link: Extract<AldoVoiceReference, { kind: "link" }> | null;
-}>(() => ({ artifact: null, link: null }));
 const ArtifactDetail = lazy(() =>
   import("./AldoArtifacts").then((m) => ({ default: m.AldoArtifactDetail })),
 );
 
-export function closeAldoCallArtifact(): void {
-  useCallArtifact.setState({ artifact: null, link: null });
-}
-
-export function openAldoVoiceReference(reference: AldoVoiceReference): void {
+function openAldoVoiceReference(reference: AldoVoiceReference): void {
   minimizeAldoCall();
   if (reference.kind === "thread") return openAldoVoiceThread(reference.target);
   if (reference.kind === "link") {

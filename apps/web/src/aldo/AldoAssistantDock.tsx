@@ -10,12 +10,12 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { KeyboardIcon, MicIcon, MicOffIcon, PhoneOffIcon } from "lucide-react";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { AldoVoiceMark, useAldoAssistantAvailable } from "./AldoAssistant";
-import { AldoCallArtifact, AldoCallReferences, closeAldoCallArtifact } from "./AldoCallReferences";
+import { closeAldoCallArtifact, useCallArtifact } from "./callArtifact";
 import { showAldoCall, useAldoCallView } from "./callView";
 import { openAldoSummon } from "./AldoSummon";
 import {
@@ -53,6 +53,16 @@ export function AldoAssistantDock() {
   // Simple mode's other places are on the home screen too, without Aldo's conversation.
   const elsewhere = useAldoSimple((s) => s.on && s.place !== "aldo");
   const live = phase !== "idle" && phase !== "error";
+  const referenced = useAldoAssistant((s) => s.references.length > 0);
+  // The sheet loads when a reference first opens in it and stays, so it can animate shut.
+  const artifactOpen = useCallArtifact((s) => s.artifact !== null || s.link !== null);
+  const [artifactSeen, setArtifactSeen] = useState(false);
+  if (artifactOpen && !artifactSeen) setArtifactSeen(true);
+  const artifact = artifactSeen ? (
+    <Suspense fallback={null}>
+      <AldoCallArtifact />
+    </Suspense>
+  ) : null;
 
   // Each call opens the call screen again; one that ends (or fails) ends going through decisions.
   useEffect(() => {
@@ -90,15 +100,17 @@ export function AldoAssistantDock() {
   }, [available]);
 
   if (!isAldoCloud) return null;
-  if (!live) return <AldoCallArtifact />;
+  if (!live) return artifact;
   const showBar = (pathname !== "/" || elsewhere || minimized) && (!mobile || minimized);
   return (
     <>
       <AldoCallScreen />
-      <AldoCallArtifact />
-      {!mobile ? (
+      {artifact}
+      {!mobile && referenced ? (
         <div className="fixed right-4 bottom-24 z-40 max-h-[50dvh] w-80 overflow-y-auto">
-          <AldoCallReferences />
+          <Suspense fallback={null}>
+            <AldoCallReferences />
+          </Suspense>
         </div>
       ) : null}
       {showBar ? (
@@ -173,6 +185,12 @@ export function AldoAssistantDock() {
 }
 
 // The call screen loads with the first call, not with the app.
+const AldoCallArtifact = lazy(() =>
+  import("./AldoCallReferences").then((module) => ({ default: module.AldoCallArtifact })),
+);
+const AldoCallReferences = lazy(() =>
+  import("./AldoCallReferences").then((module) => ({ default: module.AldoCallReferences })),
+);
 const LazyAldoCallScreen = lazy(() =>
   import("./AldoCallScreen").then((module) => ({ default: module.AldoCallScreen })),
 );
