@@ -989,8 +989,9 @@ const make = Effect.gen(function* () {
       pendingTurnStart: true,
       ...(input.continuation || handoff ? { fresh: true } : {}),
     });
-    if (input.modelSelection !== undefined) {
-      threadModelSelections.set(input.threadId, input.modelSelection);
+    // A fresh session may pick up a saved selection without a model on this message.
+    if (input.modelSelection !== undefined || handoff || input.continuation) {
+      threadModelSelections.set(input.threadId, desired);
     }
     const baseInput = toNonEmptyProviderInput(continuationContext + input.messageText);
     // Adapters can interpret slash input as native command arguments. Optional

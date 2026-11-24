@@ -4553,9 +4553,14 @@ describe("ProviderCommandReactor", () => {
     },
   );
 
-  it.each(["cross-provider", "same-provider"])(
-    "compacts the current session before a pending %s switch and seeds the next message",
-    async (kind) => {
+  it.each([
+    { kind: "cross-provider", explicit: true },
+    { kind: "cross-provider", explicit: false },
+    { kind: "same-provider", explicit: true },
+    { kind: "same-provider", explicit: false },
+  ])(
+    "compacts the current session before a pending $kind switch (explicit: $explicit) and seeds the next message",
+    async ({ kind, explicit }) => {
       const harness = await createHarness({ sessionModelSwitch: "unsupported" });
       const threadId = ThreadId.make("thread-1");
       const next = {
@@ -4574,7 +4579,12 @@ describe("ProviderCommandReactor", () => {
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           createdAt: `2026-01-01T00:00:0${++index}.000Z`,
         });
-      await harness.runEffect(dispatch("initial", "Keep the existing plan unapproved."));
+      await harness.runEffect(
+        dispatch("initial", "Keep the existing plan unapproved.", {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        }),
+      );
       await harness.runEffect(harness.drainTurnStarts);
       await harness.runEffect(
         harness.engine.dispatch({
@@ -4611,7 +4621,9 @@ describe("ProviderCommandReactor", () => {
       expect(harness.sendTurn).toHaveBeenCalledTimes(1);
       expect((await harness.readModel()).threads[0]?.modelSelection).toEqual(next);
 
-      await harness.runEffect(dispatch("after-compact", "Continue here", next));
+      await harness.runEffect(
+        dispatch("after-compact", "Continue here", explicit ? next : undefined),
+      );
       await harness.runEffect(harness.drainTurnStarts);
       expect(harness.startSession).toHaveBeenCalledTimes(2);
       expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
