@@ -480,9 +480,10 @@ function useSidebarThreads(input: {
     folderGroups,
     keepEmptyFolders: keepEmpty,
   } = input;
-  // Folders already separate the work, so boring mode has no Working shelf.
+  // Folders already separate the work, so boring mode has no Working shelf. Nor has Aldo,
+  // whose inbox is ordered by need and keeps working threads in it.
   const workingShelfEnabled =
-    useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+    useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null && !isAldoCloud;
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,

@@ -14,22 +14,29 @@ export interface ClockStore<A> {
 // setTimeout fires immediately for delays beyond a signed 32-bit int.
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
-function makeTickStore<A>(read: () => A, periodMs: number): ClockStore<A> {
+export interface TickStore<A> extends ClockStore<A> {
+  /** Re-reads the clock and notifies on a change, for a caller that moved `Date.now`. */
+  readonly refresh: () => void;
+}
+
+function makeTickStore<A>(read: () => A, periodMs: number): TickStore<A> {
   let value = read();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
 
   // Each tick lands on a wall-clock boundary so every subscriber updates in
   // the same frame instead of each drifting on its own phase.
+  const refresh = () => {
+    const next = read();
+    if (next === value) return;
+    value = next;
+    for (const listener of listeners) listener();
+  };
   const schedule = () => {
     timer = setTimeout(
       () => {
         timer = undefined;
-        const next = read();
-        if (next !== value) {
-          value = next;
-          for (const listener of listeners) listener();
-        }
+        refresh();
         // Listeners may unsubscribe (stopping the clock) or resubscribe (arming
         // a fresh timer) while notified; only continue a clock nobody re-armed.
         if (listeners.size > 0 && timer === undefined) schedule();
@@ -57,17 +64,18 @@ function makeTickStore<A>(read: () => A, periodMs: number): ClockStore<A> {
       if (timer === undefined) value = read();
       return value;
     },
+    refresh,
   };
 }
 
 /** Epoch ms floored to the second, advancing on each wall-clock second. */
-export const secondTick: ClockStore<number> = makeTickStore(
+export const secondTick: TickStore<number> = makeTickStore(
   () => Math.floor(Date.now() / 1000) * 1000,
   1000,
 );
 
 /** ISO timestamp truncated to the minute (`YYYY-MM-DDTHH:mm`). */
-export const minuteTick: ClockStore<string> = makeTickStore(
+export const minuteTick: TickStore<string> = makeTickStore(
   () => new Date().toISOString().slice(0, 16),
   60_000,
 );

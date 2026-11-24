@@ -1,4 +1,5 @@
 import { openAldoShare, closeAldoShare } from "../aldo/shareViewer";
+import { minuteTick, secondTick } from "@t3tools/client-runtime/clock";
 import { EventId, MessageId, TurnId } from "@t3tools/contracts";
 import type { AldoHome } from "../aldo/homeApi";
 import { useAldoAssistant, type AldoConversationEntry } from "../aldo/assistantSession";
@@ -37,6 +38,12 @@ let replayNow = wallNow();
 let clockStarted = false;
 let startedAt = new Date(replayNow);
 Date.now = () => replayNow;
+// The app's shared clocks tick on wall time, so they are told when the script moves the clock.
+function setReplayNow(ms: number) {
+  replayNow = Math.round(ms);
+  secondTick.refresh();
+  minuteTick.refresh();
+}
 const iso = (offset: number) => new Date(startedAt.getTime() + offset).toISOString();
 const target = { environmentId: demoEnvironmentId, threadId: demoThreadId };
 export function homeFor(script: WorkReplayScript, at: number): AldoHome {
@@ -108,7 +115,7 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
     clockStarted = true;
   }
   // Date.now promises integer milliseconds; Effect converts this to BigInt nanoseconds.
-  replayNow = Math.round(startedAt.getTime() + at);
+  setReplayNow(startedAt.getTime() + at);
   const finished = at >= script.timing.result;
   const inThread = at >= script.timing.thread && at < script.timing.home;
   const step = script.steps.findLastIndex((s) => at >= s.at);
@@ -306,7 +313,7 @@ function applyHomeSession(script: WorkReplayScript, at: number): void {
     else closeAldoShare();
   }
   const time = sourceTime(script, at);
-  replayNow = Math.round(startedAt.getTime() + time);
+  setReplayNow(startedAt.getTime() + time);
   document.documentElement.dataset.replayStage = viewer
     ? "viewer"
     : time >= script.session!.reduce((end, t) => Math.max(end, t.start + t.script.timing.result), 0)
