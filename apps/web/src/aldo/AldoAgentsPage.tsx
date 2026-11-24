@@ -8,7 +8,7 @@ import { BadgeCheckIcon, BotIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
 import { ProjectDefaultsSettings } from "../components/settings/ProjectDefaultsSettings";
-import { GeneralSettingsPanel } from "../components/settings/SettingsPanels";
+import { ThreadsSettingsPanel } from "../components/settings/SettingsPanels";
 import {
   SettingsPageContainer,
   SettingsRow,
@@ -97,7 +97,7 @@ export function AldoAgentsPage() {
             policy={policy}
             description="How much a thread keeps in full before its agent summarizes the oldest part, keeping the goal, decisions and open work. Longer keeps more detail, and uses more of your plan each turn."
           />
-          <GeneralSettingsPanel aldoPart="text-generation" />
+          <ThreadsSettingsPanel aldoPart="text-generation" />
           <AldoSubagentsPanel bare />
         </SettingsSection>
       </AldoSettingsFold>

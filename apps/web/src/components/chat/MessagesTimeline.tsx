@@ -1,3 +1,6 @@
+import { useAldoQuietWork } from "../../aldo/keptRepo";
+import { aldoQuietWork } from "../../aldo/workRows.logic";
+import { AldoThreadApproval } from "../../aldo/AldoApprovals";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { threadErrorText } from "@t3tools/client-runtime/state/threads";
 import { threadEnvironment } from "../../state/threads";
@@ -326,6 +329,8 @@ interface MessagesTimelineProps {
   emptyPlaceholderInset: number;
   topFadeEnabled?: boolean;
   historyControls?: MessagesTimelineHistoryControls | undefined;
+  /** Aldo: the thread's first line, above its first message once its start is loaded. */
+  leadingHeader?: ReactNode;
   findExpanded?: boolean;
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
@@ -423,8 +428,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
   emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
+  leadingHeader,
 }: MessagesTimelineProps) {
   const gt = useGT();
+  const workWords = useAldoQuietWork(activeThreadEnvironmentId) ? aldoQuietWork : null;
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -1104,6 +1111,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       .map((approval) => [approval.requestId, approval]),
   );
   const sharedState: TimelineRowSharedState = {
+    workWords,
     pendingApprovals: pendingApprovalsByRequestId,
     respondingRequestIds,
     canOperateThread,
@@ -1242,7 +1250,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const listHeader = (
     <>
       {parentThreadLink === null ? listHeaderLeadingContent : null}
-      {historyControls ? <TimelineHistoryControl {...historyControls} /> : null}
+      {historyControls ? (
+        <TimelineHistoryControl {...historyControls} />
+      ) : leadingHeader ? (
+        <div className="messages-timeline-row-frame">
+          <div className="chat-content-lane">{leadingHeader}</div>
+        </div>
+      ) : null}
       {parentThreadLink !== null ? listHeaderLeadingContent : null}
     </>
   );
@@ -1651,6 +1665,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   row.kind === "attempt-fold" ||
                   row.kind === "html-render" ||
                   row.kind === "sent-message" ||
+                  row.kind === "aldo-approval" ||
                   row.kind === "mcp-app" ||
                   row.kind === "viewed-images"
                 ? "pb-2"
@@ -1702,6 +1717,11 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "html-render" ? <HtmlRenderTimelineRow row={row} /> : null}
       {row.kind === "sent-message" ? <SentMessageTimelineRow row={row} /> : null}
+      {row.kind === "aldo-approval" ? (
+        <div className="min-w-0 px-1 py-0.5">
+          <AldoThreadApproval approval={row.approval} />
+        </div>
+      ) : null}
       {row.kind === "viewed-images" ? <ViewedImagesTimelineRow row={row} /> : null}
       {row.kind === "mcp-app" ? <McpAppTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}

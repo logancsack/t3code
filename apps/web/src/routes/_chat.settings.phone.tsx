@@ -12,7 +12,7 @@ function SettingsPhoneRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/phone")({
+export const Route = createFileRoute("/_chat/settings/phone")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

@@ -22,7 +22,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 
 import { Button } from "../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { faviconUrlForOrigin } from "../lib/favicon";
+import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import { cn } from "../lib/utils";
 import { answerAldoHandoff, openAldoHandoffTakeover } from "./AldoHandoffCard";
 import {

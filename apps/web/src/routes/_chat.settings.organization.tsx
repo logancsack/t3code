@@ -12,7 +12,7 @@ function SettingsOrganizationRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/organization")({
+export const Route = createFileRoute("/_chat/settings/organization")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

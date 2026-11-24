@@ -1,3 +1,5 @@
+import { isAldoCloud } from "../aldo/api";
+import { displayedThreadBranch } from "../aldo/directory";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
@@ -117,7 +119,7 @@ export function useCommandPaletteThreadItems(input: {
     {
       threads,
       delegatedUnderParent,
-      ...(environments.length > 1
+      ...(environments.length > 1 && !isAldoCloud
         ? {
             environmentLabelOf: (thread: (typeof threads)[number]) =>
               projectEnvironmentLocationById.get(thread.environmentId)?.label ?? null,
@@ -149,10 +151,13 @@ export function useCommandPaletteThreadItems(input: {
             project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
             projectTitle={projectTitle ?? null}
             environmentLabel={
-              projectEnvironmentLocationById.get(thread.environmentId)?.label ??
-              gt("Remote", { $context: "machine location" })
+              // Aldo: a thread's environment is its own machine, labeled with the thread's title.
+              isAldoCloud
+                ? null
+                : (projectEnvironmentLocationById.get(thread.environmentId)?.label ??
+                  gt("Remote", { $context: "machine location" }))
             }
-            branch={thread.branch}
+            branch={displayedThreadBranch(thread.environmentId, thread.branch)}
             worktreePath={thread.worktreePath}
             isCurrent={
               thread.id === activeThread?.id && thread.environmentId === activeThread.environmentId

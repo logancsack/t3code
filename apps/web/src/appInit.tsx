@@ -5,7 +5,11 @@ import {
 } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
-import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
+import {
+  createBrowserHistory,
+  createHashHistory,
+  type RouterHistory,
+} from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
@@ -66,6 +70,8 @@ import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommand
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
 import { environmentThreadShells, threadEnvironment } from "./state/threads";
 import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "./threadRoutes";
+import { isAldoCloud } from "./aldo/api";
+import { aldoAttentionCount, subscribeAldoAttentionCount } from "./aldo/attentionBadge";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
 function startClientAppearance(): void {
@@ -182,8 +188,11 @@ function startDocumentTitle(router: AppRouter): void {
       }),
       desktop: isElectron,
     });
+    // Aldo: "(2) Aldo" while two things wait on the user.
+    const waiting = aldoAttentionCount();
+    const shown = waiting > 0 ? `(${waiting}) ${title}` : title;
     // Projects change whenever any project does; most changes leave the title alone.
-    if (document.title !== title) document.title = title;
+    if (document.title !== shown) document.title = shown;
   };
   // The open thread's own shell, since the shell lists skip threads hidden by a tag filter.
   let unsubscribeOpenThread = () => {};
@@ -217,6 +226,7 @@ function startDocumentTitle(router: AppRouter): void {
   appAtomRegistry.subscribe(environmentProjects.projectsAtom, write);
   subscribeClientSettings(write);
   subscribeI18n(write);
+  subscribeAldoAttentionCount(write);
   router.subscribe("onResolved", updateOpenThread);
   useComposerDraftStore.subscribe(updateOpenThread);
 }
@@ -254,12 +264,14 @@ function startThreadOverlayRetention(router: AppRouter): void {
  * Starts every app-lifetime service once, before the first render, and returns the router.
  * They run for the life of the page, so their disposers are dropped here.
  */
-export function startAppServices(): AppRouter {
+export function startAppServices(
+  // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
+  history: RouterHistory = isElectron ? createHashHistory() : createBrowserHistory(),
+): AppRouter {
   // Ahead of the history: the provider auth code must leave the address before anything reads it.
   startProviderAuthDelivery();
 
-  // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-  const router = getRouter(isElectron ? createHashHistory() : createBrowserHistory());
+  const router = getRouter(history);
 
   if (isElectron) {
     syncDocumentElectronPlatformClasses(navigator.platform);
@@ -309,7 +321,8 @@ export function startAppServices(): AppRouter {
   startHostFreezeToasts();
   startLegacyThreadMigrationToast();
   startPermissionUpdateNotices(router);
-  startThreadNotifications(appAtomRegistry, router);
+  // Aldo alerts for every thread itself; T3's would double them and fight its favicon badge.
+  if (!isAldoCloud) startThreadNotifications(appAtomRegistry, router);
   startGuideRunNotifications(appAtomRegistry, router);
   if (isElectron) startDesktopUpdateLaunchNotice();
 

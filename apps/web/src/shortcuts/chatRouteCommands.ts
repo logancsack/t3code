@@ -2,6 +2,10 @@ import { AuthPreviewOperateScope, type EnvironmentId } from "@t3tools/contracts"
 import type { AnyRouter } from "@tanstack/react-router";
 import { msg } from "gt-react";
 
+import { isAldoCloud } from "~/aldo/api";
+import { aldoSupportsGeneralThreads } from "~/aldo/directory";
+import { aldoNewThreadPlace, startAldoThread } from "~/aldo/newThread";
+import { APP_BASE_NAME } from "~/branding";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { m } from "~/i18n/messages";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
@@ -139,6 +143,12 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     {
       "chat.newLocal": startNewLocal,
       "chat.newWithoutProject": (event) => {
+        // Aldo: a General draft, on a computer of its own (none on an older Aldo).
+        if (isAldoCloud && aldoSupportsGeneralThreads()) {
+          claim(event);
+          void startAldoThread(handleNewThread, []);
+          return;
+        }
         const { activeThread, activeDraftThread } = readThreadContext();
         const environmentId = scratch.scratchEnvironmentId(
           activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null,
@@ -148,6 +158,16 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         void scratch.startScratchThread(environmentId);
       },
       "chat.new": (event) => {
+        // Aldo: a draft at once where the user is, as the sidebar's New does.
+        if (isAldoCloud && aldoSupportsGeneralThreads()) {
+          claim(event);
+          const { activeThread, activeDraftThread } = readThreadContext();
+          void startAldoThread(
+            handleNewThread,
+            aldoNewThreadPlace(activeThread?.environmentId ?? activeDraftThread?.environmentId),
+          );
+          return;
+        }
         const groups = readProjectGroups();
         if (
           !shouldCreateNewThreadInCurrentProject(
@@ -173,7 +193,9 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
             stackedThreadToast({
               type: "info",
               title: m(msg("Preview is desktop-only")),
-              description: m(msg("Open T3 Code in the desktop app to use the in-app preview.")),
+              description: isAldoCloud
+                ? `Open ${APP_BASE_NAME} in the desktop app to use the in-app preview.`
+                : m(msg("Open T3 Code in the desktop app to use the in-app preview.")),
             }),
           );
           return;

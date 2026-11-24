@@ -1,4 +1,8 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { isAldoCloud } from "../aldo/api";
+import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryPicker";
+import { useAldoDeveloperTools } from "../aldo/developerTools";
+import { useAldoStartWithoutProject } from "../aldo/newThread";
 import { decodeMsg, msg, T, useGT, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
@@ -88,6 +92,8 @@ import { openThreadFind } from "./chat/threadFindStore";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
 import { previewBridge } from "./preview/previewBridge";
 import {
+  lazy,
+  Suspense,
   useDeferredValue,
   useEffect,
   useId,
@@ -265,12 +271,10 @@ import {
 } from "./CommandPaletteResults";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Checkbox } from "./ui/checkbox";
-import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
 import { canShareWithGuestAtom } from "./chat/guestShareAvailability";
 import { openGuestShareDialog } from "./chat/guestShareDialogState";
 import { openUseInAnotherApp } from "./mcp/UseInAnotherAppDialog";
-import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
@@ -292,6 +296,15 @@ import { readIssueListPreferences } from "~/components/issue/issueListPreference
 import { IssueGlyph } from "~/components/issue/issuePresentation";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@t3tools/shared/paletteSearch";
+
+const ProjectFilePicker = lazy(() =>
+  import("./files/ProjectFilePicker").then((module) => ({ default: module.ProjectFilePicker })),
+);
+const ProjectContentSearchDialog = lazy(() =>
+  import("./search/ProjectContentSearchDialog").then((module) => ({
+    default: module.ProjectContentSearchDialog,
+  })),
+);
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const ADD_PROJECT_ENTRY_GROUP = "add-project";
@@ -406,9 +419,13 @@ function CommandPaletteDialog(props: {
       }}
     >
       {props.mode === "files" ? (
-        <ProjectFilePicker setOpen={props.setOpen} />
+        <Suspense fallback={null}>
+          <ProjectFilePicker setOpen={props.setOpen} />
+        </Suspense>
       ) : props.mode === "content" ? (
-        <ProjectContentSearchDialog onOpenChange={props.setOpen} />
+        <Suspense fallback={null}>
+          <ProjectContentSearchDialog onOpenChange={props.setOpen} />
+        </Suspense>
       ) : (
         <OpenCommandPaletteDialog
           key={props.session}
@@ -479,6 +496,8 @@ function OpenCommandPaletteDialog(props: {
     label: "project unarchive",
   });
   const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
+  const aldoStartWithoutProject = useAldoStartWithoutProject();
+  const aldoDeveloperTools = useAldoDeveloperTools();
   const startTriage = useStartTriage();
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
@@ -734,6 +753,12 @@ function OpenCommandPaletteDialog(props: {
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
   const scratchTargetEnvironmentId = scratchEnvironmentId(currentProjectEnvironmentId);
+  // Aldo: a General thread instead, on a computer of its own (none on an older Aldo).
+  const startWithoutProject =
+    aldoStartWithoutProject ??
+    (scratchTargetEnvironmentId === null
+      ? null
+      : () => startScratchThread(scratchTargetEnvironmentId));
   const supportsTriage = (environmentId: EnvironmentId | null) =>
     environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
       ?.environment.capabilities.triage === true;
@@ -919,7 +944,7 @@ function OpenCommandPaletteDialog(props: {
           );
         },
       });
-      if (scratchTargetEnvironmentId === null) return projectItems;
+      if (startWithoutProject === null) return projectItems;
 
       const noProjectIndex = newThreadNoProjectIndex(
         projectPickerEntries.map(({ group, targetProject, isPreferred }) => ({
@@ -940,7 +965,7 @@ function OpenCommandPaletteDialog(props: {
           title: gt("No project"),
           icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
           shortcutCommand: "chat.newWithoutProject" as const,
-          run: () => startScratchThread(scratchTargetEnvironmentId),
+          run: startWithoutProject,
         },
         ...projectItems.slice(noProjectIndex),
       ];
@@ -1274,6 +1299,12 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = () => {
+    if (isAldoCloud) {
+      // Under Aldo a project is a GitHub repository; picking one starts a sandbox.
+      setOpen(false);
+      openAldoRepositoryPicker();
+      return;
+    }
     switch (addProjectEntry.kind) {
       case "connect-environment":
         openConnectionSettings();
@@ -1331,6 +1362,12 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const openNewProjectFlow = () => {
+    if (isAldoCloud) {
+      // Under Aldo a new project is a repository or an Aldo project, which its dialog makes.
+      setOpen(false);
+      openAldoRepositoryPicker("new");
+      return;
+    }
     const firstOption = newProjectEnvironmentOptions[0];
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
@@ -1381,7 +1418,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (scratchTargetEnvironmentId !== null) {
+  if (startWithoutProject !== null) {
     actionItems.push({
       kind: "action",
       value: "action:new-thread-without-project",
@@ -1389,7 +1426,7 @@ function OpenCommandPaletteDialog(props: {
       title: gt("New thread without a project"),
       icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "chat.newWithoutProject",
-      run: () => startScratchThread(scratchTargetEnvironmentId),
+      run: startWithoutProject,
     });
   }
 
@@ -1611,7 +1648,7 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  if (newProjectEnvironmentOptions.length > 0) {
+  if (isAldoCloud || newProjectEnvironmentOptions.length > 0) {
     actionItems.push({
       kind: "action",
       value: "action:new-project",
@@ -1676,7 +1713,7 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push(themeEditorItem);
 
-  if (environments.some((environment) => environment.serverConfig !== null)) {
+  if (aldoDeveloperTools && environments.some((environment) => environment.serverConfig !== null)) {
     actionItems.push({
       kind: "action",
       value: "action:pull-requests",

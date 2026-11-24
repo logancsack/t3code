@@ -6,6 +6,7 @@ import {
   type PointerEventHandler,
   type ReactNode,
 } from "react";
+import { isAldoCloud } from "../../aldo/api";
 import { msg, useGT, useMessages } from "gt-react";
 import {
   CheckIcon,
@@ -398,7 +399,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             ? gt("Steer message")
             : gt("Submit message");
   const submitStatus = isEnvironmentUnavailable
-    ? gt("Environment disconnected")
+    ? isAldoCloud
+      ? gt("Can't send yet")
+      : gt("Environment disconnected")
     : (sendDisabledReason ??
       (isPreparingWorktree
         ? gt("Preparing worktree")
@@ -455,6 +458,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         (!hasSendableContent && !showResume)
       }
       aria-label={submitStatus ?? submitLabel}
+      data-composer-send=""
     >
       {stageBackdropVariant ? (
         <span className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">

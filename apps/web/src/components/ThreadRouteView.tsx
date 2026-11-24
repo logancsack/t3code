@@ -1,3 +1,4 @@
+import { isAldoCloud } from "../aldo/api";
 import { useAtomValue } from "@effect/atom-react";
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
@@ -213,7 +214,11 @@ export function ThreadRouteView({
   } else if (offShellBlocked) {
     // Before the shell bootstraps, a listed visible thread can still look off-shell.
     if (bootstrapComplete && unlistedThread !== null) redirect = <Navigate to="/" replace />;
-  } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
+  } else if (
+    renderState === "ready" ||
+    // Aldo: a thread whose machine sleeps loads only once its view wakes it (aldo/preload.ts).
+    (renderState === "loading" && (serverThreadShell !== null || isAldoCloud))
+  ) {
     view = (
       <ChatView
         key={nextHandoffKey?.key}

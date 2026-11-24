@@ -47,7 +47,9 @@ import {
   FileDiff,
   Files,
   Globe2,
+  LibraryBig,
   MessagesSquare,
+  MonitorSmartphone,
   Plus,
   TerminalSquare,
   Volume2Icon,
@@ -79,6 +81,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
 import {
   Menu,
+  MenuGroup,
+  MenuGroupLabel,
   MenuItem,
   MenuPopup,
   MenuShortcut,
@@ -88,6 +92,10 @@ import {
   MenuTrigger,
 } from "~/components/ui/menu";
 import { useBrowserDefaults } from "~/browser/browserDefaults";
+import { isAldoCloud } from "~/aldo/api";
+import { useAldoDeveloperTools } from "~/aldo/developerTools";
+import { hasSharedBrowser } from "~/aldo/sharedBrowser";
+import { aldoSurfacesForWork } from "~/aldo/surfaces";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
@@ -113,7 +121,7 @@ import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 
-export interface RightPanelTabsProps {
+export interface RightPanelTabsProps extends AldoSurfaceProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
   open?: boolean;
@@ -163,6 +171,71 @@ export interface RightPanelTabsProps {
   sideChatDisabledReason?: string | null;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   children: ReactNode;
+}
+
+interface AldoSurfaceProps {
+  /** The shared workspace browser, which stands in for the preview browser where there is one. */
+  onAddWorkspaceBrowser?: (() => void) | undefined;
+  /** Aldo: what a thread that isn't code made and shared. */
+  onAddLibrary?: (() => void) | undefined;
+  /** Aldo: false for work that isn't software, which never has pull requests. */
+  offersPullRequests?: boolean | undefined;
+}
+
+/** The surfaces a shared-browser or Aldo thread offers, and which of them go under "More". */
+function aldoSurfaceActions<
+  T extends { label: string; shortcut: string; available: boolean; onClick: () => void },
+>(
+  actions: ReadonlyArray<T>,
+  props: AldoSurfaceProps &
+    Pick<
+      RightPanelTabsProps,
+      "onAddBrowser" | "onAddPullRequest" | "onAddPullRequests" | "onAddDevice"
+    >,
+  developer: boolean,
+): { readonly first: ReadonlyArray<T>; readonly more: ReadonlyArray<T> } {
+  const workspaceBrowser = hasSharedBrowser() ? props.onAddWorkspaceBrowser : undefined;
+  const worksOnCode = props.offersPullRequests !== false;
+  const offered = actions.flatMap((action): T[] => {
+    if (action.onClick === props.onAddBrowser) {
+      const browser = workspaceBrowser
+        ? ({
+            ...action,
+            label: isAldoCloud ? msg("Browser") : msg("Workspace browser"),
+            description: isAldoCloud
+              ? msg("The agent's Chrome and desktop, shared with you.")
+              : msg("The signed-in browser you and agents share."),
+            icon: MonitorSmartphone,
+            available: true,
+            onClick: workspaceBrowser,
+          } as T)
+        : action;
+      return props.onAddLibrary
+        ? [
+            browser,
+            {
+              ...action,
+              label: msg("Library"),
+              description: msg("What the agent made and shared, by day."),
+              icon: LibraryBig,
+              shortcut: "L",
+              available: true,
+              onClick: props.onAddLibrary,
+            } as T,
+          ]
+        : [browser];
+    }
+    if (
+      !worksOnCode &&
+      (action.onClick === props.onAddPullRequest || action.onClick === props.onAddPullRequests)
+    ) {
+      return [];
+    }
+    // Aldo's machines run neither iOS Simulators (macOS) nor Android Emulators (no KVM).
+    if (isAldoCloud && action.onClick === props.onAddDevice) return [];
+    return [action];
+  });
+  return worksOnCode ? { first: offered, more: [] } : aldoSurfacesForWork(offered, { developer });
 }
 
 export interface PullRequestTabStatus {
@@ -323,7 +396,7 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: {
+function RightPanelEmptyState(props: AldoSurfaceProps & {
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -348,8 +421,10 @@ function RightPanelEmptyState(props: {
   const gt = useGT();
   const messages = useMessages();
   const [highlight, setHighlight] = useState(-1);
+  const developer = useAldoDeveloperTools();
 
-  const actions = [
+  const arranged = aldoSurfaceActions(
+    [
     {
       label: msg("Browser"),
       icon: Globe2,
@@ -421,7 +496,11 @@ function RightPanelEmptyState(props: {
           },
         ]
       : []),
-  ] as const;
+  ],
+    props,
+    developer,
+  );
+  const actions = [...arranged.first, ...arranged.more];
 
   type SurfaceAction = (typeof actions)[number];
 
@@ -505,7 +584,7 @@ function RightPanelEmptyState(props: {
             action.available ? (
               <div
                 key={action.label}
-                className="group relative"
+                className={cn("group relative", action === arranged.more[0] && "mt-2")}
                 onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
                 onMouseLeave={() =>
                   setHighlight((current) =>
@@ -525,14 +604,14 @@ function RightPanelEmptyState(props: {
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate",
-                      action.label === "Browser" && props.browserProfiles.length > 1 && "pr-7",
+                      action.onClick === props.onAddBrowser && props.browserProfiles.length > 1 && "pr-7",
                     )}
                   >
                     {messages(action.label)}
                   </span>
                   <Kbd>{action.shortcut}</Kbd>
                 </button>
-                {action.label === "Browser" && props.browserProfiles.length > 1 ? (
+                {action.onClick === props.onAddBrowser && props.browserProfiles.length > 1 ? (
                   <Menu>
                     <MenuTrigger
                       render={
@@ -614,6 +693,10 @@ function surfaceTitle(
       return surface.title ?? surface.target?.name ?? resolve(msg("Device"));
     case "side-chat":
       return resolve(msg("Side chat"));
+    case "library":
+      return resolve(msg("Library"));
+    case "workspaceBrowser":
+      return isAldoCloud ? resolve(msg("Browser")) : resolve(msg("Workspace browser"));
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return resolve(msg("Browser"));
@@ -706,6 +789,10 @@ function SurfaceIcon({
       return <IssueSurfaceIcon surface={surface} environmentId={environmentId} />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
+    case "workspaceBrowser":
+      return <MonitorSmartphone className="size-3 shrink-0" />;
+    case "library":
+      return <LibraryBig className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -1168,7 +1255,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     });
   };
 
-  const addSurfaceActions = [
+  const developer = useAldoDeveloperTools();
+  const arrangedAddActions = aldoSurfaceActions(
+    [
     {
       label: msg("Browser"),
       icon: Globe2,
@@ -1238,7 +1327,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           },
         ]
       : []),
-  ] as const;
+  ],
+    props,
+    developer,
+  );
+  const addSurfaceActions = [...arrangedAddActions.first, ...arrangedAddActions.more];
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
@@ -1516,9 +1609,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   sideOffset={6}
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
-                  {addSurfaceActions.map((action) => {
+                  {arrangedAddActions.first.map((action) => {
                     const Icon = action.icon;
-                    if (action.label === "Browser" && action.available) {
+                    if (action.onClick === props.onAddBrowser && action.available) {
                       return (
                         <MenuSub key={action.label}>
                           <MenuSubTrigger
@@ -1566,6 +1659,25 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       </SurfaceMenuItem>
                     );
                   })}
+                  {arrangedAddActions.more.length > 0 ? (
+                    <MenuGroup>
+                      <MenuGroupLabel>
+                        <T>More</T>
+                      </MenuGroupLabel>
+                      {arrangedAddActions.more.map((action) => (
+                        <SurfaceMenuItem
+                          key={action.label}
+                          available={action.available}
+                          disabledReason={action.disabledReason}
+                          shortcut={action.shortcut}
+                          onClick={action.onClick}
+                        >
+                          <action.icon />
+                          {messages(action.label)}
+                        </SurfaceMenuItem>
+                      ))}
+                    </MenuGroup>
+                  ) : null}
                 </MenuPopup>
               </Menu>
             ) : null}
@@ -1643,6 +1755,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
             onAddSideChat={props.onAddSideChat}
+            onAddWorkspaceBrowser={props.onAddWorkspaceBrowser}
+            onAddLibrary={props.onAddLibrary}
+            offersPullRequests={props.offersPullRequests}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}

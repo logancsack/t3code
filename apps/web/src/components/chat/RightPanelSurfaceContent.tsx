@@ -11,7 +11,7 @@ import type {
   ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { lazy, Suspense } from "react";
+import { type ComponentProps, lazy, Suspense } from "react";
 import SideChatPane from "./SideChatPane";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
@@ -36,6 +36,12 @@ const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
+const WorkspaceBrowserPanel = lazy(() =>
+  import("../WorkspaceBrowserPanel").then((module) => ({ default: module.WorkspaceBrowserPanel })),
+);
+const AldoLibraryPanel = lazy(() =>
+  import("../../aldo/AldoLibrary").then((module) => ({ default: module.AldoLibraryPanel })),
+);
 
 type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
@@ -83,6 +89,7 @@ export function RightPanelSurfaceContent(props: {
   readonly issuesSupported: boolean;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
+  readonly library: Pick<ComponentProps<typeof AldoLibraryPanel>, "checkpoints" | "workLogEntries">;
 }) {
   const { surface, threadRef, visible, onCloseSurface } = props;
   const gt = useGT();
@@ -98,6 +105,22 @@ export function RightPanelSurfaceContent(props: {
             configuredUrls={props.configuredPreviewUrls}
             visible={visible}
             onSendAnnotation={props.onSendAnnotation}
+          />
+        </Suspense>
+      );
+    case "workspaceBrowser":
+      return (
+        <Suspense fallback={null}>
+          <WorkspaceBrowserPanel environmentId={threadRef.environmentId} />
+        </Suspense>
+      );
+    case "library":
+      return (
+        <Suspense fallback={null}>
+          <AldoLibraryPanel
+            threadRef={threadRef}
+            workspaceRoot={props.files.workspaceRoot}
+            {...props.library}
           />
         </Suspense>
       );

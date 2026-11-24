@@ -15,7 +15,7 @@ function SettingsActivityRoute() {
 
 const named = (value: unknown) => (typeof value === "string" && value.trim() ? value : null);
 
-export const Route = createFileRoute("/settings/activity")({
+export const Route = createFileRoute("/_chat/settings/activity")({
   // One filter at a time: a person's, or a team's.
   validateSearch: (raw: Record<string, unknown>): { person?: string; team?: string } => {
     const person = named(raw.person);

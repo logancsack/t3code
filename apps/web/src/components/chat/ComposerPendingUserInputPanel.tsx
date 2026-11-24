@@ -6,7 +6,12 @@ import { BackgroundThreadContext } from "./backgroundThread";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { type PendingUserInput } from "../../session-logic";
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
-import { derivePendingUserInputProgress } from "../../pendingUserInput";
+import {
+  derivePendingUserInputProgress,
+  describePendingUserInputOption,
+} from "../../pendingUserInput";
+import { isAldoCloud } from "../../aldo/api";
+import { Badge } from "../ui/badge";
 import { CheckboxMark } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Kbd } from "../ui/kbd";
@@ -26,6 +31,8 @@ interface PendingUserInputPanelProps {
   onToggleOption: (questionId: string, optionValue: string) => void;
   onAdvance: () => void;
   onDismiss: (requestId: RuntimeRequestId) => void;
+  /** Aldo: a line under the options, such as when the question carries on without an answer. */
+  note?: string | null | undefined;
 }
 
 export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserInputPanel({
@@ -39,6 +46,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
   onToggleOption,
   onAdvance,
   onDismiss,
+  note,
 }: PendingUserInputPanelProps) {
   if (pendingUserInputs.length === 0) return null;
   const activePrompt = pendingUserInputs[0];
@@ -57,6 +65,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
       onToggleOption={onToggleOption}
       onAdvance={onAdvance}
       onDismiss={onDismiss}
+      note={note}
     />
   );
 });
@@ -72,7 +81,8 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   onToggleOption,
   onAdvance,
   onDismiss,
-}: {
+  note,
+}: Pick<PendingUserInputPanelProps, "note"> & {
   prompt: PendingUserInput;
   cwd: string | undefined;
   threadRef: ScopedThreadRef;
@@ -287,6 +297,9 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   (disabled || isResponding) && "opacity-50 cursor-not-allowed",
                   !disabled && !isResponding && "cursor-pointer",
                 );
+                const { label, recommended } = isAldoCloud
+                  ? describePendingUserInputOption(option)
+                  : { label: option.label, recommended: false };
                 // The h-5 slots match the label's line box, so the indicator and shortcut stay on its first line.
                 const content = (
                   <>
@@ -298,8 +311,15 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                       )}
                     </span>
                     <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-                      <span className="text-sm font-medium" dir={textDirection(option.label)}>
-                        {option.label}
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <span className="text-sm font-medium" dir={textDirection(label)}>
+                          {label}
+                        </span>
+                        {recommended ? (
+                          <Badge size="sm" variant="info">
+                            {gt("Recommended")}
+                          </Badge>
+                        ) : null}
                       </span>
                       {option.description && option.description !== option.label ? (
                         <span
@@ -344,6 +364,11 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                 );
               })}
             </div>
+            {note ? (
+              <p className="pt-1.5 text-secondary-label text-xs" data-pending-user-input-note>
+                {note}
+              </p>
+            ) : null}
           </ComposerBanner.Body>
         </ComposerBanner.Scroll>
       </CollapsiblePanel>

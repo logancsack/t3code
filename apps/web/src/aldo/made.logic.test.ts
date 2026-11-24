@@ -30,7 +30,7 @@ describe("a zip it shared", () => {
 
   it("is a Zip in the thread's library by its share's type", () => {
     const library = aldoThreadLibrary({
-      turns: [{ turnId: "turn-1", completedAt: "2026-10-20T08:01:00.000Z", files: [] }],
+      turns: [{ runId: "turn-1", completedAt: "2026-10-20T08:01:00.000Z", files: [] }],
       sharesByTurn: new Map([["turn-1", [{ path: null, title: "Renders", url: zip.url }]]]),
       workspaceRoot: "/vercel/work/general",
       shares: [zip],

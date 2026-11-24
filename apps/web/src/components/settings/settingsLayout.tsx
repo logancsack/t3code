@@ -18,6 +18,10 @@ import {
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
   usePrimarySettingsAvailable,
 } from "../../hooks/useSettings";
+import { isAldoCloud } from "../../aldo/api";
+import { AldoSettingsPageHeader } from "../../aldo/AldoSettingsShell";
+import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
+import { aldoHidesSettingsRow } from "../../aldo/settings.logic";
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
@@ -247,7 +251,7 @@ export function SettingsSection({
         >
           <div className="flex min-w-0 items-center gap-1">
             <h2 className="flex min-h-7 items-center gap-2 text-base font-semibold text-foreground">
-              {icon}
+              {isAldoCloud ? null : icon}
               {title}
             </h2>
             {titleAction}
@@ -312,6 +316,9 @@ function projectOverrides(
 
 export function SettingsRow({
   title,
+  leading,
+  badge,
+  inline = false,
   description,
   status,
   resetAction,
@@ -328,6 +335,12 @@ export function SettingsRow({
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: ReactNode;
+  /** Before the title, such as a brand's logo. */
+  leading?: ReactNode;
+  /** Beside the title, such as a plan label. */
+  badge?: ReactNode;
+  /** Keeps a small control beside the text at narrow widths too. */
+  inline?: boolean;
   description?: ReactNode;
   status?: ReactNode;
   resetAction?: ReactNode;
@@ -389,7 +402,9 @@ export function SettingsRow({
   const unavailable =
     serverScoped &&
     (!canWriteSettings ||
-      !(context ? context.connectedEnvironments.length > 0 : primarySettingsAvailable));
+      !(context ? context.connectedEnvironments.length > 0 : primarySettingsAvailable)) &&
+    // Aldo keeps the user's settings itself, so they save with no machine connected.
+    !(isAldoCloud && aldoSavesSettings(context?.aldo, settingKeys));
   const inheritedFrom =
     source === "environment" && context?.scope.environmentIds.length === 1
       ? (context.environments.find(
@@ -523,6 +538,10 @@ export function SettingsRow({
     ) : null;
   const renderedStatus = status;
 
+  if (isAldoCloud && typeof rowProps.id === "string" && aldoHidesSettingsRow(rowProps.id)) {
+    return null;
+  }
+
   return (
     <div
       {...rowProps}
@@ -535,10 +554,18 @@ export function SettingsRow({
         className,
       )}
     >
-      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-8">
+      <div
+        className={
+          inline
+            ? "flex items-center gap-3 @min-[32rem]/settings-row:gap-8"
+            : "flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-8"
+        }
+      >
+        {leading ? <div className="shrink-0 self-start pt-0.5">{leading}</div> : null}
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-h-5 items-center gap-1.5">
+          <div className="flex min-h-5 flex-wrap items-center gap-1.5">
             <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            {badge}
             {renderedInheritance ? (
               <span
                 className={cn(
@@ -566,7 +593,14 @@ export function SettingsRow({
           ) : null}
         </div>
         {renderedControl ? (
-          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40">
+          <div
+            className={cn(
+              "flex min-w-0 shrink-0 items-center gap-2",
+              inline
+                ? "justify-end"
+                : "w-full @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40",
+            )}
+          >
             {renderedControl}
           </div>
         ) : null}
@@ -617,19 +651,35 @@ export function SettingResetButton({
   );
 }
 
-export function SettingsPageContainer({
-  children,
-  className,
-  width = "readable",
-  searchTargetFallbacks,
-}: {
+const SettingsPageNestedContext = createContext(false);
+
+interface SettingsPageContainerProps {
   children: ReactNode;
   className?: string;
   width?: WorkspacePageWidth;
   searchTargetFallbacks?: Readonly<Record<string, string | undefined>>;
-}) {
+}
+
+/** A page; inside another page (Aldo folds T3's panels into its own) it is just its sections. */
+export function SettingsPageContainer(props: SettingsPageContainerProps) {
+  return useContext(SettingsPageNestedContext) ? (
+    props.children
+  ) : (
+    <SettingsPageNestedContext value>
+      <SettingsPageRoot {...props} />
+    </SettingsPageNestedContext>
+  );
+}
+
+function SettingsPageRoot({
+  children,
+  className,
+  width = "readable",
+  searchTargetFallbacks,
+}: SettingsPageContainerProps) {
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
+  const pathname = useLocation({ select: (location) => location.pathname });
   const highlightTarget = useLocation({
     select: (location) => location.state.settingsTargetHighlight !== false,
   });
@@ -655,6 +705,7 @@ export function SettingsPageContainer({
         data-settings-page-scroll
       >
         <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
+          {isAldoCloud ? <AldoSettingsPageHeader pathname={pathname} /> : null}
           <SettingsScopeSentence />
           {children}
         </WorkspacePageContainer>

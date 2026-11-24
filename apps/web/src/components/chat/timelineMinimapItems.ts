@@ -9,6 +9,8 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRequestOf } from "../../aldo/request.logic";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 
 export interface TimelineMinimapItem {
@@ -119,7 +121,11 @@ export function resolveTimelineMinimapPreview(
           item.userText === null
             ? null
             : assistantCitationsToPlainText(
-                replaceComposerContextReferences(item.userText, (reference) => reference.label),
+                replaceComposerContextReferences(
+                  // A thread Aldo started opens with its brief: the preview is the user's own request.
+                  (isAldoCloud && aldoRequestOf(item.userText)?.said) || item.userText,
+                  (reference) => reference.label,
+                ),
               ),
         ),
         assistantText: markdownMinimapPreview(item.assistantText),

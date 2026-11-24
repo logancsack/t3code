@@ -114,7 +114,7 @@ export function ZoomableImage({
         }
         return true;
       },
-      zoomed: () => zoomRef.current > 1,
+      zoomed: () => zoom > 1,
     }),
     [zoom],
   );

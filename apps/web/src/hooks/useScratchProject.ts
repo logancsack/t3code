@@ -13,6 +13,7 @@ import type { AtomRegistry } from "effect/reactivity";
 import { msg } from "gt-react";
 import { useContext } from "react";
 
+import { isAldoCloud } from "~/aldo/api";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { m } from "~/i18n/messages";
 import {
@@ -53,6 +54,8 @@ export function createScratchProjectActions(input: {
 
   // The primary (local) environment wins; `fallback` only applies when it offers no scratch root.
   const scratchEnvironmentId = (fallback: EnvironmentId | null): EnvironmentId | null => {
+    // Aldo: a thread without a project starts in General on its own machine (aldo/newThread.ts).
+    if (isAldoCloud) return null;
     const primary = input.primaryEnvironmentId();
     if (primary !== null && scratchWorkspaceRootFor(primary) !== null) return primary;
     if (fallback !== null && scratchWorkspaceRootFor(fallback) !== null) return fallback;

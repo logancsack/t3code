@@ -13,7 +13,7 @@ function SettingsMemberRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/members_/$memberId")({
+export const Route = createFileRoute("/_chat/settings/members_/$memberId")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

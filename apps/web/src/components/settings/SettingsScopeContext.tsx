@@ -5,7 +5,16 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { useMessages } from "gt-react";
 import { createContext, type ReactNode, useContext } from "react";
 
-import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
+import { useAldoMachineSettings } from "../../aldo/machineSettings";
+import { aldoSettingsSelection } from "../../aldo/machineSettings.logic";
+import { aldoSettingsScopeSearch } from "../../aldo/settings.logic";
+import {
+  useEnvironmentProviders,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
 import { getProjectFileQueryAtom, optimisticFileAtom } from "../files/projectFilesQueryState";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import {
@@ -77,10 +86,15 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
   const scope = resolveSettingsScope(search, groups, availableEnvironments, m);
   const projectFiles = useMemberProjectFiles(scope);
   const pendingWrites = useAtomValue(pendingScopedWritesAtom);
-  const selected = selectScopedSettingsEnvironments(
-    scope,
-    availableEnvironments,
-    primaryEnvironmentId,
+  const kept = useAldoMachineSettings();
+  const providersByEnvironment = useEnvironmentProviders();
+  // Aldo: the user's own values at "All environments", with or without a machine connected.
+  const selected = aldoSettingsSelection(
+    scope.kind,
+    selectScopedSettingsEnvironments(scope, availableEnvironments, primaryEnvironmentId),
+    isAldoCloud ? kept : null,
+    isAldoCloud && aldoRoutesModels(),
+    (environment) => providersByEnvironment.get(environment.environmentId),
   );
   const targets = resolveScopedSettingsTargets(
     scope,
@@ -110,7 +124,10 @@ export function SettingsScopeProvider({
   children,
   singleEnvironment = false,
   deviceOnly = false,
+  pathname,
 }: {
+  /** Aldo follows a project only on the pages that are a project's. */
+  pathname?: string;
   singleEnvironment?: boolean;
   /** The page hides the scope picker, so its client settings save for this device. */
   deviceOnly?: boolean;
@@ -118,7 +135,10 @@ export function SettingsScopeProvider({
   onChange: (next: SettingsScopeSearch) => void;
   children: ReactNode;
 }) {
-  const resolved = useResolvedSettingsScope(search, singleEnvironment);
+  const resolved = useResolvedSettingsScope(
+    isAldoCloud ? aldoSettingsScopeSearch(search, pathname) : search,
+    singleEnvironment,
+  );
   const value = { ...resolved, singleEnvironment, deviceOnly, selectScope: onChange };
   return <SettingsScopeContext value={value}>{children}</SettingsScopeContext>;
 }

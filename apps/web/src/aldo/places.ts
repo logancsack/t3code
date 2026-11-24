@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import type { ProjectFaviconProject } from "../components/ProjectFavicon";
 import { useClientSettings } from "../hooks/useSettings";
-import { selectProjectGroupingSettings } from "../logicalProject";
+import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";

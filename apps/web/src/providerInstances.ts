@@ -81,6 +81,17 @@ export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boo
   );
 }
 
+/** A configured instance cannot start a turn while its credentials need reconnecting. */
+export function isProviderInstanceSendReady(
+  entry: ProviderInstanceEntry | undefined,
+  reconnectedInstanceId?: ProviderInstanceId,
+): entry is ProviderInstanceEntry {
+  return (
+    entry !== undefined &&
+    (entry.snapshot.auth.status !== "unauthenticated" || entry.instanceId === reconnectedInstanceId)
+  );
+}
+
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
   return entry.enabled;
 }
@@ -125,15 +136,34 @@ export function deriveProviderEntriesByEnvironment(
 ): ReadonlyMap<string, ReadonlyMap<string, ProviderInstanceEntry>> {
   const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
   for (const [environmentId, providers, settings] of providersByEnvironment) {
+    const known = entriesByProviders.get(providers);
+    if (known && known.settings === settings) {
+      byEnvironment.set(environmentId, known.entries);
+      continue;
+    }
     const derived = deriveProviderInstanceEntries(providers);
-    const entries = settings ? brandProviderInstanceEntries(derived, settings) : derived;
-    byEnvironment.set(
-      environmentId,
-      new Map(entries.map((entry) => [entry.instanceId as string, entry] as const)),
+    const entries = new Map(
+      (settings ? brandProviderInstanceEntries(derived, settings) : derived).map(
+        (entry) => [entry.instanceId as string, entry] as const,
+      ),
     );
+    entriesByProviders.set(providers, { settings, entries });
+    byEnvironment.set(environmentId, entries);
   }
   return byEnvironment;
 }
+
+// An environment whose providers and settings did not change keeps its map, so
+// what is memoized on it (every sidebar row) stays put when another's config does.
+const entriesByProviders = new WeakMap<
+  ReadonlyArray<ServerProvider>,
+  {
+    readonly settings:
+      | Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">
+      | undefined;
+    readonly entries: ReadonlyMap<string, ProviderInstanceEntry>;
+  }
+>();
 
 // The snapshot includes instances enabled by any project; machine settings alone do not.
 export function brandProviderInstanceEntries(
@@ -199,7 +229,7 @@ export function providerInstanceEntriesFor(
   );
 }
 
-function sortProviderInstanceEntries(
+export function sortProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): ReadonlyArray<ProviderInstanceEntry> {
   const byKind = new Map<ProviderDriverKind, ProviderInstanceEntry[]>();

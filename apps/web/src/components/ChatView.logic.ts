@@ -15,8 +15,6 @@ import {
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Option from "effect/Option";
 import type { SetStateAction } from "react";
-import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
-import { getProviderModelCapabilities } from "../providerModels";
 import { sanitizeThreadErrorMessage, thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import type { EnvironmentThread, ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
@@ -56,6 +54,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { readComposerImageBytes } from "./chat/composerAttachmentFiles";
 import { videoMimeType } from "@t3tools/shared/video";
+import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
 import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
@@ -106,6 +105,7 @@ import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
 } from "../providerInstances";
+import { getProviderModelCapabilities } from "../providerModels";
 
 type ThreadProjection = EnvironmentThread["projection"];
 type ThreadStructureRow = ThreadStructure["visibleTurnItems"][number];
@@ -420,6 +420,20 @@ export function startNewThreadForProject(
   void handleNewThread(projectRef);
 
   return true;
+}
+
+export function shouldQuietlyRecoverManagedPrimaryEnvironment(input: {
+  readonly managed: boolean;
+  readonly activeEnvironmentId: EnvironmentId | null;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly connectionPhase: string;
+}): boolean {
+  return Boolean(
+    input.managed &&
+    input.activeEnvironmentId !== null &&
+    input.activeEnvironmentId === input.primaryEnvironmentId &&
+    ["connecting", "reconnecting", "offline"].includes(input.connectionPhase),
+  );
 }
 
 export function resolveThreadMetadataUpdateForNextTurn(input: {
@@ -1219,7 +1233,10 @@ export function formatOutgoingPrompt(params: {
   models: ReadonlyArray<ServerProvider["models"][number]>;
   effort: string | null;
   text: string;
+  modelMayChange?: boolean;
 }): string {
+  // A router chooses its own provider and reasoning; inherited prompt traits don't apply.
+  if (params.modelMayChange) return params.text;
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
   return applyClaudePromptEffortPrefix(params.text, promptEffort);

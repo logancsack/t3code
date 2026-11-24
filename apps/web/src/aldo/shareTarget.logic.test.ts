@@ -101,13 +101,13 @@ describe("share to Aldo", () => {
       file("IMG_0001.HEIC", ""),
       file("photo.png", "application/octet-stream"),
       file("clip.mp4", "video/mp4"),
-      file("drawing.bmp", "image/bmp"),
+      file("drawing.xcf", "image/x-xcf"),
       file("empty.txt", "text/plain", 0),
       file("empty.jpg", "image/jpeg", 0),
       file("huge.zip", "application/zip", ALDO_SHARE_LIMITS.fileBytes + 1),
     ]);
     expect(sorted.refused).toEqual([
-      { name: "drawing.bmp", why: "unsupported-image" },
+      { name: "drawing.xcf", why: "unsupported-image" },
       { name: "empty.txt", why: "empty" },
       { name: "empty.jpg", why: "empty" },
     ]);

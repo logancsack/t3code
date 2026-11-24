@@ -89,12 +89,9 @@ describe("aldoDurationWords", () => {
 });
 
 describe("aldoStepCount and aldoWorkedLabel", () => {
-  it("counts tool calls, not thoughts, notices or a step's earlier updates", () => {
-    const { toolLifecycleStatus: _status, ...opened } = open("https://www.fiverr.com", 0);
-    const started = { ...opened, sourceActivityKind: "tool.started" } as WorkLogEntry;
-    const done = { ...started, id: "done", sourceActivityKind: "tool.completed" } as WorkLogEntry;
+  it("counts tool calls, not thoughts or notices", () => {
     const notice = { ...thought(1), tone: "info", label: "Context compacted" } as WorkLogEntry;
-    const entries = [started, done, thought(1), notice, command("ls", 2)];
+    const entries = [open("https://www.fiverr.com", 0), thought(1), notice, command("ls", 2)];
     expect(aldoStepCount(entries)).toBe(2);
   });
 

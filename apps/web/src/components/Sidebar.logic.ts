@@ -285,7 +285,8 @@ type SidebarThreadDropPlan =
     }
   | {
       readonly kind: "pin";
-      readonly order: readonly string[];
+      /** Null when the pinned block is time-ordered: the drop has no placement. */
+      readonly order: readonly string[] | null;
       readonly orderKey: string | undefined;
       readonly extraAssignments: ReadonlyArray<{ readonly id: string; readonly orderKey: string }>;
     }
@@ -376,6 +377,8 @@ export function planSidebarThreadDrop(input: {
   readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly activeReorderableKeys?: ReadonlySet<string>;
   readonly activeTimeOrdered?: boolean;
+  /** The pinned block sorts itself too (Aldo), so a drop there only pins. */
+  readonly pinnedTimeOrdered?: boolean;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -465,6 +468,11 @@ export function planSidebarThreadDrop(input: {
     case "settled":
       return activeSection === "settled" ? { kind: "none" } : { kind: "settle" };
     case "pinned": {
+      if (input.pinnedTimeOrdered) {
+        return activeSection === "pinned"
+          ? { kind: "none" }
+          : { kind: "pin", order: null, orderKey: undefined, extraAssignments: [] };
+      }
       const order = target.pinnedOrder;
       if (
         activeSection === "pinned" &&

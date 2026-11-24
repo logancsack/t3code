@@ -44,6 +44,15 @@ export function useAldoAttentionCount(): number {
   return useCount((s) => s.count);
 }
 
+/** The same count outside React, for the tab's title (appInit.tsx). */
+export function aldoAttentionCount(): number {
+  return useCount.getState().count;
+}
+
+export function subscribeAldoAttentionCount(listener: () => void): () => void {
+  return useCount.subscribe(listener);
+}
+
 /** Keeps the count, the favicon and the badge in step, in the signed-in app, and plays the optional sound. */
 export function AldoAttentionSync(): null {
   const { home } = useAldoHomeRead();

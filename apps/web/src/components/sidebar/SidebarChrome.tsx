@@ -16,6 +16,9 @@ import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
 import { useIssuesSupported, usePullRequestsSupported } from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
+import { AldoMark } from "../../aldo/AldoMark";
+import { isAldoCloud } from "../../aldo/api";
+import { APP_BASE_NAME, APP_IS_ALDO } from "../../branding";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -171,7 +174,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   const gt = useGT();
   return (
     <Link
-      aria-label={gt("T3 Code home")}
+      aria-label={APP_IS_ALDO ? gt("{app} home", { app: APP_BASE_NAME }) : gt("T3 Code home")}
       className={cn(
         "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
         onBackdrop ? "text-white" : "text-foreground",
@@ -184,6 +187,16 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 }
 
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
+  if (APP_IS_ALDO) {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1">
+        <AldoMark className="h-3 w-auto shrink-0" />
+        <span className="-translate-y-px truncate text-sm font-semibold tracking-tight">
+          {APP_BASE_NAME}
+        </span>
+      </span>
+    );
+  }
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
       <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
@@ -314,6 +327,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 });
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+  // Aldo's navigation lives in its account menu.
+  if (isAldoCloud) return null;
   return (
     <SidebarFooter>
       <SidebarProviderUpdatePill />

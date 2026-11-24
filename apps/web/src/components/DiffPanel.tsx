@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useCodeViewScrollRestore } from "./diffs/useCodeViewScrollRestore";
 import { useFilesystemReadAccess } from "~/state/filesystem";
@@ -343,6 +344,16 @@ export default function DiffPanel({
         orderedTurnDiffSummaries[0]);
   const selectedCheckpointTurnCount = selectedTurn?.checkpointTurnCount;
   const latestTurn = orderedTurnDiffSummaries[0];
+  // Work Aldo keeps a repository for has one branch, so no branch comparison.
+  const aldoKeptRepo = useAldoKeptRepo(activeThread?.environmentId);
+  const latestRunId = latestTurn?.runId;
+  const onBranchScope = diffSelection.kind === "branch";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the persisted diff scope lives in the panel store and defaults to the branch
+  useEffect(() => {
+    if (!aldoKeptRepo || !routeThreadRef || !onBranchScope) return;
+    if (latestRunId) useDiffPanelStore.getState().selectTurn(routeThreadRef, latestRunId);
+    else useDiffPanelStore.getState().selectGitScope(routeThreadRef, "unstaged");
+  }, [aldoKeptRepo, latestRunId, onBranchScope, routeThreadRef]);
   const reviewSectionId = toolCallSelection
     ? `tool-call:${toolCallSelection.threadId}:${toolCallSelection.itemId}`
     : selectedTurn
@@ -887,11 +898,13 @@ export default function DiffPanel({
           ) : null}
           <DropdownMenuContent align="start">
             <DropdownMenuRadioGroup value={selectedScopeValue} onValueChange={selectScopeValue}>
-              <DropdownMenuRadioItem value="branch" closeOnClick>
-                <span>
-                  <T>Changes</T>
-                </span>
-              </DropdownMenuRadioItem>
+              {aldoKeptRepo ? null : (
+                <DropdownMenuRadioItem value="branch" closeOnClick>
+                  <span>
+                    <T>Changes</T>
+                  </span>
+                </DropdownMenuRadioItem>
+              )}
               <DropdownMenuRadioItem value="unstaged" closeOnClick>
                 <span>
                   <T>Uncommitted</T>

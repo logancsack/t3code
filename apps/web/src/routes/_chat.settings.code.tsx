@@ -4,7 +4,7 @@ import { AldoCodePage } from "../aldo/AldoCodePage";
 import { isAldoCloud } from "../aldo/api";
 import { useAldoDeveloperToolsState } from "../aldo/developerTools";
 
-export const Route = createFileRoute("/settings/code")({
+export const Route = createFileRoute("/_chat/settings/code")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

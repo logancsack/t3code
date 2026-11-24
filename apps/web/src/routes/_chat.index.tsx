@@ -21,11 +21,14 @@ import {
   useVisibleThreadShells,
 } from "../state/entities";
 import { useEnvironments } from "../state/environments";
+import { AldoHome } from "~/aldo/AldoHome";
+import { isAldoCloud } from "~/aldo/api";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const { environments, isReady } = useEnvironments();
 
+  if (isAldoCloud) return <AldoHome />;
   if (authGateState.status === "hosted-static") {
     if (!isReady) return null;
     if (environments.length === 0) return <HostedEmptyState />;

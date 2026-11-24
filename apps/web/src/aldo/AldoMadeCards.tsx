@@ -42,7 +42,7 @@ import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
 import { Button } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { readComposerThreadPrompt, useComposerDraftStore } from "../composerDraftStore";
+import { readComposerDraftPrompt, useComposerDraftStore } from "../composerDraftStore";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -157,7 +157,7 @@ export function AldoMadeThumb(props: {
 function aldoAskAgent(threadRef: ScopedThreadRef, sentence: string) {
   useComposerDraftStore
     .getState()
-    .setPrompt(threadRef, promptWith(readComposerThreadPrompt(threadRef), sentence));
+    .setPrompt(threadRef, promptWith(readComposerDraftPrompt(threadRef) ?? "", sentence));
   window.setTimeout(
     () => document.querySelector<HTMLElement>('[data-testid="composer-editor"]')?.focus(),
     50,

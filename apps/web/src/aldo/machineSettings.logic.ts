@@ -94,7 +94,7 @@ interface SettingsEnvironment {
   readonly environmentId: string;
   readonly serverConfig: {
     readonly settings: ServerSettings;
-    readonly providers: ReadonlyArray<ServerProvider>;
+    readonly providers?: ReadonlyArray<ServerProvider>;
   } | null;
 }
 
@@ -104,21 +104,26 @@ interface SettingsEnvironment {
  * saves to Aldo, at "All environments" only: picking one environment (or a
  * project's overrides) is about that machine's own. Otherwise, as they were.
  */
-export function aldoSettingsSelection<
-  E extends SettingsEnvironment,
-  S extends {
-    readonly environments: readonly E[];
-    readonly connectedEnvironments: readonly E[];
-    readonly environment: E | null;
-  },
->(
+export function aldoSettingsSelection<E extends SettingsEnvironment, C extends SettingsEnvironment>(
   scopeKind: string,
-  selected: S,
+  selected: {
+    readonly environments: readonly E[];
+    readonly connectedEnvironments: readonly C[];
+    readonly environment: C | null;
+  },
   kept: AldoMachineSettings | null,
   modelRouting = false,
-): S & { aldo: AldoSettingsScope | null } {
+  /** An environment's providers, where its config doesn't carry them. */
+  providersOf: (environment: E) => ReadonlyArray<ServerProvider> | undefined = (environment) =>
+    environment.serverConfig?.providers,
+): {
+  readonly environments: readonly E[];
+  readonly connectedEnvironments: readonly C[];
+  readonly environment: C | null;
+  readonly aldo: AldoSettingsScope | null;
+} {
   if (kept === null || scopeKind !== "all") return { ...selected, aldo: null };
-  const connectedEnvironments = selected.connectedEnvironments.map((environment) =>
+  const connectedEnvironments = selected.connectedEnvironments.map((environment): C =>
     environment.serverConfig
       ? {
           ...environment,
@@ -140,9 +145,9 @@ export function aldoSettingsSelection<
   // The one that lists the most kinds of provider: one whose T3 started before a provider shipped
   // lists fewer (a kind's extra instances don't make up for one missing).
   const kinds = (environment: E | null) =>
-    environment?.serverConfig
-      ? new Set(environment.serverConfig.providers.map((provider) => provider.driver)).size
-      : -1;
+    environment === null
+      ? -1
+      : new Set((providersOf(environment) ?? []).map((provider) => provider.driver)).size;
   const standIn = selected.environments.reduce<E | null>(
     (best, candidate) =>
       candidate.serverConfig && kinds(candidate) > kinds(best) ? candidate : best,
@@ -155,7 +160,7 @@ export function aldoSettingsSelection<
     aldo: {
       settings: kept,
       providers:
-        connectedEnvironments.length === 0 ? (standIn?.serverConfig?.providers ?? null) : null,
+        connectedEnvironments.length === 0 && standIn ? (providersOf(standIn) ?? null) : null,
     },
   };
 }

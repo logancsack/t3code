@@ -164,6 +164,17 @@ import { readLocalApi } from "../localApi";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { cn } from "../lib/utils";
+import { isAldoCloud } from "../aldo/api";
+import { AldoChatVideo } from "../aldo/AldoChatVideo";
+import {
+  ALDO_MEDIA_TILE_IMAGE_CLASS_NAME,
+  ALDO_MEDIA_TILE_STYLE,
+  AldoMediaGrid,
+  useInAldoMediaGrid,
+} from "../aldo/AldoMediaGrid";
+import { isVideoFile, soleParagraphLink } from "../aldo/chatVideo.logic";
+import { rehypeAldoMediaGrid, type AldoVideoLinks } from "../aldo/mediaGrid.logic";
+import { isNumberCell } from "../aldo/tableNumbers.logic";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
 import { rightPanelHostRef, useRightPanelStore } from "../rightPanelStore";
 import { useOpenIssueLink } from "../lib/openIssueLink";
@@ -263,6 +274,8 @@ interface ChatMarkdownProps {
   className?: string;
   lineBreaks?: boolean;
   parseRawHtml?: boolean;
+  /** Aldo: shows a run of images or videos as a grid (aldo/mediaGrid.logic.ts). */
+  mediaGrid?: boolean | undefined;
   onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   onRunShellCommand?: ((command: string) => void) | undefined;
   imageBaseDir?: string | undefined;
@@ -436,6 +449,19 @@ const CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS = [
   rehypeTextDirection,
   rehypeChipPunctuation,
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
+const withAldoMediaGrid = (videoLinks: AldoVideoLinks) =>
+  [
+    ...CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS,
+    [rehypeAldoMediaGrid, { videoLinks }],
+  ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
+/** With Aldo's media grid, by which video links can join one. */
+const CHAT_MARKDOWN_MEDIA_GRID_REHYPE_PLUGINS = {
+  none: withAldoMediaGrid("none"),
+  absolute: withAldoMediaGrid("absolute"),
+  all: withAldoMediaGrid("all"),
+} satisfies Record<AldoVideoLinks, NonNullable<ReactMarkdownOptions["rehypePlugins"]>>;
 
 function markdownUrlTransform(href: string) {
   if (parseAssistantCitationHref(href)) return href;
@@ -1113,10 +1139,38 @@ const CHAT_MARKDOWN_COMPONENTS = {
         <CodexArtifactTemplateCard template={artifactTemplate} onUse={onUseArtifactTemplate} />
       );
     }
+    if (node?.properties?.dataAldoMediaGrid !== undefined) {
+      return <AldoMediaGrid>{children}</AldoMediaGrid>;
+    }
     return <div {...props}>{children}</div>;
   },
-  p: function MarkdownParagraph({ node: _node, children, ...props }) {
-    const { skills, threadRef, environmentId } = use(ChatMarkdownRendererContext);
+  p: function MarkdownParagraph({ node, children, ...props }) {
+    const { skills, threadRef, environmentId, cwd, imageBaseDir, markdownFileLinkMetaByHref } = use(
+      ChatMarkdownRendererContext,
+    );
+    // Aldo: a video file linked on a line of its own plays in place.
+    const videoHref = isAldoCloud && threadRef ? soleParagraphLink(node) : null;
+    const videoLink = videoHref
+      ? (markdownFileLinkMetaByHref.get(normalizeMarkdownLinkHrefKey(videoHref)) ??
+        resolveMarkdownFileLinkMeta(
+          normalizeMarkdownLinkHrefKey(videoHref),
+          cwd,
+          imageBaseDir ?? cwd,
+        ))
+      : null;
+    if (threadRef && videoHref && videoLink && !videoLink.line && isVideoFile(videoLink.filePath)) {
+      return (
+        <AldoChatVideo
+          threadRef={threadRef}
+          path={videoLink.filePath}
+          name={videoLink.basename}
+          workspaceRoot={cwd}
+          fragment={markdownImageSourceFragment(videoHref)}
+        >
+          {children}
+        </AldoChatVideo>
+      );
+    }
     return (
       <p {...props}>
         {renderSkillInlineMarkdownChildren(children, skills, threadRef, environmentId)}
@@ -1591,12 +1645,22 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const { authoredSrc: srcString = "", classifiedSrc = "" } =
       chatMarkdownImageSource(node?.properties ?? { src }, resolvedTheme) ?? {};
     const markdownTitle = node?.properties?.dataMarkdownTitle;
-    const standalone = node?.properties?.dataStandalone === true;
+    // Aldo: a tile of a media grid takes the tile's shape, and always holds its slot.
+    const tile = useInAldoMediaGrid();
+    const standalone = tile || node?.properties?.dataStandalone === true;
     const authoredTitle = typeof markdownTitle === "string" ? markdownTitle : title;
     const altText = alt ?? "";
-    const copyMarkdown = markdownImageCopy(altText, srcString, authoredTitle);
-    const { className, style: _style, width, height, ...imageProps } = props;
-    const authoredSizeStyle = authoredImageSizeStyle(width, height);
+    // A grid's tile for a video link copies as that link (mediaGrid.logic.ts).
+    const linkCopy = node?.properties?.dataMarkdownCopy;
+    const copyMarkdown =
+      typeof linkCopy === "string"
+        ? linkCopy
+        : markdownImageCopy(altText, srcString, authoredTitle);
+    const { className: authoredClassName, style: _style, width, height, ...imageProps } = props;
+    const className = tile
+      ? cn(authoredClassName, ALDO_MEDIA_TILE_IMAGE_CLASS_NAME)
+      : authoredClassName;
+    const authoredSizeStyle = tile ? ALDO_MEDIA_TILE_STYLE : authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
     const mediaKind = mediaKindFromPath(classifiedSrc);
     if (mediaKind === "audio") {
@@ -1691,6 +1755,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             originalUrl={originalUrl}
             style={authoredSizeStyle}
             actionsSource={actionsSource}
+            onExpand={imageExpand}
           />
         );
       }
@@ -1754,6 +1819,14 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
   table: function MarkdownTableRenderer({ node: _node, ...props }) {
     return <MarkdownTable {...props} />;
+  },
+  td: function MarkdownTableCell({ node, ...props }) {
+    return (
+      <td
+        data-numeric={(isAldoCloud && node && isNumberCell(hastPlainTextDeep(node))) || undefined}
+        {...props}
+      />
+    );
   },
   details: function MarkdownDetailsRenderer({ node: _node, children, open: detailsOpen, dir }) {
     return (
@@ -1930,6 +2003,7 @@ function ChatMarkdown({
   inline = false,
   lineBreaks = false,
   parseRawHtml = true,
+  mediaGrid = false,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   renderInsights = false,
   ...props
@@ -1998,7 +2072,11 @@ function ChatMarkdown({
             remarkPlugins={remarkPlugins}
             rehypePlugins={
               parseRawHtml
-                ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
+                ? mediaGrid
+                  ? CHAT_MARKDOWN_MEDIA_GRID_REHYPE_PLUGINS[
+                      !props.threadRef ? "none" : props.cwd ? "all" : "absolute"
+                    ]
+                  : CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
                 : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
             }
             shared={!uncachedPlugins}

@@ -1,15 +1,20 @@
-import { Connection } from "@t3tools/client-runtime/connection";
+import { Connection, LegacyOrchestrationSupport } from "@t3tools/client-runtime/connection";
 import { ShellSnapshotLoader } from "@t3tools/client-runtime/state/shell";
 import {
   BoundedThreadSnapshotLoader,
   ThreadHistoryController,
+  ThreadSnapshotLoader,
 } from "@t3tools/client-runtime/state/threads";
 import { PullRequestDiffLoader } from "@t3tools/client-runtime/state/pull-requests";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { Atom } from "effect/reactivity";
 
+import { isAldoCloud } from "../aldo/api";
+import { aldoThreadSnapshotLoaderLayer } from "../aldo/pendingThreads";
 import { isGuestPage } from "../guestPage";
+import { isLandingDemo } from "../landingDemo/mode";
+import { landingDemoRpcSessionLayer } from "../landingDemo/runtime";
 
 import * as Runtime from "../lib/runtime";
 import * as BackgroundActivityReporter from "../lib/backgroundActivityReporter";
@@ -17,12 +22,42 @@ import * as ConnectionPlatform from "./platform";
 
 const layerProvidedConnectionPlatform = ConnectionPlatform.layer.pipe(Layer.provide(Runtime.layer));
 
+const layerLandingDemoSnapshotLoader = Layer.merge(
+  Layer.succeed(
+    ShellSnapshotLoader.ShellSnapshotLoader,
+    ShellSnapshotLoader.ShellSnapshotLoader.of({
+      load: Effect.fn("ShellSnapshotLoader.load")(() => Effect.succeedNone),
+    }),
+  ),
+  Layer.succeed(
+    ThreadSnapshotLoader,
+    ThreadSnapshotLoader.of({
+      load: Effect.fn("ThreadSnapshotLoader.load")(() =>
+        Effect.succeed({ _tag: "unavailable" as const }),
+      ),
+    }),
+  ),
+);
+
 const layerSnapshotLoader = Layer.mergeAll(
-  BoundedThreadSnapshotLoader.layer,
-  ShellSnapshotLoader.layer,
+  isLandingDemo()
+    ? layerLandingDemoSnapshotLoader
+    : Layer.merge(
+        // Aldo: a thread this tab is still creating reads "missing" as "not yet".
+        isAldoCloud ? aldoThreadSnapshotLoaderLayer : BoundedThreadSnapshotLoader.layer,
+        ShellSnapshotLoader.layer,
+      ),
   ThreadHistoryController.layer,
   PullRequestDiffLoader.layer,
 );
+
+const layerConnectionServices = isLandingDemo()
+  ? Connection.makeLayer(landingDemoRpcSessionLayer)
+  : Connection.layerWithOptions({
+      environmentThemes: true,
+      usageLimitSources: true,
+      usageLimitsCommand: true,
+    });
 
 type ConnectionLayerSource =
   | typeof Connection.layer
@@ -33,16 +68,12 @@ type ConnectionLayerSource =
   | typeof BackgroundActivityReporter.layer;
 
 const layerProvidedClientConnection = layerSnapshotLoader.pipe(
-  Layer.provideMerge(
-    Connection.layerWithOptions({
-      environmentThemes: true,
-      usageLimitSources: true,
-      usageLimitsCommand: true,
-    }),
-  ),
+  Layer.provideMerge(layerConnectionServices),
   Layer.provideMerge(
     Layer.mergeAll(
       Runtime.layer,
+      // Aldo's machines may still run the original wire protocol.
+      Layer.succeed(LegacyOrchestrationSupport, isAldoCloud),
       layerProvidedConnectionPlatform,
       BackgroundActivityReporter.layerObserver,
     ),

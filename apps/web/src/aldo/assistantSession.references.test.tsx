@@ -11,6 +11,7 @@ const backend = vi.hoisted(() => ({
 }));
 const aldoApiMock = vi.hoisted(() => ({
   AldoApiError: class extends Error {},
+  isAldoCloud: true,
   aldoAssistant: {
     startLive: backend.start,
     delegate: backend.delegate,

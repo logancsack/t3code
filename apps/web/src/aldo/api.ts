@@ -20,6 +20,7 @@ export function threadIdForEnvironment(environmentId: string): string {
   return environmentId.replace(/^aldo-/, "");
 }
 
+// @effect-diagnostics-next-line extendsNativeError:off
 export class AldoApiError extends Error {
   constructor(
     readonly status: number,

@@ -1,6 +1,6 @@
 import { expect, it, afterEach } from "@effect/vitest";
 import { vi } from "vite-plus/test";
-import { ConnectionTargetStore, EnvironmentCacheStore } from "@t3tools/client-runtime/platform";
+import { Persistence } from "@t3tools/client-runtime/platform";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -9,12 +9,7 @@ vi.mock("./mode", async (original) => ({
   ...(await original<typeof import("./mode")>()),
   isWorkReplay: () => true,
 }));
-import {
-  demoEnvironmentId,
-  demoThreadId,
-  setWorkReplayThread,
-  workReplaySnapshots,
-} from "./runtime";
+import { demoEnvironmentId, demoThreadId, setWorkReplayThread, workReplaySource } from "./runtime";
 import { workReplayStorageLayer } from "./storage";
 
 const encodeConfig = Schema.encodeEffect(ServerConfig);
@@ -31,11 +26,11 @@ it.effect(
       },
     });
     return Effect.gen(function* () {
-      const targets = yield* ConnectionTargetStore;
-      const cache = yield* EnvironmentCacheStore;
+      const targets = yield* Persistence.ConnectionTargetStore;
+      const cache = yield* Persistence.EnvironmentCacheStore;
       expect(yield* targets.list).toEqual([]);
       const before = Option.getOrThrow(yield* cache.loadThread(demoEnvironmentId, demoThreadId));
-      const initial = workReplaySnapshots().detail.thread;
+      const initial = workReplaySource().detail.thread;
       setWorkReplayThread(
         {
           title: "Scripted close",
@@ -47,7 +42,7 @@ it.effect(
         "Cedar Workshop",
       );
       const after = Option.getOrThrow(yield* cache.loadThread(demoEnvironmentId, demoThreadId));
-      expect(after.thread.title).toBe("Scripted close");
+      expect(after.projection.thread.title).toBe("Scripted close");
       expect(after.snapshotSequence).toBeGreaterThan(before.snapshotSequence);
       const config = Option.getOrThrow(yield* cache.loadServerConfig(demoEnvironmentId));
       const decoded = yield* decodeConfig(yield* encodeConfig(config));

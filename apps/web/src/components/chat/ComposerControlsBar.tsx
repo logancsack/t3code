@@ -4,6 +4,7 @@ import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
 import { useGT, useMessages } from "gt-react";
 import { CircleAlertIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import {
@@ -87,6 +88,15 @@ export function ComposerControlsBar(props: {
   onModelPickerOpenChange: (open: boolean) => void;
   modelPickerIconClassName: string | undefined;
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
+  /** Aldo: a draft's place chip, ahead of the model picker. */
+  leadingControl?: ReactNode;
+  /** Aldo: leaving the model to Aldo, offered above the models and named on the trigger while chosen. */
+  automaticModel?: {
+    label: string;
+    triggerLabel: string;
+    selected: boolean;
+    onSelect: () => void;
+  };
 }) {
   const {
     environmentId,
@@ -131,6 +141,7 @@ export function ComposerControlsBar(props: {
     onModelPickerOpenChange,
     modelPickerIconClassName,
     getModelDisabledReason,
+    automaticModel,
   } = props;
   const accessMatchesDefault = compatibleRuntimeMode === defaultRuntimeMode;
   const {
@@ -219,8 +230,10 @@ export function ComposerControlsBar(props: {
         MODEL_TRIGGER_STATES,
         composerControlsCollapsed ? "min-w-13 shrink text-xs!" : "min-w-13",
       )}
-      triggerSuffix={effort.suffix}
-      triggerDetail={effort.detail}
+      {...(automaticModel?.selected
+        ? { triggerLabel: automaticModel.triggerLabel }
+        : { triggerSuffix: effort.suffix, triggerDetail: effort.detail })}
+      {...(automaticModel ? { automaticOption: automaticModel } : {})}
       triggerShortcuts={
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
       }
@@ -265,6 +278,7 @@ export function ComposerControlsBar(props: {
     </ComposerControl>
   ) : (
     <>
+      {props.leadingControl}
       {composerModelPicker}
 
       <>

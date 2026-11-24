@@ -1,6 +1,5 @@
 import { openAldoShare, closeAldoShare } from "../aldo/shareViewer";
-import { setActiveEnvironmentId } from "../state/entities";
-import { EventId, MessageId, TurnId, ProviderInstanceId } from "@t3tools/contracts";
+import { EventId, MessageId, TurnId } from "@t3tools/contracts";
 import type { AldoHome } from "../aldo/homeApi";
 import { useAldoAssistant, type AldoConversationEntry } from "../aldo/assistantSession";
 import { useAldoHomeFeed, useAldoHomeReadAt } from "../aldo/homeFeed";
@@ -135,7 +134,6 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
   useAldoAssistant.setState({ unsent: typed });
   if (key === lastSnapshot) return;
   lastSnapshot = key;
-  setActiveEnvironmentId(demoEnvironmentId);
   const entries: AldoConversationEntry[] = [];
   if (at >= script.timing.sent)
     entries.push({ kind: "message", role: "user", text: script.request, at: iso(0) });
@@ -214,7 +212,6 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
         threadId: demoThreadId,
         status: finished ? "ready" : "running",
         providerName: "codex",
-        providerInstanceId: ProviderInstanceId.make("codex"),
         runtimeMode: "full-access",
         activeTurnId: finished ? null : turnId,
         lastError: null,

@@ -47,6 +47,7 @@ import {
 } from "@t3tools/client-runtime/state/project-grouping";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
+import { displayedThreadBranch } from "../aldo/directory";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
@@ -68,8 +69,10 @@ export function useThreadActionMenu(input: {
   readonly onStartRename: () => void;
   readonly onFind?: ((threadRef: ScopedThreadRef) => void) | undefined;
   readonly canShareWithGuest: boolean;
+  /** Aldo: opens the picker that moves the thread to another project. */
+  readonly onMoveThread?: (() => void) | undefined;
 }) {
-  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest } = input;
+  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest, onMoveThread } = input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -141,7 +144,9 @@ export function useThreadActionMenu(input: {
       const items = buildThreadActionMenuItems({
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
         canFind: onFind !== undefined,
-        branch: thread.branch ?? null,
+        moveProject: onMoveThread !== undefined,
+        // Aldo: the branches the sidebar shows (none for a machine's own, or work that isn't software).
+        branch: displayedThreadBranch(threadRef.environmentId, thread.branch),
         projectFilter: null,
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
@@ -197,6 +202,9 @@ export function useThreadActionMenu(input: {
       switch (action) {
         case "find":
           onFind?.(threadRef);
+          return;
+        case "move-project":
+          onMoveThread?.();
           return;
         case "project-settings": {
           const project = projects.find(

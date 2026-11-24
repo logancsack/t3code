@@ -1,6 +1,7 @@
 import type { SnapShotSource } from "@t3tools/contracts";
 
 import type { ComposerFileAttachment } from "../../composerDraftStore";
+import { isAldoCloud } from "../../aldo/api";
 import { type ChatFileAttachment, type ChatImageAttachment, isVideoAttachment } from "../../types";
 import type {
   AssetCreateUrlResult,
@@ -68,7 +69,11 @@ export async function resolveMarkdownMediaPreview(input: {
     src = resolveProtocolRelativeMediaUrl(media.uri);
   } else {
     if (media.access === "unavailable" || !input.threadRef || !input.httpBaseUrl) {
-      throw new Error(m(msg("Reconnect to this environment and open the media again.")));
+      throw new Error(
+        isAldoCloud
+          ? m(msg("Reconnect to the cloud and open the media again."))
+          : m(msg("Reconnect to this environment and open the media again.")),
+      );
     }
     asset = { environmentId: input.threadRef.environmentId, resource: media.resource };
     const result = await input.createAssetUrl({

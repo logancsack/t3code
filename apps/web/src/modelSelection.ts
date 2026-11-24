@@ -39,6 +39,8 @@ import {
 } from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
 import { resolveModelShortName } from "@t3tools/client-runtime/provider-clients";
+import { isAldoCloud } from "./aldo/api";
+import { modelNameFromId } from "./aldo/modelNames.logic";
 
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
 const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
@@ -90,7 +92,9 @@ function appendUnavailableDynamicModelSelection(
   if (hiddenModels.includes(slug)) return options;
   if (options.some((option) => option.slug === slug)) return options;
 
-  return [...options, { slug, name: slug, isCustom: false, isUnavailable: true }];
+  // Aldo: a model the machine doesn't list still reads as a name.
+  const name = isAldoCloud ? modelNameFromId(slug) : slug;
+  return [...options, { slug, name, isCustom: false, isUnavailable: true }];
 }
 
 function toAppModelOption(
@@ -108,7 +112,9 @@ function toAppModelOption(
   if (model.aliases) option.aliases = model.aliases;
   if (model.badge) option.badge = model.badge;
   if (model.isDefault) option.isDefault = true;
-  if (model.isLegacy) option.isLegacy = true;
+  // Cloud environments can keep older servers whose manifest marks new
+  // releases as legacy. Offer every reported model; user-hidden choices stay hidden.
+  if (model.isLegacy && !isAldoCloud) option.isLegacy = true;
   return option;
 }
 

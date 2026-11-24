@@ -1,3 +1,5 @@
+import { isAldoCloud } from "../../aldo/api";
+import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
@@ -838,25 +840,29 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="notifications" title={gt("Notifications")}>
-        <NotificationSettings />
-        <SettingsRow
-          {...setting("in-app-notifications")}
-          description={
-            <T>
-              Show a toast when another thread finishes, fails, or needs input or approval while
-              this app has focus.
-            </T>
-          }
-          control={
-            <Switch
-              checked={settings.inAppNotificationsEnabled}
-              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
-              aria-label={gt("In-app notifications")}
-            />
-          }
-        />
-      </SettingsSection>
+      {isAldoCloud ? null : (
+        <SettingsSection id="notifications" title={gt("Notifications")}>
+          <NotificationSettings />
+          <SettingsRow
+            {...setting("in-app-notifications")}
+            description={
+              <T>
+                Show a toast when another thread finishes, fails, or needs input or approval while
+                this app has focus.
+              </T>
+            }
+            control={
+              <Switch
+                checked={settings.inAppNotificationsEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ inAppNotificationsEnabled: checked })
+                }
+                aria-label={gt("In-app notifications")}
+              />
+            }
+          />
+        </SettingsSection>
+      )}
 
       <SettingsSection id="sidebar" title={gt("Sidebar")}>
         <SettingsRow
@@ -1210,7 +1216,7 @@ export function GeneralSettingsPanel() {
   );
 }
 
-export function ChatSettingsPanel() {
+export function SendShortcutRow() {
   const setting = useSearchableSetting();
   const gt = useGT();
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
@@ -1222,6 +1228,91 @@ export function ChatSettingsPanel() {
     },
     { value: "mod-enter", label: gt("{modifierLabel} + Enter always", { modifierLabel }) },
   ] as const;
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...setting("send-shortcut")}
+      description={gt("Choose when Enter sends a prompt or inserts a new line")}
+      resetAction={
+        settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? (
+          <SettingResetButton
+            ariaLabel={gt("Reset send shortcut to default")}
+            onClick={() => updateSettings({ sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut })}
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={settings.sendShortcut}
+          onValueChange={(value) => {
+            const option = sendShortcutOptions.find((option) => option.value === value);
+            if (option) updateSettings({ sendShortcut: option.value });
+          }}
+        >
+          <SelectTrigger
+            size="sm"
+            className="w-auto min-w-0 max-w-full"
+            aria-label={gt("Send shortcut")}
+          >
+            <SelectValue>
+              {sendShortcutOptions.find((option) => option.value === settings.sendShortcut)?.label}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {sendShortcutOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                <span className="flex items-center justify-between gap-4">
+                  {option.label}
+                  {settings.sendShortcut === option.value && <CheckIcon aria-hidden="true" />}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
+export function SkillsInSlashMenuRow() {
+  const setting = useSearchableSetting();
+  const gt = useGT();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...setting("skills-in-slash-menu")}
+      description={gt(
+        "Also include skills in the / command menu. Skills always appear when you type $.",
+      )}
+      resetAction={
+        settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
+          <SettingResetButton
+            ariaLabel={gt("Reset skills in slash menu to default")}
+            onClick={() =>
+              updateSettings({
+                showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.showSkillsInSlashMenu}
+          onCheckedChange={(checked) => updateSettings({ showSkillsInSlashMenu: Boolean(checked) })}
+          aria-label={gt("Show skills in slash menu")}
+        />
+      }
+    />
+  );
+}
+
+export function ChatSettingsPanel() {
+  const setting = useSearchableSetting();
+  const gt = useGT();
+  const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
 
@@ -1254,144 +1345,77 @@ export function ChatSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          {...setting("send-shortcut")}
-          description={gt("Choose when Enter sends a prompt or inserts a new line")}
-          resetAction={
-            settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? (
-              <SettingResetButton
-                ariaLabel={gt("Reset send shortcut to default")}
-                onClick={() =>
-                  updateSettings({ sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.sendShortcut}
-              onValueChange={(value) => {
-                const option = sendShortcutOptions.find((option) => option.value === value);
-                if (option) updateSettings({ sendShortcut: option.value });
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-auto min-w-0 max-w-full"
-                aria-label={gt("Send shortcut")}
-              >
-                <SelectValue>
-                  {
-                    sendShortcutOptions.find((option) => option.value === settings.sendShortcut)
-                      ?.label
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {sendShortcutOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    <span className="flex items-center justify-between gap-4">
-                      {option.label}
-                      {settings.sendShortcut === option.value && <CheckIcon aria-hidden="true" />}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
-        <AdvancedSettings targetIds={[setting("skills-in-slash-menu").id]}>
+        {isAldoCloud ? null : <SendShortcutRow />}
+        {isAldoCloud ? null : (
+          <AdvancedSettings targetIds={[setting("skills-in-slash-menu").id]}>
+            <SkillsInSlashMenuRow />
+          </AdvancedSettings>
+        )}
+      </SettingsSection>
+
+      {isAldoCloud ? null : (
+        <SettingsSection id="follow-ups" title={gt("Follow-ups")}>
           <SettingsRow
-            {...setting("skills-in-slash-menu")}
-            description={gt(
-              "Also include skills in the / command menu. Skills always appear when you type $.",
-            )}
+            {...setting("follow-up-behavior")}
+            description={
+              settings.sendShortcut === "mod-enter-multiline"
+                ? gt(
+                    "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Enter for single-line prompts or {modifier} + Shift + Enter for multiline prompts to do the opposite for one message.",
+                    { modifier: modifierLabel },
+                  )
+                : settings.sendShortcut === "mod-enter"
+                  ? gt(
+                      "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Shift + Enter to do the opposite for one message.",
+                      { modifier: modifierLabel },
+                    )
+                  : gt(
+                      "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Enter to do the opposite for one message.",
+                      { modifier: modifierLabel },
+                    )
+            }
             resetAction={
-              settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
+              settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
                 <SettingResetButton
-                  ariaLabel={gt("Reset skills in slash menu to default")}
+                  ariaLabel={gt("Reset follow-up behavior to default")}
                   onClick={() =>
                     updateSettings({
-                      showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+                      followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
                     })
                   }
                 />
               ) : null
             }
             control={
-              <Switch
-                checked={settings.showSkillsInSlashMenu}
-                onCheckedChange={(checked) =>
-                  updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
-                }
-                aria-label={gt("Show skills in slash menu")}
-              />
+              <Select
+                value={settings.followUpBehavior}
+                onValueChange={(value) => {
+                  if (value === "queue" || value === "steer") {
+                    updateSettings({ followUpBehavior: value });
+                  }
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-auto min-w-0"
+                  aria-label={gt("Follow-up behavior")}
+                >
+                  <SelectValue>
+                    {settings.followUpBehavior === "queue" ? gt("Queue") : gt("Steer")}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="queue">
+                    <T>Queue</T>
+                  </SelectItem>
+                  <SelectItem value="steer">
+                    <T>Steer</T>
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
             }
           />
-        </AdvancedSettings>
-      </SettingsSection>
-
-      <SettingsSection id="follow-ups" title={gt("Follow-ups")}>
-        <SettingsRow
-          {...setting("follow-up-behavior")}
-          description={
-            settings.sendShortcut === "mod-enter-multiline"
-              ? gt(
-                  "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Enter for single-line prompts or {modifier} + Shift + Enter for multiline prompts to do the opposite for one message.",
-                  { modifier: modifierLabel },
-                )
-              : settings.sendShortcut === "mod-enter"
-                ? gt(
-                    "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Shift + Enter to do the opposite for one message.",
-                    { modifier: modifierLabel },
-                  )
-                : gt(
-                    "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Enter to do the opposite for one message.",
-                    { modifier: modifierLabel },
-                  )
-          }
-          resetAction={
-            settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
-              <SettingResetButton
-                ariaLabel={gt("Reset follow-up behavior to default")}
-                onClick={() =>
-                  updateSettings({
-                    followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.followUpBehavior}
-              onValueChange={(value) => {
-                if (value === "queue" || value === "steer") {
-                  updateSettings({ followUpBehavior: value });
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-auto min-w-0"
-                aria-label={gt("Follow-up behavior")}
-              >
-                <SelectValue>
-                  {settings.followUpBehavior === "queue" ? gt("Queue") : gt("Steer")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem value="queue">
-                  <T>Queue</T>
-                </SelectItem>
-                <SelectItem value="steer">
-                  <T>Steer</T>
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-      </SettingsSection>
+        </SettingsSection>
+      )}
 
       <SettingsSection id="activity" title={gt("Activity")}>
         <ToolCallVisibilityRow />
@@ -1855,23 +1879,33 @@ function ScopedCompactIdleThreadsRow() {
   );
 }
 
-export function ThreadsSettingsPanel() {
+export function ThreadsSettingsPanel({
+  aldoPart,
+}: {
+  /** Aldo shows thread titles' model on its Agents page. */
+  readonly aldoPart?: "text-generation";
+} = {}) {
   const setting = useSearchableSetting();
   const messages = useMessages();
   const gt = useGT();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { environment, connectedEnvironments, target, scope } = useSettingsScope();
+  const { environment, connectedEnvironments, target, scope, aldo } = useSettingsScope();
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const environmentId = environment?.environmentId ?? null;
-  const hasServerTargets = connectedEnvironments.length > 0;
+  // Aldo keeps the user's settings itself, so they save with no machine connected.
+  const hasServerTargets =
+    connectedEnvironments.length > 0 ||
+    (isAldoCloud && aldoSavesSettings(aldo, ["textGenerationModelSelection"]));
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
   const providersByEnvironment = useEnvironmentProviders();
   const serverProviders =
     (environment?.serverConfig
       ? providersByEnvironment.get(environment.environmentId)
-      : undefined) ?? EMPTY_SERVER_PROVIDERS;
+      : undefined) ??
+    (isAldoCloud ? aldo?.providers : null) ??
+    EMPTY_SERVER_PROVIDERS;
   const supportsAutoSettlementScope = connectedEnvironments.every(
     (target) => target.serverConfig?.environment.capabilities.threadAutoSettlementScope === true,
   );
@@ -1918,67 +1952,240 @@ export function ThreadsSettingsPanel() {
   const mixedAddProjectBaseDirectory = useScopedSettingsMixed(["addProjectBaseDirectory"]);
   const mixedTextGenerationModel = useScopedSettingsMixed(["textGenerationModelSelection"]);
 
-  return (
-    <SettingsPageContainer>
-      <SettingsSection id="new-projects" title={gt("New projects")}>
+  const textGenerationRow = (
+    <SettingsRow
+      serverScoped
+      settingKeys={["textGenerationModelSelection"]}
+      {...setting("text-generation-model")}
+      description={gt(
+        "For thread titles and other generated text. Source control has its own setting. Text generators from Providers also appear here.",
+      )}
+      resetAction={
+        hasServerTargets && isTextGenerationModelDirty ? (
+          <SettingResetButton
+            ariaLabel={gt("Reset text generation model to default")}
+            onClick={() =>
+              updateSettings({
+                textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        !hasServerTargets ? (
+          <span className="text-sm text-muted-foreground">
+            <T>Connect an environment to choose its text generation model.</T>
+          </span>
+        ) : !hasTextGenerationProvider ? (
+          <span className="text-sm text-muted-foreground">
+            <T>No text generation providers available.</T>
+          </span>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <ProviderModelPicker
+              environmentId={environmentId}
+              activeInstanceId={textGenInstanceId}
+              model={textGenModel}
+              lockedProvider={null}
+              instanceEntries={textGenerationModelInstanceEntries}
+              modelOptionsByInstance={textGenerationModelOptionsByInstance}
+              triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              {...(mixedTextGenerationModel ? { triggerLabel: gt("Mixed") } : {})}
+              getModelDisabledReason={textGenerationModelDisabledReason}
+              {...(environmentId
+                ? {
+                    onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
+                      void navigate({
+                        to: "/settings/providers",
+                        search: { environmentId, instanceId },
+                      });
+                    },
+                  }
+                : {})}
+              onInstanceModelChange={(instanceId, model) => {
+                const reason = textGenerationModelDisabledReason(instanceId, model);
+                if (reason) {
+                  toastManager.add({
+                    type: "error",
+                    title: gt("Text generation model not saved"),
+                    description: reason,
+                  });
+                  return;
+                }
+                updateSettings({
+                  textGenerationModelSelection: resolveAppModelSelectionState(
+                    {
+                      ...settings,
+                      textGenerationModelSelection: pickModelSelection(
+                        textGenerationModelSelection,
+                        instanceId,
+                        model,
+                      ),
+                    },
+                    textGenerationProviders,
+                  ),
+                });
+              }}
+            />
+            {textGenInstanceEntry ? (
+              <TraitsPicker
+                provider={textGenProvider}
+                models={textGenInstanceEntry?.models ?? []}
+                model={textGenModel}
+                modelOptions={textGenModelOptions}
+                allowPromptInjectedEffort={false}
+                includePlanAgent={selectsPlanAgent(textGenModelOptions)}
+                triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                onModelOptionsChange={(nextOptions) => {
+                  updateSettings({
+                    textGenerationModelSelection: resolveAppModelSelectionState(
+                      {
+                        ...settings,
+                        textGenerationModelSelection: createModelSelection(
+                          textGenInstanceId,
+                          textGenModel,
+                          nextOptions,
+                        ),
+                      },
+                      textGenerationProviders,
+                    ),
+                  });
+                }}
+              />
+            ) : null}
+          </div>
+        )
+      }
+    />
+  );
+  const textGenerationSection = (
+    <SettingsSection id="text-generation" title={gt("Text generation")}>
+      {textGenerationRow}
+      <AdvancedSettings
+        targetIds={[setting("thread-title-instructions").id, setting("response-streaming").id]}
+      >
+        <ThreadTitleInstructionsSettings />
         <SettingsRow
           serverScoped
-          settingKeys={["addProjectBaseDirectory"]}
-          {...setting("add-project-starts-in")}
-          description={gt('Leave empty to use "~/" when the Add Project browser opens.')}
+          settingKeys={["responseStreamingMode"]}
+          {...setting("response-streaming")}
+          description={
+            mixedResponseStreamingMode
+              ? gt("The selected targets use different streaming modes.")
+              : messages(RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode])
+          }
           resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+            settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
               <SettingResetButton
-                ariaLabel={gt("Reset add project base directory to default")}
+                ariaLabel={gt("Reset response streaming to default")}
                 onClick={() =>
                   updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+                    responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
                   })
                 }
               />
             ) : null
           }
           control={
-            <DraftInput
-              size="sm"
-              className="w-full sm:w-72"
-              value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              normalizeDraft={resolvePastedPath}
-              placeholder={mixedAddProjectBaseDirectory ? gt("Mixed") : "~/"}
-              spellCheck={false}
-              aria-label={gt("Add project base directory")}
-            />
-          }
-        />
-        <SettingsRow
-          serverScoped
-          settingKeys={["ghqCloneLayout"]}
-          {...setting("ghq-clone-layout")}
-          description={gt("Clones go to github.com/owner/repo under the folder above, like ghq.")}
-          resetAction={
-            settings.ghqCloneLayout !== DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout ? (
-              <SettingResetButton
-                ariaLabel={gt("Reset clone into host folders to default")}
-                onClick={() =>
-                  updateSettings({ ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout })
+            <Select
+              value={mixedResponseStreamingMode ? null : settings.responseStreamingMode}
+              onValueChange={(value) => {
+                if (value === "turn" || value === "paragraph") {
+                  updateSettings({ responseStreamingMode: value });
                 }
-              />
-            ) : null
-          }
-          control={
-            <ScopedSwitch
-              settingKeys={["ghqCloneLayout"]}
-              checked={settings.ghqCloneLayout}
-              onCheckedChange={(checked) => updateSettings({ ghqCloneLayout: Boolean(checked) })}
-              aria-label={gt("Clone into host folders")}
-            />
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-56"
+                aria-label={gt("Response streaming")}
+              >
+                <SelectValue>
+                  {(value: ResponseStreamingMode | null) =>
+                    value === null ? gt("Mixed") : messages(RESPONSE_STREAMING_MODE_LABELS[value])
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="turn">
+                  {messages(RESPONSE_STREAMING_MODE_LABELS.turn)}
+                </SelectItem>
+                <SelectItem hideIndicator value="paragraph">
+                  {messages(RESPONSE_STREAMING_MODE_LABELS.paragraph)}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
-      </SettingsSection>
+      </AdvancedSettings>
+    </SettingsSection>
+  );
+  if (aldoPart === "text-generation") return textGenerationRow;
 
-      <ProjectDefaultsSettings category="general" />
+  return (
+    <SettingsPageContainer>
+      {isAldoCloud ? null : (
+        <SettingsSection id="new-projects" title={gt("New projects")}>
+          <SettingsRow
+            serverScoped
+            settingKeys={["addProjectBaseDirectory"]}
+            {...setting("add-project-starts-in")}
+            description={gt('Leave empty to use "~/" when the Add Project browser opens.')}
+            resetAction={
+              settings.addProjectBaseDirectory !==
+              DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+                <SettingResetButton
+                  ariaLabel={gt("Reset add project base directory to default")}
+                  onClick={() =>
+                    updateSettings({
+                      addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <DraftInput
+                size="sm"
+                className="w-full sm:w-72"
+                value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
+                onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+                normalizeDraft={resolvePastedPath}
+                placeholder={mixedAddProjectBaseDirectory ? gt("Mixed") : "~/"}
+                spellCheck={false}
+                aria-label={gt("Add project base directory")}
+              />
+            }
+          />
+          <SettingsRow
+            serverScoped
+            settingKeys={["ghqCloneLayout"]}
+            {...setting("ghq-clone-layout")}
+            description={gt("Clones go to github.com/owner/repo under the folder above, like ghq.")}
+            resetAction={
+              settings.ghqCloneLayout !== DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout ? (
+                <SettingResetButton
+                  ariaLabel={gt("Reset clone into host folders to default")}
+                  onClick={() =>
+                    updateSettings({ ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <ScopedSwitch
+                settingKeys={["ghqCloneLayout"]}
+                checked={settings.ghqCloneLayout}
+                onCheckedChange={(checked) => updateSettings({ ghqCloneLayout: Boolean(checked) })}
+                aria-label={gt("Clone into host folders")}
+              />
+            }
+          />
+        </SettingsSection>
+      )}
+
+      {isAldoCloud ? null : <ProjectDefaultsSettings category="general" />}
 
       {!isProjectScope ? (
         <SettingsSection id="snooze" title={gt("Snooze")}>
@@ -2130,171 +2337,7 @@ export function ThreadsSettingsPanel() {
         </SettingsSection>
       ) : null}
 
-      <SettingsSection id="text-generation" title={gt("Text generation")}>
-        <SettingsRow
-          serverScoped
-          settingKeys={["textGenerationModelSelection"]}
-          {...setting("text-generation-model")}
-          description={gt(
-            "For thread titles and other generated text. Source control has its own setting. Text generators from Providers also appear here.",
-          )}
-          resetAction={
-            hasServerTargets && isTextGenerationModelDirty ? (
-              <SettingResetButton
-                ariaLabel={gt("Reset text generation model to default")}
-                onClick={() =>
-                  updateSettings({
-                    textGenerationModelSelection:
-                      DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            !hasServerTargets ? (
-              <span className="text-sm text-muted-foreground">
-                <T>Connect an environment to choose its text generation model.</T>
-              </span>
-            ) : !hasTextGenerationProvider ? (
-              <span className="text-sm text-muted-foreground">
-                <T>No text generation providers available.</T>
-              </span>
-            ) : (
-              <div className="flex flex-wrap items-center justify-end gap-1.5">
-                <ProviderModelPicker
-                  environmentId={environmentId}
-                  activeInstanceId={textGenInstanceId}
-                  model={textGenModel}
-                  lockedProvider={null}
-                  instanceEntries={textGenerationModelInstanceEntries}
-                  modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                  triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                  {...(mixedTextGenerationModel ? { triggerLabel: gt("Mixed") } : {})}
-                  getModelDisabledReason={textGenerationModelDisabledReason}
-                  {...(environmentId
-                    ? {
-                        onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
-                          void navigate({
-                            to: "/settings/providers",
-                            search: { environmentId, instanceId },
-                          });
-                        },
-                      }
-                    : {})}
-                  onInstanceModelChange={(instanceId, model) => {
-                    const reason = textGenerationModelDisabledReason(instanceId, model);
-                    if (reason) {
-                      toastManager.add({
-                        type: "error",
-                        title: gt("Text generation model not saved"),
-                        description: reason,
-                      });
-                      return;
-                    }
-                    updateSettings({
-                      textGenerationModelSelection: resolveAppModelSelectionState(
-                        {
-                          ...settings,
-                          textGenerationModelSelection: pickModelSelection(
-                            textGenerationModelSelection,
-                            instanceId,
-                            model,
-                          ),
-                        },
-                        textGenerationProviders,
-                      ),
-                    });
-                  }}
-                />
-                {textGenInstanceEntry ? (
-                  <TraitsPicker
-                    provider={textGenProvider}
-                    models={textGenInstanceEntry?.models ?? []}
-                    model={textGenModel}
-                    modelOptions={textGenModelOptions}
-                    allowPromptInjectedEffort={false}
-                    includePlanAgent={selectsPlanAgent(textGenModelOptions)}
-                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    onModelOptionsChange={(nextOptions) => {
-                      updateSettings({
-                        textGenerationModelSelection: resolveAppModelSelectionState(
-                          {
-                            ...settings,
-                            textGenerationModelSelection: createModelSelection(
-                              textGenInstanceId,
-                              textGenModel,
-                              nextOptions,
-                            ),
-                          },
-                          textGenerationProviders,
-                        ),
-                      });
-                    }}
-                  />
-                ) : null}
-              </div>
-            )
-          }
-        />
-        <AdvancedSettings
-          targetIds={[setting("thread-title-instructions").id, setting("response-streaming").id]}
-        >
-          <ThreadTitleInstructionsSettings />
-          <SettingsRow
-            serverScoped
-            settingKeys={["responseStreamingMode"]}
-            {...setting("response-streaming")}
-            description={
-              mixedResponseStreamingMode
-                ? gt("The selected targets use different streaming modes.")
-                : messages(RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode])
-            }
-            resetAction={
-              settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
-                <SettingResetButton
-                  ariaLabel={gt("Reset response streaming to default")}
-                  onClick={() =>
-                    updateSettings({
-                      responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={mixedResponseStreamingMode ? null : settings.responseStreamingMode}
-                onValueChange={(value) => {
-                  if (value === "turn" || value === "paragraph") {
-                    updateSettings({ responseStreamingMode: value });
-                  }
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-full sm:w-56"
-                  aria-label={gt("Response streaming")}
-                >
-                  <SelectValue>
-                    {(value: ResponseStreamingMode | null) =>
-                      value === null ? gt("Mixed") : messages(RESPONSE_STREAMING_MODE_LABELS[value])
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="turn">
-                    {messages(RESPONSE_STREAMING_MODE_LABELS.turn)}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="paragraph">
-                    {messages(RESPONSE_STREAMING_MODE_LABELS.paragraph)}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            }
-          />
-        </AdvancedSettings>
-      </SettingsSection>
+      {isAldoCloud ? null : textGenerationSection}
     </SettingsPageContainer>
   );
 }

@@ -172,3 +172,63 @@ export function derivePendingUserInputProgress<Q extends UserInputQuestion>(
     canAdvance: resolvedAnswer !== null,
   };
 }
+
+// Codex, Claude and OpenCode tell their models to mark the option they
+// recommend by ending its label with "(Recommended)".
+const RECOMMENDED_LABEL_SUFFIX = /\s*\(recommended\)\s*$/i;
+
+/** An option's label as shown, without the provider's "(Recommended)" mark. */
+export function describePendingUserInputOption(
+  option: Pick<UserInputQuestion["options"][number], "label">,
+): {
+  label: string;
+  recommended: boolean;
+} {
+  const label = option.label.replace(RECOMMENDED_LABEL_SUFFIX, "");
+  return label.length > 0 && label !== option.label
+    ? { label, recommended: true }
+    : { label: option.label, recommended: false };
+}
+
+/** How long a question the provider gave a recommended answer waits for one. */
+export const PENDING_USER_INPUT_CARRY_ON_DELAY_MS = 10 * 60 * 1000;
+
+export interface PendingUserInputCarryOn {
+  /** The recommended answer to each question, as the provider expects it. */
+  answers: Record<string, string | string[]>;
+  /** Each answer as the card names it. */
+  labels: string[];
+  /** When it carries on with them, in epoch milliseconds. */
+  at: number;
+}
+
+/**
+ * The recommended answers an unanswered question carries on with; null unless
+ * every question has one. The delay runs from when it was asked, or from
+ * `shownAt` if later, so someone who opens the thread late has time to read it.
+ */
+export function derivePendingUserInputCarryOn(
+  input: {
+    questions: ReadonlyArray<UserInputQuestion>;
+    createdAt: string;
+  },
+  shownAt?: number,
+): PendingUserInputCarryOn | null {
+  const askedAt = Date.parse(input.createdAt);
+  if (!Number.isFinite(askedAt) || input.questions.length === 0) return null;
+  const answers: Record<string, string | string[]> = {};
+  const labels: string[] = [];
+  for (const question of input.questions) {
+    const recommended = question.options.filter(
+      (option) => describePendingUserInputOption(option).recommended,
+    );
+    const picked = question.multiSelect ? recommended : recommended.slice(0, 1);
+    const values = picked.map((option) => option.value ?? option.label);
+    const [first] = values;
+    if (first === undefined) return null;
+    answers[question.id] = question.multiSelect ? values : first;
+    labels.push(picked.map((option) => describePendingUserInputOption(option).label).join(", "));
+  }
+  const from = shownAt !== undefined && shownAt > askedAt ? shownAt : askedAt;
+  return { answers, labels, at: from + PENDING_USER_INPUT_CARRY_ON_DELAY_MS };
+}

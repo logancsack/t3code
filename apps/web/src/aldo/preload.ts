@@ -100,7 +100,7 @@ const turnOnAtom = Atom.family((environmentId: string) =>
         const shell = get(environmentThreadShells.threadShellAtom(ref));
         if (!shell) return false;
         const status = resolveSidebarThreadStatus(shell);
-        return status === "working" || status === "monitoring";
+        return status === "working";
       },
     ),
   ).pipe(Atom.withLabel(`aldo-turn-on:${environmentId}`)),

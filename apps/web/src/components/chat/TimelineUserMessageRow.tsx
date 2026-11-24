@@ -1,3 +1,10 @@
+import { isAldoCloud } from "../../aldo/api";
+import {
+  ALDO_REQUEST_CARD_CLASS,
+  AldoRequestBrief,
+  AldoRequestHeading,
+} from "../../aldo/AldoRequestCard";
+import { aldoRequestOf } from "../../aldo/request.logic";
 import { copySnapshot as copySnapshotToClipboard } from "./copySnapshot";
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
@@ -284,6 +291,28 @@ export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mes
 
 function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  // A thread Aldo started opens with its brief: the user's request, the brief behind it.
+  const aldoRequest =
+    isAldoCloud && !row.message.attachments?.length ? aldoRequestOf(row.message.text) : null;
+  if (aldoRequest) {
+    return (
+      <div className={ALDO_REQUEST_CARD_CLASS} data-thread-find-text="true">
+        <AldoRequestHeading from={aldoRequest.from} />
+        <UserMessageBody
+          text={aldoRequest.said}
+          skills={ctx.skills}
+          markdownCwd={ctx.markdownCwd}
+        />
+        <AldoRequestBrief>
+          <UserMessageBody
+            text={aldoRequest.brief}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        </AldoRequestBrief>
+      </div>
+    );
+  }
   return ctx.workflowOpening?.messageId === row.message.id ? (
     <WorkflowOpeningBlock
       opening={ctx.workflowOpening}

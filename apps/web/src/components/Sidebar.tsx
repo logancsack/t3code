@@ -136,6 +136,15 @@ import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { isAldoCloud } from "../aldo/api";
+import { aldoSupportsGeneralThreads, subscribeAldoEnvironments } from "../aldo/directory";
+import { aldoNewThreadPlace, startAldoThread } from "../aldo/newThread";
+import { useAldoSidebarOrder } from "../aldo/sidebarOrder";
+import {
+  AldoArchivedThreadsLink,
+  AldoSidebarThreadsSkeleton,
+  useAldoThreadsLoading,
+} from "../aldo/AldoSidebarList";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -353,6 +362,11 @@ type SidebarOptimisticDrop = {
   readonly assignedKeys: ReadonlyMap<string, string>;
 };
 
+type AldoSidebarOrder = (
+  section: "pinned" | "active",
+  threads: readonly EnvironmentThreadShell[],
+) => EnvironmentThreadShell[];
+
 interface SidebarThreadPartitionInput {
   readonly threads: readonly EnvironmentThreadShell[];
   readonly scopedProjectKeys: ReadonlySet<string> | null;
@@ -364,6 +378,8 @@ interface SidebarThreadPartitionInput {
   readonly workingShelfEnabled: boolean;
   /** Boring mode: folders list active threads by the user's latest message. */
   readonly sortActiveBySend: boolean;
+  /** Aldo: work first, then what waits on the user, then newest finished, in both lists. */
+  readonly aldoOrder: AldoSidebarOrder | null;
   // Snooze wakes, the queued-turn grace and the Working shelf's exit grace depend
   // on the clock, so the minute tick, the precise snooze-wake tick and the inbox
   // tracker's expiry version are inputs: a new key repartitions.
@@ -382,16 +398,22 @@ const NO_DRAGGED_ORDER: readonly string[] = [];
 const NO_DRAGGED_ORDERS: {
   readonly settledOrder: readonly string[];
   readonly activeOrder: readonly string[] | undefined;
-} = { settledOrder: NO_DRAGGED_ORDER, activeOrder: undefined };
+  readonly pinnedOrder: readonly string[] | undefined;
+} = { settledOrder: NO_DRAGGED_ORDER, activeOrder: undefined, pinnedOrder: undefined };
 
 function resolveDraggedOrders(input: {
   readonly drag: { readonly activeKey: string; readonly occurredAt: string };
   readonly threadByKey: ReadonlyMap<string, EnvironmentThreadShell>;
   readonly settledThreads: readonly EnvironmentThreadShell[];
   readonly activeThreads: readonly EnvironmentThreadShell[];
+  readonly pinnedThreads: readonly EnvironmentThreadShell[];
   readonly workingShelfEnabled: boolean;
+  /** Aldo orders the inbox and the pinned block itself, so both preview that way. */
+  readonly aldoSort:
+    | ((threads: readonly EnvironmentThreadShell[]) => EnvironmentThreadShell[])
+    | null;
 }): typeof NO_DRAGGED_ORDERS {
-  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled } = input;
+  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled, aldoSort } = input;
   const thread = threadByKey.get(drag.activeKey);
   if (thread === undefined) return NO_DRAGGED_ORDERS;
   const others = (list: readonly EnvironmentThreadShell[]) =>
@@ -401,11 +423,22 @@ function resolveDraggedOrders(input: {
       ...others(settledThreads),
       applySidebarThreadDrop(thread, "settled", drag.occurredAt),
     ]).map(threadShellKey),
-    activeOrder: workingShelfEnabled
-      ? sortInboxThreadsByReturn(
-          [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
-          inboxReturns.returnedAt,
-        ).map(threadShellKey)
+    activeOrder: aldoSort
+      ? aldoSort([
+          ...others(activeThreads),
+          applySidebarThreadDrop(thread, "active", drag.occurredAt),
+        ]).map(threadShellKey)
+      : workingShelfEnabled
+        ? sortInboxThreadsByReturn(
+            [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
+            inboxReturns.returnedAt,
+          ).map(threadShellKey)
+        : undefined,
+    pinnedOrder: aldoSort
+      ? aldoSort([
+          ...others(input.pinnedThreads),
+          applySidebarThreadDrop(thread, "pinned", drag.occurredAt),
+        ]).map(threadShellKey)
       : undefined,
   };
 }
@@ -429,6 +462,7 @@ function useSidebarThreads(input: {
   readonly threads: readonly EnvironmentThreadShell[];
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly routeRowThreadKey: string | null;
+  readonly aldoOrder: AldoSidebarOrder | null;
   // Set in boring mode: the project groups to fold active threads into, in order.
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
   // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
@@ -493,6 +527,7 @@ function useSidebarThreads(input: {
     optimisticDrop,
     workingShelfEnabled,
     sortActiveBySend: folderGroups !== null,
+    aldoOrder: input.aldoOrder,
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
 
@@ -628,6 +663,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     optimisticDrop,
     workingShelfEnabled,
     sortActiveBySend,
+    aldoOrder,
   } = input;
   const preciseNow = new Date().toISOString();
   const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, delegatedUnderParent);
@@ -684,12 +720,16 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     }
   }
   // Availability gates dragging only; sorting must stay consistent across clients.
-  const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-  const sortedActive = sortActiveBySend
-    ? sortWorkingThreadsBySend(active)
-    : workingShelfEnabled
-      ? sortInboxThreadsByReturn(active, inboxObservation.returnedAt)
-      : sortThreadsForSidebar(active);
+  const sortedPinned = aldoOrder
+    ? aldoOrder("pinned", pinned)
+    : sortPinnedThreadsForSidebar(pinned);
+  const sortedActive = aldoOrder
+    ? aldoOrder("active", active)
+    : sortActiveBySend
+      ? sortWorkingThreadsBySend(active)
+      : workingShelfEnabled
+        ? sortInboxThreadsByReturn(active, inboxObservation.returnedAt)
+        : sortThreadsForSidebar(active);
   return {
     pinnedThreads:
       optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -1123,6 +1163,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? null
       : scopedThreadKey(resolveListedAncestorThreadRef(routeThreadRef, threads));
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  const aldoThreadsLoading = useAldoThreadsLoading();
+  // Aldo: search results keep their order while a search is open.
+  const {
+    order: aldoOrder,
+    sort: aldoSort,
+    listProps: aldoListProps,
+  } = useAldoSidebarOrder({
+    hold: isSearchingThreads,
+  });
+  // Aldo: a thread needs no project (it can work in General), once the directory says so.
+  const aldoGeneral = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => isAldoCloud && aldoSupportsGeneralThreads(),
+    () => false,
+  );
   // The open draft's first send names its thread in place; a finalized draft reached by
   // navigation resolves through its redirect instead, and still reveals.
   const routeKeyInPlace = routeDraftThread?.promotedTo != null;
@@ -1352,6 +1407,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     threads: listedThreads,
     delegatedUnderParent,
     routeRowThreadKey,
+    aldoOrder: isAldoCloud ? aldoOrder : null,
     folderGroups: boringSidebarEnabled
       ? scopedProjectGroups.length === 0
         ? // An archived project keeps a folder for its active threads, below the rest.
@@ -2046,22 +2102,28 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   };
   const sortableIds = sidebarListItems.map(sidebarListItemId);
   // Keep non-drag orders constant to preserve sorting strategy and row identity during streaming.
-  const { settledOrder: draggedSettledOrder, activeOrder: draggedActiveOrder } =
-    dragState === null
-      ? NO_DRAGGED_ORDERS
-      : resolveDraggedOrders({
-          drag: dragState,
-          threadByKey,
-          settledThreads,
-          activeThreads,
-          workingShelfEnabled,
-        });
+  const {
+    settledOrder: draggedSettledOrder,
+    activeOrder: draggedActiveOrder,
+    pinnedOrder: draggedPinnedOrder,
+  } = dragState === null
+    ? NO_DRAGGED_ORDERS
+    : resolveDraggedOrders({
+        drag: dragState,
+        threadByKey,
+        settledThreads,
+        activeThreads,
+        pinnedThreads,
+        workingShelfEnabled,
+        aldoSort: isAldoCloud ? aldoSort : null,
+      });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
     boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
     ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
+    ...(draggedPinnedOrder === undefined ? {} : { pinnedOrder: draggedPinnedOrder }),
     settledExpanded: settledShelfExpanded,
     settledVisibleCount,
     routeThreadKey: routeRowThreadKey,
@@ -2093,7 +2155,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered: isAldoCloud || workingShelfEnabled,
+            pinnedTimeOrdered: isAldoCloud,
           }).kind !== "none"
         );
       },
@@ -2127,7 +2190,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeOrder: activeKeys,
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
-      activeTimeOrdered: workingShelfEnabled,
+      activeTimeOrdered: isAldoCloud || workingShelfEnabled,
+      pinnedTimeOrdered: isAldoCloud,
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -2964,6 +3028,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const showJumpHints = useThreadJumpHintsVisible(keybindings, routeThreadRef);
 
   const handleNewThreadClick = (event?: ReactMouseEvent) => {
+    // Aldo: a draft at once, in the project of the thread on screen, else General.
+    if (isAldoCloud && aldoSupportsGeneralThreads() && !event?.shiftKey) {
+      if (isMobile) setOpenMobile(false);
+      void startAldoThread(
+        handleNewThread,
+        aldoNewThreadPlace(
+          newThreadContext.activeThread?.environmentId ??
+            newThreadContext.activeDraftThread?.environmentId,
+        ),
+      );
+      return;
+    }
     if (
       shouldCreateNewThreadInCurrentProject(
         event?.shiftKey ?? false,
@@ -3214,7 +3290,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
-              newThreadDisabled={projects.length === 0}
+              newThreadDisabled={projects.length === 0 && !aldoGeneral}
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
               showNewThreadInProjectHint={
@@ -3239,7 +3315,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           </SidebarGroup>
         }
       >
-        <SidebarGroup className="flex-1" role="presentation">
+        <SidebarGroup
+          className="flex-1"
+          role="presentation"
+          {...(isAldoCloud ? aldoListProps : {})}
+        >
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -3333,48 +3413,52 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             snoozedThreads.length ===
             0 &&
           (settledCount === 0 || scopedProjectGroups.length > 0) ? (
-            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
-              {projects.length === 0 ? (
-                <>
-                  <span>
-                    <T>No projects yet</T>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={openAddProjectCommandPalette}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                  >
-                    <PlusIcon className="-mx-0.5 size-3" />
-                    <T>Add project</T>
-                  </button>
-                </>
-              ) : scopedProjectGroups.length > 0 ? (
-                <>
-                  <span>
-                    {settledCount > 0
-                      ? scopedProjectGroups.length > 1
-                        ? gt("No active threads in these projects")
-                        : gt("No active threads in {project}", {
-                            project: scopedProjectGroups[0]!.displayName,
-                          })
-                      : scopedProjectGroups.length > 1
-                        ? gt("No threads in these projects yet")
-                        : gt("No threads in {project} yet", {
-                            project: scopedProjectGroups[0]!.displayName,
-                          })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setProjectScopeKeys([])}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                  >
-                    <T>Show all projects</T>
-                  </button>
-                </>
-              ) : (
-                <T>No threads yet</T>
-              )}
-            </div>
+            aldoThreadsLoading ? (
+              <AldoSidebarThreadsSkeleton />
+            ) : (
+              <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
+                {projects.length === 0 ? (
+                  <>
+                    <span>
+                      <T>No projects yet</T>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={openAddProjectCommandPalette}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      <PlusIcon className="-mx-0.5 size-3" />
+                      <T>Add project</T>
+                    </button>
+                  </>
+                ) : scopedProjectGroups.length > 0 ? (
+                  <>
+                    <span>
+                      {settledCount > 0
+                        ? scopedProjectGroups.length > 1
+                          ? gt("No active threads in these projects")
+                          : gt("No active threads in {project}", {
+                              project: scopedProjectGroups[0]!.displayName,
+                            })
+                        : scopedProjectGroups.length > 1
+                          ? gt("No threads in these projects yet")
+                          : gt("No threads in {project} yet", {
+                              project: scopedProjectGroups[0]!.displayName,
+                            })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setProjectScopeKeys([])}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      <T>Show all projects</T>
+                    </button>
+                  </>
+                ) : (
+                  <T>No threads yet</T>
+                )}
+              </div>
+            )
           ) : null}
           {!isSearchingThreads ? (
             <TooltipProvider
@@ -3720,6 +3804,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               </DndContext>
             </TooltipProvider>
           ) : null}
+          {isAldoCloud && !isSearchingThreads ? <AldoArchivedThreadsLink /> : null}
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />

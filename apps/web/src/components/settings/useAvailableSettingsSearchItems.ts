@@ -1,6 +1,7 @@
 import { useMessages } from "gt-react";
 import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 
+import { useAldoSettingsSearchAvailability } from "~/aldo/settingsSearchAvailability";
 import { usePrimaryCloudLinkState } from "~/cloud/cloudLinkState";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "~/env";
@@ -62,7 +63,10 @@ export function useAvailableSettingsSearchItems() {
   const wslSettingsRowVisible =
     isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;
 
+  const aldo = useAldoSettingsSearchAvailability();
+
   return filterAvailableSettingsSearchItems({
+    ...aldo,
     localEnvironmentDisabled,
     hasCloudPublicConfig: cloudPublicConfig,
     hasEnvironment,

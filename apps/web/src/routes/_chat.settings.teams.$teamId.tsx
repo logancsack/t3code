@@ -13,7 +13,7 @@ function SettingsTeamRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/teams/$teamId")({
+export const Route = createFileRoute("/_chat/settings/teams/$teamId")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

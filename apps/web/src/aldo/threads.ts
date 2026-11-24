@@ -10,10 +10,8 @@
 // before recording another, unless it's on a branch it was asked for (a pull
 // request's): that one is for the draft it was recorded for.
 
-import {
-  normalizeGitRemoteUrl,
-  detectSourceControlProviderFromGitRemoteUrl,
-} from "@t3tools/shared/git";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 
@@ -108,7 +106,7 @@ function repositoryIdentity(project: AldoPlannedProject) {
   const canonicalKey = normalizeGitRemoteUrl(project.remoteUrl);
   const repositoryPath = canonicalKey.split("/").slice(1).join("/");
   const segments = repositoryPath.split("/").filter((segment) => segment.length > 0);
-  const provider = detectSourceControlProviderFromGitRemoteUrl(project.remoteUrl);
+  const provider = sourceControlClients.recognizeRemote(project.remoteUrl);
   return {
     canonicalKey,
     locator: {

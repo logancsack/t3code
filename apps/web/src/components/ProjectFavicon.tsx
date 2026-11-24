@@ -12,6 +12,8 @@ import { deriveProjectIdentity } from "../projectIdentity";
 import { projectIconColorClassName } from "../projectIconColors";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { cn } from "~/lib/utils";
+import { AldoGeneralTile } from "~/aldo/AldoGeneralTile";
+import { useAldoGeneral } from "~/aldo/keptRepo";
 
 // All lucide icons load as one chunk, only once a project uses a lucide override.
 const LucideProjectIcon = lazy(() =>
@@ -38,6 +40,9 @@ export function ProjectFavicon(input: {
   fallbackIcon?: ComponentType<{ className?: string }>;
 }) {
   const { project } = input;
+  // Aldo: General is no project, so it gets no letters or colour, just an empty tile.
+  const aldoGeneral = useAldoGeneral(project.environmentId);
+  if (aldoGeneral) return <AldoGeneralTile className={input.className} />;
   if (project.projectIcon?.kind === "monogram") {
     return (
       <ProjectMonogram

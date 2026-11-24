@@ -5,7 +5,7 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { memo, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, memo, Suspense, useRef, useState, useSyncExternalStore } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button, InlineButton } from "../ui/button";
@@ -15,6 +15,14 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { RefreshIcon } from "../ui/refresh-icon";
+import { isAldoCloud } from "../../aldo/api";
+import { resolveAgentAuthMethods } from "../settings/authConnectorMethods";
+
+const AuthConnectorDialog = lazy(() =>
+  import("../settings/AuthConnectorDialog").then((module) => ({
+    default: module.AuthConnectorDialog,
+  })),
+);
 
 function getIncompatibleVersion(status: ServerProvider) {
   const compatibility = status.compatibilityAdvisory;
@@ -191,6 +199,11 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   const message = incompatible?.message ?? getProviderStatusMessage(status, messages);
   const isWarning =
     incompatible?.status !== "broken" && (status.status === "warning" || incompatible !== null);
+  // Aldo: a subscription is reconnected here, since its machine has no CLI to sign in from.
+  const aldoReconnect =
+    isAldoCloud && status.auth.status === "unauthenticated"
+      ? resolveAgentAuthMethods(status.driver)
+      : undefined;
 
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
@@ -211,7 +224,22 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
               </TooltipPopup>
             </Tooltip>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              {onOpenProviderSetup && hasProviderSetup(status) ? (
+              {aldoReconnect ? (
+                <Suspense fallback={null}>
+                  <AuthConnectorDialog
+                    connector={aldoReconnect.connector}
+                    serviceName={aldoReconnect.serviceName}
+                    methods={aldoReconnect.methods}
+                    providerInstanceId={status.instanceId}
+                    environmentId={environmentId}
+                    isAuthenticated={false}
+                    triggerLabel={gt("Reconnect {service}", {
+                      service: aldoReconnect.serviceName,
+                    })}
+                    onConnected={() => void refresh()}
+                  />
+                </Suspense>
+              ) : onOpenProviderSetup && hasProviderSetup(status) ? (
                 <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
                   <T>Open provider setup</T>
                 </InlineButton>

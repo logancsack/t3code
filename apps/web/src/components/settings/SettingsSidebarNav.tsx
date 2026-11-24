@@ -37,6 +37,12 @@ import { resolveEventKeys } from "@t3tools/shared/keybindings";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { T, useGT, useMessages } from "gt-react";
 
+import { isAldoCloud } from "../../aldo/api";
+import {
+  ALDO_SETTINGS_ICONS,
+  AldoSettingsAccountCard,
+  AldoSettingsNav,
+} from "../../aldo/AldoSettingsNav";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -87,8 +93,9 @@ const T3ConnectSidebarAvatar = lazy(() =>
 );
 
 const SETTINGS_SECTION_ICONS: Readonly<
-  Record<SettingsPath, ComponentType<{ className?: string }>>
+  Partial<Record<SettingsPath, ComponentType<{ className?: string }>>>
 > = {
+  ...ALDO_SETTINGS_ICONS,
   "/settings/general": Settings2Icon,
   "/settings/diagnostics": WrenchIcon,
   "/settings/voice": MicIcon,
@@ -126,7 +133,7 @@ function scrollResultIntoView(row: HTMLElement | null) {
 }
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
-  const Icon = SETTINGS_SECTION_ICONS[to];
+  const Icon = SETTINGS_SECTION_ICONS[to] ?? Settings2Icon;
   return <Icon className="size-4 h-5 shrink-0 text-(--sidebar-icon-color)" />;
 }
 
@@ -203,6 +210,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       hash: "",
       replace: true,
       hashScrollIntoView: false,
+      // Aldo: a project's settings are on its own page; its other pages are the account's.
+      ...(isAldoCloud ? { search: { project: undefined } } : {}),
     });
   };
 
@@ -289,7 +298,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 onBlur={() => {
                   if (!isSearching) setCompactSearchOpen(false);
                 }}
-                placeholder={gt("Search")}
+                placeholder={isAldoCloud ? gt("Search settings") : gt("Search")}
                 aria-label={gt("Search settings")}
                 role="combobox"
                 aria-autocomplete="list"
@@ -320,6 +329,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 <Kbd>/</Kbd>
               )}
             </div>
+            {isAldoCloud && !isSearching ? (
+              <AldoSettingsAccountCard
+                active={pathname === "/settings/account"}
+                onOpen={() => handleSectionClick("/settings/account")}
+              />
+            ) : null}
             {isSearching && results.length === 0 ? (
               <p
                 role="status"
@@ -364,6 +379,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
+            ) : isAldoCloud ? (
+              <AldoSettingsNav pathname={pathname} onNavigate={handleSectionClick} />
             ) : (
               <div className="flex flex-col gap-4">
                 {compactSearchOpen ? null : (
@@ -397,7 +414,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       <div role="group" aria-labelledby={`settings-nav-group-${index}`}>
                         <SidebarMenu>
                           {group.paths.map((to) => {
-                            const Icon = SETTINGS_SECTION_ICONS[to];
+                            const Icon = SETTINGS_SECTION_ICONS[to] ?? Settings2Icon;
                             const isActive = activePath === to || activePath.startsWith(`${to}/`);
                             return (
                               <SidebarMenuItem key={to}>
@@ -430,14 +447,16 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           </div>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="max-md:hidden">
-        <Suspense fallback={null}>
-          <T3ConnectSidebarSignIn />
-        </Suspense>
-        <Suspense fallback={null}>
-          <T3ConnectSidebarAvatar />
-        </Suspense>
-      </SidebarFooter>
+      {isAldoCloud ? null : (
+        <SidebarFooter className="max-md:hidden">
+          <Suspense fallback={null}>
+            <T3ConnectSidebarSignIn />
+          </Suspense>
+          <Suspense fallback={null}>
+            <T3ConnectSidebarAvatar />
+          </Suspense>
+        </SidebarFooter>
+      )}
     </nav>
   );
 }

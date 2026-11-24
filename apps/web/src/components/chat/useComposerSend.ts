@@ -122,6 +122,12 @@ import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { readEnvironmentScope } from "../../state/session";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
+import { aldoImagesGoInline, ensureAldoConnected } from "../../aldo/dispatch";
+import { aldoCarriesAttachments } from "../../aldo/files";
+import { showAldoStartingThread, withdrawAldoStartingThread } from "../../aldo/startingThreads";
+import { hasExplicitComposerModelSelection } from "../../lib/chatThreadActions";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   threadContextsOutsideEnvironment,
@@ -1016,6 +1022,13 @@ export function useComposerSend(input: ComposerSendInput) {
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      modelMayChange:
+        isAldoCloud &&
+        aldoRoutesModels() &&
+        isLocalDraftThread &&
+        !hasExplicitComposerModelSelection(
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+        ),
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
@@ -1054,12 +1067,26 @@ export function useComposerSend(input: ComposerSendInput) {
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
       return;
     }
+    // Aldo keeps a message's files itself; otherwise images for a cloud agent that isn't up go
+    // inside the message, and files wait for the agent to come up.
+    const aldoCarries = aldoCarriesAttachments(environmentId);
+    const aldoAgentOffline = !aldoCarries && aldoImagesGoInline(environmentId);
     const turnUsesAttachmentUploads =
-      composerFilesSnapshot.length > 0
+      !aldoCarries &&
+      (composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads
-        : (readEnvironmentPresentation(environmentId)?.serverConfig ?? null) !== null;
+        : !aldoAgentOffline &&
+          (readEnvironmentPresentation(environmentId)?.serverConfig ?? null) !== null);
     // Uploads finish after the message shows as sending; the turn starts once they land.
-    if (turnUsesAttachmentUploads) startDraftAttachmentUploads(composerAttachmentsSnapshot);
+    const aldoAgentUploads =
+      turnUsesAttachmentUploads && aldoAgentOffline && composerAttachmentsSnapshot.length > 0
+        ? ensureAldoConnected(environmentId).then(() =>
+            startDraftAttachmentUploads(composerAttachmentsSnapshot),
+          )
+        : null;
+    if (turnUsesAttachmentUploads && aldoAgentUploads === null) {
+      startDraftAttachmentUploads(composerAttachmentsSnapshot);
+    }
 
     if (
       multipleModelSelections === null &&
@@ -1287,12 +1314,14 @@ export function useComposerSend(input: ComposerSendInput) {
       );
     }
 
-    const turnAttachmentsPromise = prepareTurnAttachments({
-      environmentId,
-      attachments: composerAttachmentsSnapshot,
-      usesAttachmentUploads: turnUsesAttachmentUploads,
-      draftTarget: composerDraftTarget,
-    });
+    const prepareAttachments = () =>
+      prepareTurnAttachments({
+        environmentId,
+        attachments: composerAttachmentsSnapshot,
+        usesAttachmentUploads: turnUsesAttachmentUploads,
+        draftTarget: composerDraftTarget,
+      });
+    const turnAttachmentsPromise = aldoAgentUploads?.then(prepareAttachments) ?? prepareAttachments();
     if (multipleModelSelections !== null) {
       await sendToMultipleModels({
         threadId: threadIdForSend,
@@ -1381,6 +1410,22 @@ export function useComposerSend(input: ComposerSendInput) {
       ctxSelectedModel || activeProjectDefaultModelSelection?.model || DEFAULT_MODEL,
       ctxSelectedModelSelection.options,
     );
+
+    // Aldo: a new thread is in the sidebar while its cloud agent is created, not once it's up.
+    if (isLocalDraftThread) {
+      showAldoStartingThread(environmentId, {
+        id: threadIdForSend,
+        projectId: activeProject.id,
+        title,
+        modelSelection: threadCreateModelSelection,
+        runtimeMode,
+        interactionMode: DEFAULT_INTERACTION_MODE,
+        branch: activeThreadBranch,
+        worktreePath: activeThread.worktreePath,
+        createdAt: activeThread.createdAt,
+        sentAt: messageCreatedAt,
+      });
+    }
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
 
@@ -1579,6 +1624,7 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     if (failure !== null) {
+      if (isLocalDraftThread) void withdrawAldoStartingThread(environmentId, threadIdForSend);
       if (isLocalDraftThread && draftId && draftThread) {
         restoreFailedDraftThread(
           draftId,

@@ -14,6 +14,9 @@ export type StackedThreadToastOptions = {
   data?: Omit<ThreadToastData, "actionLayout">;
 };
 
+/** Defined `actionProps` that hide a previous toast action on `toastManager.update`, which ignores undefined keys. */
+export const hiddenToastActionProps = { children: null } as const;
+
 export function stackedThreadToast(
   options: StackedThreadToastOptions,
 ): ToastManagerAddOptions<ThreadToastData> {

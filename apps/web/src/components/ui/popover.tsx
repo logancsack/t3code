@@ -42,6 +42,7 @@ function PopoverPopup({
   collisionAvoidance,
   tooltipStyle = false,
   keepMounted = false,
+  animateContent = true,
   anchor,
   touchBackdrop = false,
   ...props
@@ -55,13 +56,15 @@ function PopoverPopup({
   collisionAvoidance?: PopoverPrimitive.Positioner.Props["collisionAvoidance"];
   tooltipStyle?: boolean;
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
+  /** Single-trigger content can skip Viewport's cloning and layout transitions. */
+  animateContent?: boolean;
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
   width?: keyof typeof popoverPopupWidthClassName;
   touchBackdrop?: boolean;
 }) {
   // Viewport rekeys on close; persistent single-trigger forms need stable containers for drafts and submit
   // guards.
-  const Viewport = keepMounted ? "div" : PopoverPrimitive.Viewport;
+  const Viewport = keepMounted || !animateContent ? "div" : PopoverPrimitive.Viewport;
   return (
     <PopoverPrimitive.Portal keepMounted={keepMounted}>
       {touchBackdrop ? (

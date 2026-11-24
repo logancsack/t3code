@@ -4320,7 +4320,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           }
           set((state) => {
             const current = state.draftsByThreadKey[threadKey];
-            if (!current) {
+            if (
+              !current ||
+              (current.persistedAttachments.length === 0 &&
+                current.nonPersistedImageIds.length === 0)
+            ) {
+              // Clear already: opening a thread with no images came here each time.
               return state;
             }
             const nextDraft: ComposerThreadDraftState = {
@@ -4343,6 +4348,17 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return;
           }
           const attachmentIdSet = new Set(attachments.map((attachment) => attachment.id));
+          const existing = get().draftsByThreadKey[threadKey];
+          if (
+            existing &&
+            existing.persistedAttachments.length === attachments.length &&
+            existing.persistedAttachments.every((attachment, index) => attachment === attachments[index]) &&
+            !existing.nonPersistedImageIds.some((id) => attachmentIdSet.has(id))
+          ) {
+            // Staged as they are already (opening a thread with images did this
+            // each time): checking again would write and re-read every draft.
+            return;
+          }
           set((state) => {
             const current = state.draftsByThreadKey[threadKey];
             if (!current) {

@@ -41,7 +41,6 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { APP_BASE_NAME } from "../../branding";
-import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
 import { aldoAuthConnectors } from "../../aldo/accountApi";
 import { isAldoCloud } from "../../aldo/api";
 import { useAldoAccountMethod } from "../../aldo/accountSpecs";
@@ -55,9 +54,7 @@ export type AuthConnectorMethodOption = {
   readonly externalHelpUrl?: string;
   readonly externalHelpLabel?: string;
   readonly browserName?: string;
-  readonly workspaceBrowser?: boolean;
   readonly authorizeInstruction?: string;
-  readonly manualAuthorizeInstruction?: string;
   readonly waitingMessage?: string;
   readonly returnInstruction?: string;
 };
@@ -73,25 +70,6 @@ export function buildAuthConnectorStartInput(input: {
     ...(input.option.hostname ? { hostname: input.option.hostname } : {}),
     ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
   };
-}
-
-export function authVerificationDestination(input: {
-  readonly verificationUrl: string;
-  readonly workspaceBrowser: boolean;
-  readonly workspaceBrowserUrl: string | null;
-}): string {
-  return input.workspaceBrowser && input.workspaceBrowserUrl
-    ? input.workspaceBrowserUrl
-    : input.verificationUrl;
-}
-
-export function authAuthorizeInstruction(input: {
-  readonly option: AuthConnectorMethodOption | null | undefined;
-  readonly usesManagedWorkspaceBrowser: boolean;
-}): string | undefined {
-  return input.usesManagedWorkspaceBrowser
-    ? input.option?.authorizeInstruction
-    : (input.option?.manualAuthorizeInstruction ?? input.option?.authorizeInstruction);
 }
 
 function errorMessage(cause: unknown): string {
@@ -355,18 +333,6 @@ export function AuthConnectorDialog(props: {
   const openVerificationUrl = () => {
     if (!session?.verificationUrl) return;
     setOpenedSessionId(session.id);
-    openExternal(
-      authVerificationDestination({
-        verificationUrl: session.verificationUrl,
-        workspaceBrowser: selectedMethod?.workspaceBrowser === true,
-        workspaceBrowserUrl: managedWorkspaceBrowserUrl(),
-      }),
-    );
-  };
-
-  const openVerificationUrlHere = () => {
-    if (!session?.verificationUrl) return;
-    setOpenedSessionId(session.id);
     openExternal(session.verificationUrl);
   };
 
@@ -440,12 +406,6 @@ export function AuthConnectorDialog(props: {
     : 0;
   const remaining = session ? formatRemaining(session.expiresAt, now) : null;
   const browserName = selectedMethod?.browserName ?? serviceName;
-  const usesManagedWorkspaceBrowser =
-    selectedMethod?.workspaceBrowser === true && managedWorkspaceBrowserUrl() !== null;
-  const authorizeInstruction = authAuthorizeInstruction({
-    option: selectedMethod,
-    usesManagedWorkspaceBrowser,
-  });
   const stageTitle =
     presentationStage === "credential"
       ? "Add your credential"
@@ -458,7 +418,7 @@ export function AuthConnectorDialog(props: {
             : "Preparing secure sign-in";
   const stageDescription =
     presentationStage === "authorize"
-      ? (authorizeInstruction ??
+      ? (selectedMethod?.authorizeInstruction ??
         `Complete the authorization in ${browserName}. This window will update automatically.`)
       : presentationStage === "return"
         ? (selectedMethod?.returnInstruction ??
@@ -634,22 +594,9 @@ export function AuthConnectorDialog(props: {
                         >
                           {session.userCode
                             ? `Copy code & open ${browserName}`
-                            : usesManagedWorkspaceBrowser
-                              ? "Open workspace browser"
-                              : `Open ${browserName}`}
+                            : `Open ${browserName}`}
                           <ExternalLinkIcon className="size-4" />
                         </Button>
-                        {usesManagedWorkspaceBrowser && !session.userCode ? (
-                          <Button
-                            type="button"
-                            variant="link"
-                            className="h-auto w-full p-0 text-xs"
-                            onClick={openVerificationUrlHere}
-                          >
-                            Open {browserName} in this browser instead
-                            <ExternalLinkIcon className="size-3" />
-                          </Button>
-                        ) : null}
                       </div>
                     ) : null}
 

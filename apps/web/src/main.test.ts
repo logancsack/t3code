@@ -2,6 +2,10 @@ import { expect, it, vi } from "vite-plus/test";
 
 vi.mock("./appInit", () => ({ startAppServices: () => ({ load: async () => {} }) }));
 vi.mock("./AppRoot", () => ({ AppRoot: () => null }));
+vi.mock("./aldo/startup", () => ({
+  prepareAldoStartup: async () => ({ history: undefined, mounted: null }),
+  installAldoRouter: () => {},
+}));
 vi.mock("./i18n/runtime", () => ({ whenLocaleReady: async () => {} }));
 vi.mock("react-dom/client", () => ({ default: { createRoot: () => ({ render: () => {} }) } }));
 

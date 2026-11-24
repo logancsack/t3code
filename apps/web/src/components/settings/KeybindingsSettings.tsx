@@ -1,4 +1,7 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { AldoKeysSection } from "../../aldo/AldoKeys";
+import { isAldoCloud } from "../../aldo/api";
+import { ALDO_HIDDEN_KEYBINDING_COMMANDS } from "../../aldo/settings.logic";
 import { m as resolveMessage } from "~/i18n/messages";
 import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
@@ -1426,8 +1429,13 @@ function keybindingAnchorIds(rows: ReturnType<typeof buildKeybindingRows>) {
 
 // Cache rows in a separate hook so the compiler does not rebuild them per search keystroke.
 function useKeybindingCatalog() {
-  const serverKeybindings = useSettingsScope().environment?.serverConfig?.keybindings;
-  const merged = mergeWithDefaultKeybindings(serverKeybindings ?? []);
+  const scopedKeybindings = useSettingsScope().environment?.serverConfig?.keybindings;
+  // Aldo lists what the app applies there: the defaults, never a machine's edits.
+  const serverKeybindings = isAldoCloud ? undefined : scopedKeybindings;
+  const defaults = mergeWithDefaultKeybindings(serverKeybindings ?? []);
+  const merged = isAldoCloud
+    ? defaults.filter((binding) => !ALDO_HIDDEN_KEYBINDING_COMMANDS.has(binding.command))
+    : defaults;
   const m = useMessages();
   return {
     commandOptions: buildKeybindingCommandOptions(merged, m),
@@ -1615,49 +1623,54 @@ export function KeybindingsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection
         {...searchableSetting("keybindings")}
-        headerAction={!isElectron ? <BrowserKeybindingNotice /> : null}
+        headerAction={!isElectron && !isAldoCloud ? <BrowserKeybindingNotice /> : null}
       >
         <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
           <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isAddingBinding || !canWriteSettings}
-            onClick={() => setIsAddingBinding(true)}
-          >
-            <PlusIcon aria-hidden className="size-4" />
-            <T>Add keybinding</T>
-          </Button>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  disabled={!keybindingsConfigPath || !canOpenKeybindingsFile}
-                  onClick={openKeybindingsFile}
-                  aria-label={gt("Open keybindings.json")}
-                >
-                  <FileJsonIcon aria-hidden className="size-4" />
-                </Button>
-              }
-            />
-            <TooltipPopup side="top">
-              <T>Open keybindings.json</T>
-            </TooltipPopup>
-          </Tooltip>
+          {/* Aldo's keybindings can't change, and there's no editor on its machines. */}
+          {isAldoCloud ? null : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isAddingBinding || !canWriteSettings}
+                onClick={() => setIsAddingBinding(true)}
+              >
+                <PlusIcon aria-hidden className="size-4" />
+                <T>Add keybinding</T>
+              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={!keybindingsConfigPath || !canOpenKeybindingsFile}
+                      onClick={openKeybindingsFile}
+                      aria-label={gt("Open keybindings.json")}
+                    >
+                      <FileJsonIcon aria-hidden className="size-4" />
+                    </Button>
+                  }
+                />
+                <TooltipPopup side="top">
+                  <T>Open keybindings.json</T>
+                </TooltipPopup>
+              </Tooltip>
+            </>
+          )}
         </div>
       </SettingsSection>
 
-      {!canWriteSettings ? (
+      {!canWriteSettings && !isAldoCloud ? (
         <p className="text-xs text-muted-foreground">
           {connectedEnvironments.length === 0
             ? gt("Connect an environment to change keybindings.")
             : gt("This connection can view keybindings but cannot change them.")}
         </p>
       ) : null}
-      <div inert={!canWriteSettings} className="flex flex-col gap-8">
+      <div inert={!canWriteSettings || isAldoCloud} className="flex flex-col gap-8">
         {isAddingBinding ? (
           <SettingsGroup>
             <NewKeybindingSettingsRow
@@ -1686,6 +1699,7 @@ export function KeybindingsSettingsPanel() {
           </SettingsGroup>
         )}
       </div>
+      {isAldoCloud ? <AldoKeysSection /> : null}
     </SettingsPageContainer>
   );
 }

@@ -19,9 +19,14 @@ const hostedAppChannel = import.meta.env.VITE_HOSTED_APP_CHANNEL?.trim().toLower
 export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;
 export const HOSTED_APP_CHANNEL_LABEL = resolveHostedAppChannelLabel(HOSTED_APP_CHANNEL);
-export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
+/** Aldo builds show the Aldo mark. Read from the flag so branding stays import-free. */
+export const APP_IS_ALDO = import.meta.env.VITE_ALDO_CLOUD === "1";
+export const APP_BASE_NAME =
+  injectedDesktopAppBranding?.baseName ?? (APP_IS_ALDO ? "Aldo" : "T3 Code");
 export const APP_STAGE_LABEL =
   injectedDesktopAppBranding?.stageLabel ??
+  // "Latest" renders as the bare base name: "Aldo", no stage suffix.
+  (APP_IS_ALDO ? "Latest" : undefined) ??
   resolveWebAppStageLabel({
     hostedAppChannel: HOSTED_APP_CHANNEL,
     development: import.meta.env.DEV,

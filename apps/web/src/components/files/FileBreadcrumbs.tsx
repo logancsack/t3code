@@ -5,6 +5,8 @@ import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { useState } from "react";
 
+import { isAgentFilePath } from "~/aldo/agentFiles.logic";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 import {
   Menu,
@@ -97,7 +99,11 @@ function BreadcrumbMenuContent(props: {
   const { resolvedTheme } = useTheme();
   const entries = entriesQuery.data?.entries ?? [];
   const entriesTruncated = entriesQuery.data?.truncated ?? false;
-  const children = fileBreadcrumbChildren(entries, props.directoryPath);
+  // Aldo: a thread without a repository lists the user's files, not the agent's own (see FileBrowserPanel).
+  const hideAgentFiles = useAldoKeptRepo(props.environmentId);
+  const children = fileBreadcrumbChildren(entries, props.directoryPath).filter(
+    (child) => !hideAgentFiles || !isAgentFilePath(child.path),
+  );
   const directoryAvailable = entriesQuery.data !== null;
   const parentPath = fileBreadcrumbParent(props.directoryPath);
   const canGoBack =

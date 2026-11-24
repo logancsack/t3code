@@ -52,9 +52,6 @@ const configuredDesktopUpdateRepository =
   process.env.GITHUB_REPOSITORY?.trim() ||
   "";
 const configuredFeatureSecrets = process.env.T3CODE_FEATURE_SECRETS?.trim() || "";
-const managedDevPc = ["1", "true"].includes(
-  process.env.VITE_DEVPC_MANAGED?.trim().toLowerCase() ?? "",
-);
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
   if (explicitHostedAppUrl) {
@@ -101,6 +98,7 @@ const unitTestProject = {
       "../../packages/shared/src/testing/longTempDir.ts",
       "../../packages/shared/src/testing/providerEnv.ts",
       "../../packages/shared/src/testing/gitEnv.ts",
+      "./test/unitSetup.ts",
     ],
   },
 } satisfies TestProjectInlineConfiguration;
@@ -365,8 +363,11 @@ function aldoBootstrapPlugin(): Plugin {
     apply: "build",
     transformIndexHtml: {
       order: "pre",
-      handler(html) {
-        if (!html.includes(entry)) throw new Error("aldo:bootstrap: index.html has no entry script.");
+      handler(html, { filename }) {
+        // replay.html already names Aldo's entry.
+        if (!filename.endsWith("/index.html")) return html;
+        if (!html.includes(entry))
+          throw new Error("aldo:bootstrap: index.html has no entry script.");
         // A static entry makes $initial include the UI graph. Install its error
         // handler outside that graph, so a missing or broken module still shows Reload.
         return html.replace(
@@ -444,7 +445,6 @@ export default defineConfig(({ command }) => {
       },
     },
     assetsInclude: ["**/*.wasm"],
-    base: managedDevPc ? "/_t3/" : "/",
     publicDir: aldoCloud ? "public-aldo" : "public",
     plugins: [
       bootstrapTitlePlugin(),
@@ -504,7 +504,6 @@ export default defineConfig(({ command }) => {
       "import.meta.env.T3CODE_FEATURE_SECRETS": JSON.stringify(configuredFeatureSecrets),
       "import.meta.env.VITE_RELEASE_CHANNEL": JSON.stringify(configuredReleaseChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
-      "import.meta.env.VITE_DEVPC_MANAGED": JSON.stringify(managedDevPc ? "1" : ""),
       "import.meta.env.VITE_ALDO_CLOUD": JSON.stringify(aldoCloud ? "1" : ""),
     },
     resolve: {

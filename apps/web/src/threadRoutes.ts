@@ -128,3 +128,27 @@ export function resolveActiveThreadRouteRef(
   }
   return draftThread?.promotedTo ?? promotedDraftRedirect;
 }
+
+type ThreadRouteViewComponent = typeof import("./components/ThreadRouteView").ThreadRouteView;
+
+let threadRouteView: ThreadRouteViewComponent | null = null;
+let threadRouteViewLoad: Promise<ThreadRouteViewComponent> | null = null;
+
+/**
+ * Loads the thread view (ChatView and everything it renders), which Aldo's home
+ * screen doesn't need. A route that waits for it in its loader renders
+ * `loadedThreadRouteView` without suspending. A failed load is tried again next time.
+ */
+export function loadThreadRouteView(): Promise<ThreadRouteViewComponent> {
+  threadRouteViewLoad ??= import("./components/ThreadRouteView")
+    .then((module) => (threadRouteView = module.ThreadRouteView))
+    .catch((error: unknown) => {
+      threadRouteViewLoad = null;
+      throw error;
+    });
+  return threadRouteViewLoad;
+}
+
+export function loadedThreadRouteView(): ThreadRouteViewComponent | null {
+  return threadRouteView;
+}

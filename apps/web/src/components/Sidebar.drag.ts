@@ -94,6 +94,8 @@ export function createSidebarSortingStrategy(input: {
   enabled?: boolean;
   settledOrder: readonly string[];
   activeOrder?: readonly string[];
+  /** Time-ordered pinned block (Aldo): where the lifted row would land. */
+  pinnedOrder?: readonly string[];
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -145,7 +147,7 @@ export function createSidebarSortingStrategy(input: {
     const group = groups[target.section];
     const order =
       target.section === "pinned"
-        ? target.pinnedOrder
+        ? (input.pinnedOrder ?? target.pinnedOrder)
         : target.section === "settled"
           ? input.settledOrder
           : (input.activeOrder ?? target.activeOrder);

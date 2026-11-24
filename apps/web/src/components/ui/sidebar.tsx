@@ -1,4 +1,10 @@
 import { mergeProps } from "@base-ui/react/merge-props";
+import {
+  aldoLayersActive,
+  closeAldoDrawer,
+  openAldoDrawer,
+  useAldoDrawerOpen,
+} from "../../aldo/layers";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import { T, useGT } from "gt-react";
@@ -200,11 +206,22 @@ function SidebarProvider({
 }) {
   const isMobile = useMediaQuery(SIDEBAR_MOBILE_QUERY);
   const [store] = React.useState(() => createSidebarOpenStore(defaultOpen, storageKey));
-  const { open, openMobile } = React.useSyncExternalStore(
+  const { open, openMobile: storeOpenMobile } = React.useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,
     store.getSnapshot,
   );
+  // In Aldo the phone's sheet is a history entry (aldo/layers.ts), so Back closes it first.
+  const layered = aldoLayersActive();
+  const drawerOpen = useAldoDrawerOpen();
+  const openMobile = layered ? drawerOpen : storeOpenMobile;
+  const setOpenMobile = layered
+    ? (next: boolean) => (next ? openAldoDrawer() : closeAldoDrawer())
+    : store.setOpenMobile;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a phone turned wide leaves the sheet's history entry behind
+  React.useEffect(() => {
+    if (!isMobile && drawerOpen) closeAldoDrawer();
+  }, [isMobile, drawerOpen]);
   const [mobileSheetMounted, setMobileSheetMounted] = React.useState(false);
   if (openMobile && !mobileSheetMounted) {
     setMobileSheetMounted(true);
@@ -223,9 +240,9 @@ function SidebarProvider({
     mobileSheetMounted,
     setMobileSheetMounted,
     setOpen: store.setOpen,
-    setOpenMobile: store.setOpenMobile,
+    setOpenMobile,
     state,
-    toggleSidebar: store.toggle,
+    toggleSidebar: layered && isMobile ? () => setOpenMobile(!drawerOpen) : store.toggle,
     onCollapse: store.onCollapse,
   };
 
@@ -294,6 +311,7 @@ function Sidebar({
   resizable?: boolean | SidebarResizableOptions;
 }) {
   const { isMobile, state, openMobile, setOpenMobile, setMobileSheetMounted } = useSidebar();
+  const mobileContentRef = React.useRef<HTMLDivElement | null>(null);
   const gt = useGT();
   // Not usePanelAnimationSettings: its navigation suppression would snap the sheet shut mid-exit when an item navigates.
   const panelAnimationDurationMs = useClientSettings(
@@ -345,6 +363,8 @@ function Sidebar({
             data-sidebar="sidebar"
             data-slot="sidebar"
             showCloseButton={false}
+            // Finding the first control checks every row's computed style: seconds with hundreds of rows on a phone.
+            initialFocus={mobileContentRef}
             side={side}
             style={
               {
@@ -359,8 +379,10 @@ function Sidebar({
               </SheetDescription>
             </SheetHeader>
             <div
+              ref={mobileContentRef}
+              tabIndex={-1}
               className={cn(
-                "flex h-full w-full flex-col pb-safe pt-safe",
+                "flex h-full w-full flex-col pb-safe pt-safe outline-none",
                 SIDEBAR_TITLEBAR_CONTROL_SIZE,
                 side === "left" ? "pl-safe" : "pr-safe",
               )}

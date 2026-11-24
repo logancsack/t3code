@@ -1,4 +1,24 @@
 import { m } from "../i18n/messages";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
+import { useAldoPreload } from "../aldo/preload";
+import { useAldoFocusReport } from "../aldo/focus";
+import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
+import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
+import { useAldoFirstViewHold } from "../aldo/firstView";
+import { useAldoThreadStart } from "../aldo/threadStart";
+import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
+import { useAldoKeptRepo } from "../aldo/keptRepo";
+import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
+import { AldoOrgNoteCard } from "../aldo/AldoOrgNoteCard";
+import {
+  AldoComposerPlaceChip,
+  AldoDraftWhereCard,
+  AldoPlaceSuggestion,
+  AldoThreadFirstLine,
+} from "../aldo/AldoDraftPlace";
+import { aldoCarriesAttachments } from "../aldo/files";
+import { aldoStartingLabel } from "../aldo/dispatch";
+import { hasSharedBrowser } from "../aldo/sharedBrowser";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useGT, useMessages } from "gt-react";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
@@ -404,7 +424,9 @@ import {
   isCompactCommandMessage,
   type LocalThreadErrorEntry,
   makeThreadErrorSetter,
+  shouldQuietlyRecoverManagedPrimaryEnvironment,
 } from "./ChatView.logic";
+import { formatShortTimestamp } from "../timestampFormat";
 
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
@@ -1228,8 +1250,50 @@ export default function ChatView(props: ChatViewProps) {
 
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
+  // Aldo: sending creates or wakes the thread's cloud agent (aldo/dispatch.ts),
+  // so a machine that isn't running (or doesn't exist yet) doesn't block it.
+  const aldoAgentOffline =
+    isAldoCloud &&
+    activeEnvironment !== null &&
+    isAldoEnvironmentId(activeEnvironment.environmentId) &&
+    activeEnvironment.connection.phase !== "connected";
   const activeEnvironmentUnavailable =
-    activeEnvironment !== null && activeEnvironment.connection.phase !== "connected";
+    activeEnvironment !== null &&
+    activeEnvironment.connection.phase !== "connected" &&
+    !aldoAgentOffline &&
+    !shouldQuietlyRecoverManagedPrimaryEnvironment({
+      managed: false,
+      activeEnvironmentId: activeEnvironment.environmentId,
+      primaryEnvironmentId: primaryEnvironment?.environmentId ?? null,
+      connectionPhase: activeEnvironment.connection.phase,
+    });
+  // Aldo: opening a thread starts its cloud agent in the background, so sending
+  // doesn't wait; one with no copy anywhere to show wakes it regardless.
+  const aldoThreadDetailMissing = useAldoThreadDetailMissing(
+    routeKind === "server" ? environmentId : null,
+    routeKind === "server" ? threadId : null,
+  );
+  const aldoWake = useAldoPreload(
+    activeEnvironment?.environmentId ?? null,
+    isServerThread ? threadId : null,
+    activeEnvironment?.connection.phase,
+    aldoThreadDetailMissing && threadDetailLoading,
+  );
+  const aldoWakeFailure =
+    aldoWake.wakeFailure === null ? null : describeAldoWakeFailure(aldoWake.wakeFailure);
+  // Aldo: while this conversation is on screen, notifications about it come quietly.
+  useAldoFocusReport(activeEnvironment?.environmentId ?? null, isServerThread ? threadId : null);
+  const aldoThreadStart = useAldoThreadStart(
+    routeKind === "server" ? environmentId : null,
+    routeKind === "server" ? threadId : null,
+  );
+  const aldoThreadLoadingProps = {
+    start: aldoThreadStart ?? aldoWakeFailure,
+    label: aldoThreadDetailMissing
+      ? gt("Waking the cloud agent to load this thread…")
+      : gt("Loading messages…"),
+    onRetry: aldoThreadStart === null ? aldoWake.retryWake : undefined,
+  };
   const activeEnvironmentUnavailableLabel = activeEnvironment?.label ?? null;
   const activeEnvironmentUnavailableState = (() => {
     if (!activeEnvironmentUnavailable || !activeEnvironmentUnavailableLabel || !activeEnvironment) {
@@ -1417,6 +1481,7 @@ export default function ChatView(props: ChatViewProps) {
     activePendingApproval,
     activePendingUserInput,
     activePendingIsResponding,
+    activePendingCarryOn,
     respondingRequestIds,
     onRespondToApproval: onRespondToApprovalStable,
     onDismissUserInput: onDismissUserInputStable,
@@ -1656,8 +1721,20 @@ export default function ChatView(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
+  // Aldo: a thread with nothing to show yet shows how its start stands, not an empty page.
+  const showAldoThreadLoading =
+    isAldoCloud &&
+    routeKind === "server" &&
+    timelineEmpty &&
+    !isWorking &&
+    (aldoThreadStart !== null || threadDetailLoading);
+  useAldoFirstViewHold(
+    showAldoThreadLoading && aldoThreadStart === null && !aldoThreadDetailMissing,
+  );
+  // Aldo: a draft is the thread it'll be, so its composer sits where it'll stay.
+  const aldoDraft = isAldoCloud && isLocalDraftThread && isAldoEnvironmentId(environmentId);
   const isDraftHeroState = resolveDraftHeroState({
-    isLocalDraftThread,
+    isLocalDraftThread: isLocalDraftThread && !aldoDraft,
     hasTimelineEntries: !timelineEmpty,
     isWorking,
     draftHeroDockRequested,
@@ -1789,6 +1866,18 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
+  // Aldo: a General thread, or one in a project Aldo keeps, has no branch to show.
+  const aldoKeptRepo = useAldoKeptRepo(environmentId);
+  const composerStripShowsGit = isGitRepo && !aldoKeptRepo;
+  const aldoComposerPlaceholder = !isAldoCloud
+    ? undefined
+    : aldoKeptRepo
+      ? aldoDraft
+        ? gt("Describe the task: research, an errand, a document…")
+        : gt("Reply, or ask for what's next…")
+      : aldoDraft
+        ? gt("Ask anything, @tag files/folders, $use skills, or / for commands")
+        : undefined;
   // Provider-native subagents cannot take messages; approvals and questions go to the top-level parent.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
@@ -1821,8 +1910,8 @@ export default function ChatView(props: ChatViewProps) {
       isDraftHeroState,
       persistInActiveThreads: settings.persistComposerContextStrip,
       hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-      isGitRepo,
-      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      isGitRepo: composerStripShowsGit,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator && !aldoKeptRepo,
     });
   const terminalShortcutLabelOptions = {
     context: {
@@ -1944,6 +2033,20 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const sendAppMessageStable = useStableCallback(sendAppMessage);
+  // Aldo: a move or an offered follow-up, sent as the next message.
+  const sendAldoMessageStable = useStableCallback((text: string) =>
+    sendAppMessage(text).then(
+      () => true,
+      (error: unknown) => {
+        toastManager.add({
+          type: "error",
+          title: gt("Couldn't send the message"),
+          description: error instanceof Error ? error.message : undefined,
+        });
+        return false;
+      },
+    ),
+  );
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -2031,8 +2134,9 @@ export default function ChatView(props: ChatViewProps) {
   const linkedItemsSurfaceAvailable =
     pullRequestsSurfaceAvailable ||
     (isServerThread && (activeThreadShell?.issues?.length ?? 0) > 0);
+  // Aldo's machines run no simulators, so there are no devices to ask them about.
   const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
-    activeThreadRef?.environmentId ?? null,
+    isAldoCloud ? null : (activeThreadRef?.environmentId ?? null),
   );
   // The thread's own change request, placed against the project it belongs to. Without a
   // project there is nothing to resolve it against, so the caller falls back to the browser.
@@ -2281,31 +2385,38 @@ export default function ChatView(props: ChatViewProps) {
   const setPendingServerThreadBranch = (branch: string | null) => {
     if (activeThread) setPendingServerThreadBranchEntry({ threadId: activeThread.id, branch });
   };
-  const envMode: DraftThreadEnvMode = canOverrideServerThreadEnvMode
-    ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
-    : derivedEnvMode;
+  // Aldo: the sandbox belongs to this thread, so it always works in the checkout itself.
+  const aldoSandboxThread = isAldoCloud && isAldoEnvironmentId(environmentId);
+  const envMode: DraftThreadEnvMode = aldoSandboxThread
+    ? "local"
+    : canOverrideServerThreadEnvMode
+      ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
+      : derivedEnvMode;
   const activeThreadBranch =
     canOverrideServerThreadEnvMode && pendingServerThreadBranchEntryForThread !== null
       ? pendingServerThreadBranchEntryForThread.branch
       : (activeThread?.branch ?? null);
-  const startFromOrigin = isLocalDraftThread
-    ? (draftThread?.startFromOrigin ?? false)
-    : canOverrideServerThreadEnvMode
-      ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
-        activeProjectSettings.settings.newWorktreesStartFromOrigin)
-      : false;
+  const startFromOrigin = aldoSandboxThread
+    ? false
+    : isLocalDraftThread
+      ? (draftThread?.startFromOrigin ?? false)
+      : canOverrideServerThreadEnvMode
+        ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
+          activeProjectSettings.settings.newWorktreesStartFromOrigin)
+        : false;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
   });
-  const localCheckoutBranchMismatch = isServerThread
-    ? resolveLocalCheckoutBranchMismatch({
-        effectiveEnvMode: envMode,
-        activeWorktreePath,
-        activeThreadBranch,
-        currentGitBranch: gitStatusQuery.data?.refName ?? null,
-      })
-    : null;
+  const localCheckoutBranchMismatch =
+    isServerThread && !aldoKeptRepo
+      ? resolveLocalCheckoutBranchMismatch({
+          effectiveEnvMode: envMode,
+          activeWorktreePath,
+          activeThreadBranch,
+          currentGitBranch: gitStatusQuery.data?.refName ?? null,
+        })
+      : null;
   const publishComposerOverlayHeight = (height: number) => {
     const nextHeight = Math.ceil(height);
     if (nextHeight <= 0) return;
@@ -3295,7 +3406,13 @@ export default function ChatView(props: ChatViewProps) {
   };
 
   if (!activeThread) {
-    return embedded ? null : <NoActiveThreadState />;
+    if (embedded) return null;
+    // A deep link can arrive before either the shell or detail is cached.
+    return isAldoCloud && routeKind === "server" ? (
+      <AldoThreadLoading {...aldoThreadLoadingProps} startedAt={null} bottomInset={0} />
+    ) : (
+      <NoActiveThreadState />
+    );
   }
 
   const rightPanelContent = activeThreadRef ? (
@@ -3348,6 +3465,12 @@ export default function ChatView(props: ChatViewProps) {
         pendingSurfaceIds: pendingFileSurfaceIds,
         onOpenFile: openFileSurfaceStable,
         onPendingChange: handleFilePendingChangeStable,
+      }}
+      library={{
+        checkpoints: turnDiffSummaries,
+        workLogEntries: timelineEntries.flatMap((entry) =>
+          entry.kind === "work" ? [entry.entry] : [],
+        ),
       }}
     />
   ) : null;
@@ -3439,6 +3562,9 @@ export default function ChatView(props: ChatViewProps) {
             {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
             {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
             <ChatHeader
+              draftId={draftId ?? undefined}
+              working={phase === "running"}
+              onSendAldoMessage={isAldoCloud && isServerThread ? sendAldoMessageStable : undefined}
               activeThreadEnvironmentId={activeThread.environmentId}
               activeThreadId={activeThread.id}
               isServerThread={isServerThread}
@@ -3536,9 +3662,11 @@ export default function ChatView(props: ChatViewProps) {
                   }
                   activeTurnStartedAt={activeWorkStartedAt}
                   providerStartingLabel={
-                    activeActivityRun?.providerStartingLabelMsg
-                      ? messages(activeActivityRun.providerStartingLabelMsg)
-                      : null
+                    aldoAgentOffline && isSendBusy
+                      ? aldoStartingLabel(environmentId)
+                      : activeActivityRun?.providerStartingLabelMsg
+                        ? messages(activeActivityRun.providerStartingLabelMsg)
+                        : null
                   }
                   worktreeSetup={worktreeSetup}
                   onCancelWorktreeSetup={onCancelWorktreeSetupStable}
@@ -3597,7 +3725,18 @@ export default function ChatView(props: ChatViewProps) {
                   onIsAtEndChange={onIsAtEndChangeStable}
                   onViewportAttach={attachTimelineViewport}
                   onFooterGrow={onTimelineFooterGrowStable}
-                  hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                  hideEmptyPlaceholder={
+                    isDraftHeroState || aldoDraft || threadDetailLoading || showAldoThreadLoading
+                  }
+                  leadingHeader={
+                    isAldoCloud && isServerThread && isAldoEnvironmentId(environmentId) ? (
+                      <AldoThreadFirstLine
+                        environmentId={environmentId}
+                        project={activeProject}
+                        startedAt={activeThread.createdAt}
+                      />
+                    ) : null
+                  }
                   emptyPlaceholderInset={composerReservedHeight}
                   topFadeEnabled={!hasTimelineTopBanner}
                   {...(threadHistoryControls === undefined
@@ -3605,6 +3744,29 @@ export default function ChatView(props: ChatViewProps) {
                     : { historyControls: threadHistoryControls })}
                 />
               </WorkspaceMutationIdContext>
+              {aldoDraft && draftId && timelineEmpty ? (
+                <div
+                  className="pointer-events-none absolute inset-0 flex flex-col justify-center overflow-hidden ps-(--workspace-gutter-start) pe-(--workspace-gutter-end)"
+                  style={{ paddingBottom: composerTimelineInset }}
+                >
+                  <div className="px-3 pb-10 sm:px-5">
+                    <AldoDraftWhereCard
+                      draftId={draftId}
+                      environmentId={environmentId}
+                      project={activeProject}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              {showAldoThreadLoading ? (
+                <div className="absolute inset-0">
+                  <AldoThreadLoading
+                    {...aldoThreadLoadingProps}
+                    startedAt={activeThread.createdAt}
+                    bottomInset={composerTimelineInset}
+                  />
+                </div>
+              ) : null}
 
               {showScrollToBottom && !isThreadFindActive && (
                 <ScrollToEndButton
@@ -3636,8 +3798,28 @@ export default function ChatView(props: ChatViewProps) {
               <div ref={draftHeroTransitionGroupRef} className="chat-composer-lane w-full">
                 <div
                   data-chat-composer-stack="true"
+                  // Aldo: a thread's controls are neutral; Aldo's blue is Aldo's own (index.css).
+                  data-aldo-thread-composer={
+                    isAldoCloud && isAldoEnvironmentId(environmentId) ? "" : undefined
+                  }
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
+                  {aldoDraft && draftId ? (
+                    <AldoPlaceSuggestion
+                      draftId={draftId}
+                      environmentId={environmentId}
+                      project={activeProject}
+                    />
+                  ) : null}
+                  {isAldoCloud && !isDraftHeroState && activeThreadRef ? (
+                    <>
+                      <AldoHandoffCard
+                        environmentId={activeThreadRef.environmentId}
+                        threadId={activeThreadRef.threadId}
+                      />
+                      <AldoOrgNoteCard environmentId={activeThreadRef.environmentId} />
+                    </>
+                  ) : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div
@@ -3703,6 +3885,8 @@ export default function ChatView(props: ChatViewProps) {
                                 reportedModelSelection={reportedModelSelection}
                                 multipleModelSelections={multipleModelSelections}
                                 supportsMultipleModels={
+                                  // Aldo: each model would get a thread on this one machine.
+                                  !isAldoCloud &&
                                   serverConfig?.environment.capabilities
                                     .requiredWorktreeBootstrap === true
                                 }
@@ -3714,6 +3898,22 @@ export default function ChatView(props: ChatViewProps) {
                                 supportsAttachmentUploads={supportsAttachmentUploads}
                                 supportsQuestionAttachments={supportsQuestionAttachments}
                                 maxFileAttachmentBytes={maxFileAttachmentBytes}
+                                attachmentUploadsDeferred={
+                                  aldoCarriesAttachments(environmentId) || aldoAgentOffline
+                                }
+                                renderLeadingControl={
+                                  aldoDraft && draftId
+                                    ? (size) => (
+                                        <AldoComposerPlaceChip
+                                          draftId={draftId}
+                                          environmentId={environmentId}
+                                          project={activeProject}
+                                          size={size}
+                                        />
+                                      )
+                                    : undefined
+                                }
+                                idlePlaceholder={aldoComposerPlaceholder}
                                 routeKind={routeKind}
                                 routeThreadRef={routeThreadRef}
                                 draftId={draftId}
@@ -3780,6 +3980,23 @@ export default function ChatView(props: ChatViewProps) {
                                 pendingApprovals={pendingApprovals}
                                 onHeldRequestIdsChange={onHeldRequestIdsChange}
                                 pendingUserInputs={pendingUserInputs}
+                                pendingUserInputNote={
+                                  activePendingCarryOn
+                                    ? gt(
+                                        "Carries on with {answer} at {time} if you don’t answer.",
+                                        {
+                                          answer:
+                                            activePendingCarryOn.labels.length === 1
+                                              ? `“${activePendingCarryOn.labels[0]}”`
+                                              : gt("the recommended answers"),
+                                          time: formatShortTimestamp(
+                                            new Date(activePendingCarryOn.at).toISOString(),
+                                            timestampFormat,
+                                          ),
+                                        },
+                                      )
+                                    : null
+                                }
                                 activePendingIsResponding={activePendingIsResponding}
                                 respondingRequestIds={respondingRequestIds}
                                 runtimeMode={runtimeMode}
@@ -3870,7 +4087,7 @@ export default function ChatView(props: ChatViewProps) {
                                   projectId={activeThread.projectId}
                                   worktreePath={activeThread.worktreePath}
                                   isServerThread={isServerThread}
-                                  showGitControls={isGitRepo}
+                                  showGitControls={composerStripShowsGit}
                                   {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                   onEnvModeChange={onEnvModeChangeStable}
                                   startFromOrigin={startFromOrigin}
@@ -4101,6 +4318,17 @@ export default function ChatView(props: ChatViewProps) {
           onMoveSurface={moveRightPanelSurfaceStable}
           onCopyFilePath={copyRightPanelFilePathStable}
           onAddBrowser={() => createBrowserSurface()}
+          onAddWorkspaceBrowser={
+            hasSharedBrowser()
+              ? () => useRightPanelStore.getState().open(activeThreadRef, "workspaceBrowser")
+              : undefined
+          }
+          onAddLibrary={
+            aldoKeptRepo
+              ? () => useRightPanelStore.getState().open(activeThreadRef, "library")
+              : undefined
+          }
+          offersPullRequests={!aldoKeptRepo}
           onAddBrowserInProfile={createBrowserSurfaceStable}
           onAddTerminal={addTerminalSurfaceStable}
           onAddDiff={addDiffSurfaceStable}

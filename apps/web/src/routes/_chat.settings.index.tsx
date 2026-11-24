@@ -21,6 +21,6 @@ function SettingsIndexRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/")({
+export const Route = createFileRoute("/_chat/settings/")({
   component: SettingsIndexRoute,
 });

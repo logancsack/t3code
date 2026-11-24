@@ -1,3 +1,4 @@
+import { isAldoCloud } from "../aldo/api";
 import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
 import { T, useGT } from "gt-react";
 
@@ -42,15 +43,19 @@ export function buildProjectSearchItems(input: ProjectItemsInput, resolve: Messa
   return buildProjectActionItems({
     projects: input.projects,
     valuePrefix: "project",
+    // Aldo: a machine is labeled with its thread's title, which says nothing about the project.
     searchTerms: (project) =>
-      buildCommandPaletteProjectMetadata(
-        {
-          projects: membersOf(project),
-          locationByEnvironmentId: input.locationByEnvironmentId,
-        },
-        resolve,
-      ).searchTerms,
+      isAldoCloud
+        ? []
+        : buildCommandPaletteProjectMetadata(
+            {
+              projects: membersOf(project),
+              locationByEnvironmentId: input.locationByEnvironmentId,
+            },
+            resolve,
+          ).searchTerms,
     renderDescription: (project) => {
+      if (isAldoCloud) return project.workspaceRoot;
       const members = membersOf(project);
       const metadata = buildCommandPaletteProjectMetadata(
         {
@@ -86,7 +91,7 @@ export function buildNewThreadInProjectItems(
       const location = input.locationByEnvironmentId.get(project.environmentId);
       return [
         ...(group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []),
-        ...(location ? [location.label] : []),
+        ...(location && !isAldoCloud ? [location.label] : []),
       ];
     },
     renderDescription: (project) => (

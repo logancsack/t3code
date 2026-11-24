@@ -18,7 +18,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
-import { resolvePathLinkTarget } from "../terminal-links";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import {
   aldoDocumentSections,
   type AldoDocumentSection,

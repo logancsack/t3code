@@ -12,7 +12,7 @@ function SettingsVaultRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/vault")({
+export const Route = createFileRoute("/_chat/settings/vault")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

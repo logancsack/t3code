@@ -10,6 +10,8 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { useClosedViewStore } from "./closedViewStore";
 import { m } from "./i18n/messages";
+import { isAldoCloud } from "./aldo/api";
+import { withoutDeviceSurfaces } from "./aldo/rightPanel.logic";
 import { resolveStorage } from "./lib/storage";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
 import type { ChatFileAttachment } from "./types";
@@ -25,6 +27,8 @@ const RIGHT_PANEL_KINDS = [
   "pull-requests",
   "issue",
   "side-chat",
+  "workspaceBrowser",
+  "library",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -40,6 +44,13 @@ export interface DeviceTabTarget {
 export type RightPanelSurface =
   | { id: `browser:${string}`; kind: "preview"; resourceId: string }
   | { id: "browser:new"; kind: "preview"; resourceId: null }
+  /**
+   * The shared workspace browser, which is a plain web page (noVNC) rather than
+   * a preview tab. It is deliberately not a `preview` surface: previews render
+   * through the Electron desktop bridge, so on a managed workspace — which is
+   * always a browser, desktop or mobile — a preview surface can never paint.
+   */
+  | { id: "workspace-browser"; kind: "workspaceBrowser" }
   | { id: "device" | `device:${string}`; kind: "device"; target?: DeviceTabTarget; title?: string }
   | {
       id: `terminal:${string}`;
@@ -96,7 +107,9 @@ export type RightPanelSurface =
       key: string;
       url?: string;
     }
-  | { id: `side-chat:${string}`; kind: "side-chat"; threadId: ThreadId };
+  | { id: `side-chat:${string}`; kind: "side-chat"; threadId: ThreadId }
+  /** Aldo: what a thread that isn't code made and shared (aldo/AldoLibrary.tsx). */
+  | { id: "library"; kind: "library" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 const RIGHT_PANEL_STORAGE_VERSION = 15;
@@ -258,6 +271,10 @@ const singletonSurface = (
       return { id: "pull-requests", kind };
     case "device":
       return { id: "device", kind };
+    case "workspaceBrowser":
+      return { id: "workspace-browser", kind };
+    case "library":
+      return { id: "library", kind };
   }
 };
 
@@ -1315,6 +1332,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       }),
       migrate: migratePersistedRightPanelState,
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<RightPanelStoreState>) };
+        return isAldoCloud
+          ? { ...merged, byThreadKey: withoutDeviceSurfaces(merged.byThreadKey) }
+          : merged;
+      },
     },
   ),
 );

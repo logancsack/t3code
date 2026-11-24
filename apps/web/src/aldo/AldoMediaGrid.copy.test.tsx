@@ -8,12 +8,26 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: () => ({
+    pullRequestsEnabled: false,
+    issuesEnabled: false,
+    availableEditors: [],
+    revealInFileManager: null,
+  }),
+}));
 vi.mock("../assets/assetUrls", () => ({
   useAssetUrlRefresh: () => vi.fn(),
   useAssetUrlState: () => ({ _tag: "Success", url: "https://signed.test/file" }),
 }));
-vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
+  useEnvironmentQuery: () => ({ data: null, error: null, isPending: false, refresh: () => {} }),
+}));
+vi.mock("../hooks/useTheme", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+  useRenderedAppearance: () => "dark",
+}));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/session", async (importOriginal) => ({

@@ -44,6 +44,8 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { getClientSettings } from "./useSettings";
+import { isAldoCloud } from "../aldo/api";
+import { aldoProjectRefForNewThread } from "../aldo/threads";
 import { getLocalStorageItem, useLocalStorage } from "./useLocalStorage";
 import * as Schema from "effect/Schema";
 import { useAtomValue } from "@effect/atom-react";
@@ -84,9 +86,21 @@ export function useNewThreadHandler() {
   return createNewThreadHandler(useRouter());
 }
 
-export type NewThreadHandler = ReturnType<typeof createNewThreadHandler>;
+export type NewThreadHandler = ReturnType<typeof createDraftThreadHandler>;
 
-export function createNewThreadHandler(router: AnyRouter) {
+export function createNewThreadHandler(router: AnyRouter): NewThreadHandler {
+  const openDraft = createDraftThreadHandler(router);
+  if (!isAldoCloud) return openDraft;
+  // Aldo: each thread gets its own cloud machine, so the draft goes to an idle
+  // machine of the project or a new one (aldo/threads.ts) and works in that
+  // machine's checkout rather than a separate worktree.
+  return async (projectRef, options) => {
+    const target = await aldoProjectRefForNewThread(projectRef).catch(() => null);
+    return target ? openDraft(target, { envMode: "local", ...options }) : null;
+  };
+}
+
+function createDraftThreadHandler(router: AnyRouter) {
   const getCurrentRouteTarget = () => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
     return resolveThreadRouteTarget(currentRouteParams);

@@ -1,3 +1,5 @@
+import { isAldoCloud } from "../../aldo/api";
+import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogButton, WorkLogList, WorkLogRow } from "./WorkLog";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
@@ -349,21 +351,27 @@ function ExpandedWorkGroupEntries({
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
+  const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup, providerStartingLabel } =
     use(TimelineRowActivityCtx);
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
-  const label = isPreparingWorktree ? (
-    <T>Setting up worktree…</T>
-  ) : compacting ? (
-    <CompactingLabel createdAt={row.createdAt} />
-  ) : row.createdAt ? (
-    <T>
-      Working for <WorkingTimer createdAt={row.createdAt} />
-    </T>
-  ) : (
-    <T>Working...</T>
-  );
+  const label =
+    isAldoCloud && providerStartingLabel && row.createdAt ? (
+      // Aldo: the thread's cloud agent is coming up; say that rather than "Working".
+      <>
+        {providerStartingLabel} (<WorkingTimer createdAt={row.createdAt} />)
+      </>
+    ) : isPreparingWorktree ? (
+      <T>Setting up worktree…</T>
+    ) : compacting ? (
+      <CompactingLabel createdAt={row.createdAt} />
+    ) : row.createdAt ? (
+      <T>
+        Working for <WorkingTimer createdAt={row.createdAt} />
+      </T>
+    ) : (
+      <T>Working...</T>
+    );
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
@@ -378,6 +386,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
           <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
         ) : null}
       </div>
+      {isAldoCloud ? <AldoNotifyOffer /> : null}
     </div>
   );
 }
@@ -589,7 +598,9 @@ export function LiveWorkEntryTimelineRow({
   const gt = useGT();
   const m = useMessages();
   const threadTarget = useThreadReadTarget(row.entry, ctx.activeThreadEnvironmentId);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active, m);
+  const label =
+    ctx.workWords?.step(row.entry, row.active) ??
+    liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active, m);
   const threadLabel = threadReadLabel(label, row.entry, threadTarget, m);
 
   const item = row.entry.projectedItem?.item;

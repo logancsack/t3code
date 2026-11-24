@@ -208,7 +208,7 @@ export const layer = Layer.effectDiscard(
               Effect.gen(function* () {
                 // A machine that isn't connected would refuse the report at once:
                 // most of them, with a machine per thread.
-                const supervisor = yield* EnvironmentSupervisor;
+                const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
                 if (Option.isNone(yield* SubscriptionRef.get(supervisor.session))) return;
                 yield* request(
                   WS_METHODS.serverReportClientActivity,

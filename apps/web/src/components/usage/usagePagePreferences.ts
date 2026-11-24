@@ -1,3 +1,4 @@
+import { isAldoCloud } from "../../aldo/api";
 import { UsageProviderKind } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -11,11 +12,17 @@ const UsagePagePreferencesSchema = Schema.Struct({
 });
 export type UsagePagePreferences = typeof UsagePagePreferencesSchema.Type;
 
-const DEFAULT_PREFERENCES: UsagePagePreferences = { metric: "limits", windowDays: 30 };
+// Aldo has no Limits tab, so it opens on Cost, even when Limits was picked before.
+const DEFAULT_PREFERENCES: UsagePagePreferences = {
+  metric: isAldoCloud ? "cost" : "limits",
+  windowDays: 30,
+};
 
 export function readUsagePagePreferences(): UsagePagePreferences {
   try {
-    return getLocalStorageItem(STORAGE_KEY, UsagePagePreferencesSchema) ?? DEFAULT_PREFERENCES;
+    const preferences = getLocalStorageItem(STORAGE_KEY, UsagePagePreferencesSchema);
+    if (isAldoCloud && preferences?.metric === "limits") return { ...preferences, metric: "cost" };
+    return preferences ?? DEFAULT_PREFERENCES;
   } catch (error) {
     console.error("Could not read Usage page preferences.", error);
     return DEFAULT_PREFERENCES;

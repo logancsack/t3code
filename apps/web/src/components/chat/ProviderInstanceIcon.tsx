@@ -12,9 +12,11 @@ import {
   AntigravityIcon,
   ClaudeAI,
   Icon,
+  MuseCodeIcon,
   OllamaIcon,
   OpenAI,
   OpenRouterIcon,
+  PrimeAgentIcon,
 } from "../Icons";
 
 import { cn } from "~/lib/utils";
@@ -30,6 +32,8 @@ const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
+  [ProviderDriverKind.make("muse")]: MuseCodeIcon,
+  [ProviderDriverKind.make("primeAgent")]: PrimeAgentIcon,
   // Text generators, by the service they reach (see textGeneratorBrand).
   [ProviderDriverKind.make("openai")]: OpenAI,
   [ProviderDriverKind.make("anthropic")]: AnthropicIcon,

@@ -85,7 +85,10 @@ export function PullRequestCheckoutMenu({
   actingEnvironmentId,
   onActingEnvironmentChange,
   term,
+  only,
 }: {
+  /** Replaces both checkout modes with one item that opens the pull request's own thread. */
+  only?: { readonly label: string; readonly detail: string };
   handoff: string | null;
   checkoutRoot: string | null;
   canPrepareWorktree: boolean;
@@ -135,25 +138,25 @@ export function PullRequestCheckoutMenu({
         <MenuItem disabled={!canPrepareWorktree} onClick={() => onCheckout("worktree")}>
           <GitBranchIcon className="mt-1 size-3.5 shrink-0 self-start" />
           <span className="flex min-w-0 flex-col">
-            <span>
-              <T>In a separate worktree</T>
-            </span>
+            <span>{only?.label ?? <T>In a separate worktree</T>}</span>
             <span className="text-xs text-muted-foreground">
-              <T>Its own folder and thread. Nothing you have open moves.</T>
+              {only?.detail ?? <T>Its own folder and thread. Nothing you have open moves.</T>}
             </span>
           </span>
         </MenuItem>
-        <MenuItem disabled={!canCheckoutHere} onClick={() => onCheckout("local")}>
-          <FolderGit2Icon className="mt-1 size-3.5 shrink-0 self-start" />
-          <span className="flex min-w-0 flex-col">
-            <span>
-              <T>In this repository</T>
+        {only ? null : (
+          <MenuItem disabled={!canCheckoutHere} onClick={() => onCheckout("local")}>
+            <FolderGit2Icon className="mt-1 size-3.5 shrink-0 self-start" />
+            <span className="flex min-w-0 flex-col">
+              <span>
+                <T>In this repository</T>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                <T>Switches the branch you are working in.</T>
+              </span>
             </span>
-            <span className="text-xs text-muted-foreground">
-              <T>Switches the branch you are working in.</T>
-            </span>
-          </span>
-        </MenuItem>
+          </MenuItem>
+        )}
         {pickableEnvironments.length > 0 ? (
           <ActOnEnvironmentPicker
             environments={pickableEnvironments}

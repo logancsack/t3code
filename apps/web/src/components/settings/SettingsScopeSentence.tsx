@@ -1,3 +1,5 @@
+import { isAldoCloud } from "../../aldo/api";
+import { ALDO_SETTINGS_PATHS, aldoSettingsParent } from "../../aldo/settings.logic";
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { fileBasename } from "@t3tools/shared/path";
 import { useLocation } from "@tanstack/react-router";
@@ -60,6 +62,26 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/about",
 ]);
 
+/** Whether a page ignores the scope: Aldo's pages are the account's, at any selection. */
+export function isSettingsDeviceOnlyPath(pathname: string): boolean {
+  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return true;
+  if (!isAldoCloud) return false;
+  const path = pathname.replace(/\/+$/, "") || "/settings";
+  return (
+    path === "/settings" ||
+    ALDO_SETTINGS_PATHS.has(path) ||
+    ALDO_ACCOUNT_WIDE_T3_PATHS.has(path) ||
+    aldoSettingsParent(pathname) !== null
+  );
+}
+
+const ALDO_ACCOUNT_WIDE_T3_PATHS: ReadonlySet<string> = new Set([
+  "/settings/keybindings",
+  "/settings/providers",
+  "/settings/integrations",
+  "/settings/source-control",
+]);
+
 interface SettingsScopeMenuProps {
   readonly value: SettingsScopeSearch;
   readonly groups: readonly SidebarProjectSnapshot[];
@@ -72,7 +94,7 @@ export function SettingsScopeSentence() {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
-  if (scope === null || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
+  if (scope === null || isSettingsDeviceOnlyPath(pathname)) return null;
   const props: SettingsScopeMenuProps = {
     value: scope.search,
     singleEnvironment: scope.singleEnvironment,
@@ -88,7 +110,15 @@ export function SettingsScopeSentence() {
   const onEnvironment = scope.search.machine || scope.scope.kind === "checkout";
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-sm text-muted-foreground sm:px-4">
-      {onEnvironment && hasCheckouts ? (
+      {isAldoCloud ? (
+        // Aldo keeps machines out of sight: a setting applies to every thread's.
+        <T context="settings scope sentence; the variable is a menu">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0">Applying settings for</span>
+            <Var>{project}</Var>
+          </span>
+        </T>
+      ) : onEnvironment && hasCheckouts ? (
         <T context="settings scope sentence; each variable is a menu">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="shrink-0">Applying settings for</span>

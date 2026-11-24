@@ -6,6 +6,7 @@ import {
   type ThreadId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
+import { aldoAttachmentOf, aldoCarriesAttachments } from "../../aldo/files";
 import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
@@ -386,8 +387,10 @@ export function prepareTurnAttachments(input: {
   readonly draftTarget: ComposerThreadTarget;
 }) {
   const { environmentId, usesAttachmentUploads, draftTarget } = input;
+  const aldoCarries = aldoCarriesAttachments(environmentId);
   return Promise.all(
     input.attachments.map(async (attachment) => {
+      if (aldoCarries) return aldoAttachmentOf(attachment);
       if (usesAttachmentUploads) {
         await refreshExpiredAttachmentUploads({
           environmentId,

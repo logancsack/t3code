@@ -2,6 +2,7 @@ import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { T, useGT } from "gt-react";
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 
+import { useAldoStartWithoutProject } from "../aldo/newThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -17,6 +18,13 @@ export function NoProjectsHero() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
+  // Aldo: a General thread instead, on a computer of its own (none on an older Aldo).
+  const aldoStartWithoutProject = useAldoStartWithoutProject();
+  const startWithoutProject =
+    aldoStartWithoutProject ??
+    (scratchTargetEnvironmentId === null
+      ? null
+      : () => startScratchThread(scratchTargetEnvironmentId));
 
   return (
     <SidebarInset
@@ -34,7 +42,7 @@ export function NoProjectsHero() {
                 <T>What should we work on?</T>
               </EmptyTitle>
               <EmptyDescription>
-                {scratchTargetEnvironmentId === null
+                {startWithoutProject === null
                   ? gt("Add a project to start your first thread.")
                   : gt("Add a project, or start without one.")}
               </EmptyDescription>
@@ -43,12 +51,8 @@ export function NoProjectsHero() {
                   <PlusIcon className="size-4" />
                   <T>Add project</T>
                 </Button>
-                {scratchTargetEnvironmentId === null ? null : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
-                  >
+                {startWithoutProject === null ? null : (
+                  <Button size="sm" variant="outline" onClick={() => void startWithoutProject()}>
                     <MessageSquareDashedIcon className="size-4" />
                     <T>Start without a project</T>
                   </Button>

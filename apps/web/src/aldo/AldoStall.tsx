@@ -8,7 +8,6 @@
 // thread on screen (useAldoStallSignals) and its working row asks
 // (useAldoStall), so the timeline between them needn't carry it.
 
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { ChatMessage } from "../types";
@@ -60,7 +59,7 @@ function subscribe(listener: () => void): () => void {
 /** Says what the working line needs to tell a stall, for the thread on screen (nothing outside Aldo). */
 export function useAldoStallSignals(input: {
   readonly threadKey: string | null;
-  readonly activities: ReadonlyArray<Pick<OrchestrationThreadActivity, "createdAt">>;
+  readonly activities: ReadonlyArray<{ readonly createdAt: string }>;
   readonly messages: ReadonlyArray<ChatMessage>;
   readonly waitingOnYou: boolean;
   /** The thread, for whether Aldo has its agent waiting on the user in its browser (a handoff). */

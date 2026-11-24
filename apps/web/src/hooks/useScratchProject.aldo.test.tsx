@@ -9,6 +9,7 @@ vi.mock("~/aldo/api", () => ({
   },
 }));
 vi.mock("~/state/environments", () => ({
+  usePrimaryEnvironmentId: () => "env-1",
   useEnvironments: () => ({
     environments: [
       {

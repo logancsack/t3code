@@ -4,26 +4,26 @@ import ReactDOM from "react-dom/client";
 import "@fontsource-variable/inter";
 import "./index.css";
 
+import { installAldoRouter, prepareAldoStartup } from "./aldo/startup";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { isElectron } from "./env";
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
 import { whenLocaleReady } from "./i18n/runtime";
 import { reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
-
-const router = startAppServices();
+import { isAldoCloud } from "./aldo/api";
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 let reloadScheduled = false;
 window.addEventListener("vite:preloadError", (event) => {
+  // Aldo reloads on its own terms: not offline, nor for a part fetched ahead of use.
+  if (isAldoCloud) return;
   if (reloadOnceForChunkLoadError()) {
     reloadScheduled = true;
     event.preventDefault();
   }
 });
-
-const app = <AppRoot router={router} />;
 
 // Split by runtime to keep Clerk out of local startup and clerk-js out of browser builds.
 const managedAuthShellModule =
@@ -33,16 +33,25 @@ const managedAuthShellModule =
       : import("./components/clerk/BrowserManagedAuthShell")
     : null;
 
-export const startup = Promise.all([
-  managedAuthShellModule?.then((module) => module.default) ?? null,
-  // Chained so settings have usually hydrated; English resolves without a chunk load.
-  router.load().then(whenLocaleReady),
-])
-  .then(([ManagedAuthShell]) => {
+export const startup = prepareAldoStartup()
+  .then((aldo) => {
+    const router = startAppServices(aldo.history);
+    installAldoRouter(router);
+    return Promise.all([
+      managedAuthShellModule?.then((module) => module.default) ?? null,
+      // Chained so settings have usually hydrated; English resolves without a chunk load.
+      router.load().then(whenLocaleReady),
+      router,
+      aldo.mounted,
+    ]);
+  })
+  .then(([ManagedAuthShell, , router, aldoMounted]) => {
     // Route chunk failures resolve router.load() and surface later through the error boundary.
     if (reloadScheduled) return;
+    const app = <AppRoot router={router} />;
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
+        {aldoMounted}
         {ManagedAuthShell && clerkPublishableKey ? (
           <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
         ) : (

@@ -10,6 +10,10 @@ import {
 } from "react";
 import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
 
+import { AldoProfileButton } from "../aldo/AldoAccountMenu";
+import { AldoSimpleRail, useAldoSimpleRail } from "../aldo/AldoSimpleRail";
+import { isAldoCloud } from "../aldo/api";
+import { isThreadPath } from "../aldo/layers";
 import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { isElectron } from "../env";
@@ -318,6 +322,10 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
   const gt = useGT();
   const router = useRouter();
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
+  // Aldo: a thread carries its own way back; the floating toggle would sit over it.
+  const aldoThreadOpen = useLocation({
+    select: (location) => isAldoCloud && isThreadPath(location.pathname),
+  });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const mobileSidebarSheetMounted = useMobileSidebarSheetMounted();
@@ -392,7 +400,7 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
       )}
       data-sidebar-control=""
     >
-      {showSidebar ? (
+      {showSidebar && !aldoThreadOpen ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -465,6 +473,7 @@ export function AppSidebarLayout({
     ...windowControlsInsetStyle,
   } as CSSProperties;
 
+  const aldoSimpleRail = useAldoSimpleRail(false);
   return (
     <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <SidebarProvider
@@ -473,7 +482,9 @@ export function AppSidebarLayout({
         storageKey="chat_thread_sidebar_open"
         style={sidebarProviderStyle}
       >
-        {showSidebar ? (
+        {showSidebar && aldoSimpleRail ? (
+          <AldoSimpleRail />
+        ) : showSidebar ? (
           <>
             <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
             <Sidebar
@@ -495,13 +506,14 @@ export function AppSidebarLayout({
               style={windowControlsInsetStyle}
             >
               <ThreadSidebar routeReveal={sidebarRouteReveal} />
+              {isAldoCloud ? <AldoProfileButton className="mx-2 mb-2 w-auto" /> : null}
               <SidebarRail onDoubleClick={resetSidebarWidth} />
             </Sidebar>
           </>
         ) : null}
         {children}
         <BackgroundThreadAnnouncer />
-        <SidebarControl showSidebar={showSidebar} />
+        <SidebarControl showSidebar={showSidebar && aldoSimpleRail !== "rail"} />
         {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

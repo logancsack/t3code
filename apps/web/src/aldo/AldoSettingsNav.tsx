@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useRouter } from "@tanstack/react-router";
+import { useRouter, type AnyRoute } from "@tanstack/react-router";
 import { prefetchSettingsData } from "./settingsData";
 // Aldo's settings nav (SettingsSidebarNav.tsx, in Aldo): the account at its
 // head, then its organization for someone in one, then its pages in groups
@@ -105,6 +105,12 @@ export function AldoSettingsNav(props: {
   const router = useRouter();
   const nav = useAldoSettingsNav();
   const connections = useAldoConnectionsSummary();
+  // Settings pages sit under the chat layout: their route ids carry its prefix.
+  const warmRoute = (path: SettingsPath) => {
+    const route: AnyRoute | undefined =
+      router.routesById[`/_chat${path}` as keyof typeof router.routesById];
+    if (route) void Promise.resolve(router.loadRouteChunk(route)).catch(() => undefined);
+  };
   useEffect(() => {
     const warm = () => {
       prefetchSettingsData();
@@ -114,10 +120,7 @@ export function AldoSettingsNav(props: {
         ),
         "/settings/account",
       ];
-      for (const path of paths) {
-        const route = router.routesById[path];
-        if (route) void Promise.resolve(router.loadRouteChunk(route)).catch(() => undefined);
-      }
+      for (const path of paths) warmRoute(path);
     };
     const timer = window.setTimeout(warm, 0);
     return () => window.clearTimeout(timer);
@@ -137,16 +140,8 @@ export function AldoSettingsNav(props: {
               return (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
-                    onMouseEnter={() => {
-                      void Promise.resolve(router.loadRouteChunk(router.routesById[item.to])).catch(
-                        () => undefined,
-                      );
-                    }}
-                    onFocus={() => {
-                      void Promise.resolve(router.loadRouteChunk(router.routesById[item.to])).catch(
-                        () => undefined,
-                      );
-                    }}
+                    onMouseEnter={() => warmRoute(item.to)}
+                    onFocus={() => warmRoute(item.to)}
                     isActive={aldoSettingsNavActive(item, props.pathname)}
                     onClick={() => props.onNavigate(item.to)}
                   >

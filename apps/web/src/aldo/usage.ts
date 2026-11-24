@@ -19,6 +19,7 @@ import { withAldoUsage, type AldoUsageAnswers } from "./usage.logic";
 /** Aldo's answers for one window, keyed as state/usage.ts keys it. */
 export const aldoUsageAtom = Atom.family((windowKey: string) => {
   const input = JSON.parse(windowKey) as UsageSummaryInput;
+  // @effect-diagnostics-next-line effectTryWithoutCatch:off
   return Atom.make(Effect.tryPromise(() => fetchAldoUsage(input))).pipe(
     Atom.withLabel(`aldo-usage:${windowKey}`),
   );

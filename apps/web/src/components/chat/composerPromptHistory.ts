@@ -9,6 +9,7 @@ import {
   collectComposerContextReferences,
 } from "@t3tools/shared/composerContextReferences";
 import { Schema } from "effect";
+import { aldoRecalledPrompt } from "../../aldo/request.logic";
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
 const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
@@ -94,6 +95,9 @@ export function recallableComposerPrompt(
   messageText: string,
   keptContextIds: ReadonlySet<string> = new Set(),
 ): string {
+  // What Aldo sent for the user is app-composed too: only their own words in it come back.
+  const fromAldo = aldoRecalledPrompt(messageText);
+  if (fromAldo !== null) return fromAldo;
   let prompt = messageText.trim();
   if (prompt.startsWith(CLAUDE_ULTRATHINK_PREFIX)) {
     prompt = prompt.slice(CLAUDE_ULTRATHINK_PREFIX.length);

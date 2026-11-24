@@ -15,7 +15,18 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import type { MessageResolver } from "../../i18n/messages";
 import { commandLabel } from "./KeybindingsSettings.logic";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoSettingsSearchItem, aldoShowsSettingsSearchItem } from "../../aldo/settings.logic";
+import {
+  ALDO_SETTINGS_SEARCH_ITEMS,
+  ALDO_SETTINGS_SECTION_LABELS,
+  type AldoSettingsPath,
+} from "../../aldo/settingsSearchItems";
 import type { ResolvedSettingsScope } from "./settingsScope";
+
+const ALDO_SETTINGS_CATEGORY_SCOPES = Object.fromEntries(
+  Object.keys(ALDO_SETTINGS_SECTION_LABELS).map((path) => [path, null]),
+) as Record<AldoSettingsPath, null>;
 
 export type SettingsPath =
   | "/settings/projects"
@@ -40,7 +51,8 @@ export type SettingsPath =
   | "/settings/maintenance"
   | "/settings/labs"
   | "/settings/about"
-  | "/settings/archived";
+  | "/settings/archived"
+  | AldoSettingsPath;
 
 export type SettingsSearchScope =
   | "environment"
@@ -75,9 +87,25 @@ export interface SettingsSearchItem {
   readonly textGeneratorsOnly?: boolean;
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
+  /** Only in Aldo cloud mode, whose page at this path differs from T3's. */
+  readonly aldoCloudOnly?: boolean;
+  readonly requiresAldoPhone?: boolean;
+  readonly requiresAldoOrganization?: boolean;
+  readonly requiresAldoJoining?: boolean;
+  readonly requiresAldoAgentInbox?: boolean;
+  readonly requiresAldoOnboarding?: boolean;
+  readonly requiresAldoPolicyRule?: string;
 }
 
 export interface SettingsSearchAvailability {
+  readonly hasAldoPhoneApi?: boolean;
+  readonly hasAldoOrganization?: boolean;
+  readonly hasAldoJoining?: boolean;
+  readonly hasAldoAgentInbox?: boolean;
+  readonly hasAldoOnboarding?: boolean;
+  readonly aldoPolicyRules?: ReadonlyArray<string>;
+  /** False for an Aldo account without the developer tools: no Code page. */
+  readonly aldoDeveloperTools?: boolean;
   readonly localEnvironmentDisabled?: boolean;
   readonly hasCloudPublicConfig: boolean;
   readonly hasEnvironment: boolean;
@@ -117,6 +145,15 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/about": msg("About"),
   "/settings/voice": msg("Voice"),
   "/settings/archived": msg("Archive"),
+  ...ALDO_SETTINGS_SECTION_LABELS,
+  // Aldo: what runs the agents and where code lives, in the words people use.
+  ...(isAldoCloud
+    ? {
+        "/settings/providers": "AI subscriptions",
+        "/settings/source-control": "Git hosts",
+        "/settings/connections": "Connections",
+      }
+    : {}),
 };
 
 /** Sidebar labels; an entry of its own lets a translator shorten one below its page title. */
@@ -1463,6 +1500,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/archived",
     searchTerms: [msg("restore reopen deleted history projects")],
   },
+  ...ALDO_SETTINGS_SEARCH_ITEMS,
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
 export type SettingsSearchItemId = (typeof SETTINGS_SEARCH_ITEMS)[number]["id"];
@@ -1493,6 +1531,9 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/labs": null,
   "/settings/about": null,
   "/settings/archived": "project-defaults",
+  // Aldo's own pages are the account's, at any selection.
+  ...ALDO_SETTINGS_CATEGORY_SCOPES,
+  ...(isAldoCloud ? { "/settings/source-control": null } : {}),
 };
 
 const RENAMED_SETTINGS_PATHS: Readonly<Record<string, SettingsPath>> = {
@@ -1593,12 +1634,13 @@ export function isSettingsSearchScopeAvailable(
   }
 }
 
-function searchableSetting(id: SettingsSearchItemId): {
+/** A row's anchor and title as stored; Aldo's own pages spread it, with titles in its own words. */
+export function searchableSetting(id: SettingsSearchItemId): {
   readonly id: string;
   readonly title: string;
 } {
-  const { id: anchorId, title } = SEARCH_ITEMS_BY_ID.get(id)!;
-  return { id: anchorId, title };
+  const item = SEARCH_ITEMS_BY_ID.get(id)!;
+  return { id: item.id, title: isAldoCloud ? aldoSettingsSearchItem(item).title : item.title };
 }
 
 /** `searchableSetting` with its title in the active language, for spreading onto a row. */
@@ -1614,7 +1656,7 @@ export function filterAvailableSettingsSearchItems(
   availability: SettingsSearchAvailability,
 ): ReadonlyArray<SettingsSearchItem> {
   const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS;
-  return items.filter(
+  const available = items.filter(
     (item) =>
       (!item.cloudOnly || availability.hasCloudPublicConfig) &&
       (!item.environmentOnly || availability.hasEnvironment) &&
@@ -1628,8 +1670,41 @@ export function filterAvailableSettingsSearchItems(
       (!item.peerLinksOnly || availability.hasPeerLinkHost === true) &&
       (!item.fastWorktreeCheckoutOnly ||
         availability.hasFastWorktreeCheckoutEnvironment === true) &&
-      (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true),
+      (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true) &&
+      !item.aldoCloudOnly,
   );
+  return isAldoCloud ? filterAldoSettingsSearchItems(items, availability) : available;
+}
+
+/** Aldo's results: its own pages and rows, and T3's that apply to its machines, where Aldo shows them. */
+function filterAldoSettingsSearchItems(
+  items: ReadonlyArray<SettingsSearchItem>,
+  availability: SettingsSearchAvailability,
+): ReadonlyArray<SettingsSearchItem> {
+  return items
+    .filter(
+      (item) =>
+        (!item.cloudOnly || availability.hasCloudPublicConfig) &&
+        (!item.environmentOnly || availability.hasEnvironment) &&
+        (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
+        !item.localBackendManagementOnly &&
+        !item.wslAvailableOnly &&
+        !item.managedTunnelOnly &&
+        !item.peerLinksOnly &&
+        !item.fastWorktreeCheckoutOnly &&
+        (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+        (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true) &&
+        (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
+        (!item.requiresAldoOrganization || availability.hasAldoOrganization === true) &&
+        (!item.requiresAldoJoining || availability.hasAldoJoining === true) &&
+        (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
+        (!item.requiresAldoOnboarding || availability.hasAldoOnboarding === true) &&
+        (!item.requiresAldoPolicyRule ||
+          availability.aldoPolicyRules?.includes(item.requiresAldoPolicyRule) === true) &&
+        aldoShowsSettingsSearchItem(item),
+    )
+    .map(aldoSettingsSearchItem)
+    .filter((item) => availability.aldoDeveloperTools !== false || item.to !== "/settings/code");
 }
 
 /** The settings that exist on this platform and app channel. */

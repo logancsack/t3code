@@ -15,7 +15,18 @@ import {
 } from "../components/settings/SettingsScopeContext";
 import { useEnvironments } from "../state/environments";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
-import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
+import {
+  SETTINGS_DEVICE_ONLY_PATHS,
+  isSettingsDeviceOnlyPath,
+} from "../components/settings/SettingsScopeSentence";
+import { isAldoCloud } from "../aldo/api";
+import {
+  AldoSettingsRestoredContext,
+  aldoKeepsSettingsPage,
+  aldoSettingsRedirect,
+} from "../aldo/settings.logic";
+import { AldoSettingsPhoneBar, aldoSettingsOpensOnList } from "../aldo/AldoSettingsShell";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
@@ -98,7 +109,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
       </SettingsScopeNotice>
     );
   }
-  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname) || pathname === "/settings/projects") {
+  if (isSettingsDeviceOnlyPath(pathname) || pathname === "/settings/projects") {
     return children;
   }
   if (scope.kind === "unavailable")
@@ -131,26 +142,33 @@ function SettingsContentLayout() {
       ? environment?.environmentId
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const bumpRestoreSignal = () => setRestoreSignal((value) => value + 1);
+  // Aldo on a phone: the list of pages is the nav, and each page has its own bar back to it.
+  const aldoPhone = useIsMobile() && isAldoCloud;
 
   return (
     <AppRouteModal label={gt("Settings")}>
       <div className="relative flex min-h-0 flex-1">
-        <SettingsSidebarNav pathname={location.pathname} />
+        {aldoPhone ? null : <SettingsSidebarNav pathname={location.pathname} />}
         <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
-            <SettingsBreadcrumb pathname={location.pathname} />
-            <div className="ms-auto flex shrink-0 items-center gap-1">
-              {location.pathname === "/settings/general" ? (
-                <RestoreDeviceDefaultsButton
-                  onRestored={() => setRestoreSignal((value) => value + 1)}
-                />
-              ) : null}
-              <AppRouteModalClose />
-            </div>
-          </header>
+          {aldoPhone ? (
+            <AldoSettingsPhoneBar pathname={location.pathname} />
+          ) : (
+            <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
+              {isAldoCloud ? null : <SettingsBreadcrumb pathname={location.pathname} />}
+              <div className="ms-auto flex shrink-0 items-center gap-1">
+                {location.pathname === "/settings/general" ? (
+                  <RestoreDeviceDefaultsButton onRestored={bumpRestoreSignal} />
+                ) : null}
+                <AppRouteModalClose />
+              </div>
+            </header>
+          )}
           <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
             <SettingsScopeBoundary pathname={location.pathname}>
-              <Outlet />
+              <AldoSettingsRestoredContext value={bumpRestoreSignal}>
+                <Outlet />
+              </AldoSettingsRestoredContext>
             </SettingsScopeBoundary>
           </div>
         </div>
@@ -168,6 +186,7 @@ function SettingsRouteLayout() {
       search={rawSearch}
       singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/secrets"}
       deviceOnly={SETTINGS_DEVICE_ONLY_PATHS.has(pathname)}
+      pathname={pathname}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({
@@ -191,8 +210,16 @@ export const Route = createFileRoute("/_chat/settings")({
   validateSearch: validateSettingsRouteSearch,
   search: { middlewares: [retainSettingsScope] },
   beforeLoad: async ({ location }) => {
-    if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/general", replace: true });
+    if (location.pathname === "/settings" && !aldoSettingsOpensOnList()) {
+      // Aldo opens on its models; a phone opens on the list of pages (the index route).
+      throw redirect({ to: isAldoCloud ? "/settings/agents" : "/settings/general", replace: true });
+    }
+    if (isAldoCloud) {
+      // Pages Aldo moved carry their sign-in result or row along; pages it has no use for go to General.
+      const href =
+        aldoSettingsRedirect(location) ??
+        (aldoKeepsSettingsPage(location.pathname) ? null : "/settings/general");
+      if (href) throw redirect({ href, replace: true });
     }
     const moved = movedSettingsPath(location.pathname, location.hash);
     if (moved) throw redirect({ to: moved, search: true, hash: true, replace: true });

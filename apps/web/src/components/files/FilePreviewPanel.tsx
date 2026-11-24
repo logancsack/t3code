@@ -71,6 +71,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { requestWorkspaceFocus } from "~/lib/workspaceFocus";
@@ -1248,6 +1249,8 @@ export default function FilePreviewPanel({
   const hostEnvironmentId = useAtomValue(hostEnvironmentIdAtom);
   const remoteOpenState = useRemoteOpenState(environmentId);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  // Aldo: work that isn't software isn't opened in a code editor.
+  const aldoKeptRepo = useAldoKeptRepo(environmentId);
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const previewAvailable = usePreviewAvailable(environmentId);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -1553,6 +1556,7 @@ export default function FilePreviewPanel({
             </div>
           </ScrollArea>
           {absolutePath &&
+          !aldoKeptRepo &&
           (environmentId === primaryEnvironmentId ||
             environmentId === hostEnvironmentId ||
             remoteOpenState.mode !== "local-exec") ? (

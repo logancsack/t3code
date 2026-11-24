@@ -18,15 +18,13 @@ export interface AldoShellThread {
   readonly activeOrderKey?: string | null;
   readonly autoSettleDisabledAt?: string | null;
   readonly titleRegeneration?: unknown;
-  readonly session?: { readonly status: string } | null;
-  readonly hasPendingApprovals?: boolean;
-  readonly hasPendingUserInput?: boolean;
+  readonly status?: string;
+  readonly pendingRuntimeRequest?: unknown;
   readonly latestUserMessageAt?: string | null;
-  readonly latestTurn?: {
-    readonly requestedAt: string;
-    readonly startedAt: string | null;
-    readonly completedAt: string | null;
-  } | null;
+  readonly latestRunId?: string | null;
+  readonly latestRunRequestedAt?: string | null;
+  readonly latestRunStartedAt?: string | null;
+  readonly latestRunCompletedAt?: string | null;
 }
 
 /** As T3's threadHasQueuedTurnStart: how long a user message no turn has taken up yet counts as work. */
@@ -35,16 +33,26 @@ const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 /** A message the user sent lately that no turn has taken up yet: work T3 won't let be settled or snoozed away. */
 function hasQueuedTurnStart(thread: AldoShellThread, now: string): boolean {
   const sentAt = thread.latestUserMessageAt ?? null;
-  if (sentAt === null || thread.session?.status === "error") return false;
+  if (sentAt === null || thread.status === "failed") return false;
   const messageAt = Date.parse(sentAt);
   const age = Date.parse(now) - messageAt;
   if (Number.isNaN(age) || Math.abs(age) > QUEUED_TURN_START_GRACE_MS) return false;
-  const turn = thread.latestTurn ?? null;
-  if (turn === null) return true;
-  return [turn.requestedAt, turn.startedAt, turn.completedAt].every(
-    (value) => value == null || Date.parse(value) < messageAt,
-  );
+  if (thread.latestRunId == null) return true;
+  return [
+    thread.latestRunRequestedAt,
+    thread.latestRunStartedAt,
+    thread.latestRunCompletedAt,
+  ].every((value) => value == null || Date.parse(value) < messageAt);
 }
+
+/** A run that holds the thread: T3 won't settle it. */
+const WORKING: ReadonlySet<string> = new Set([
+  "preparing",
+  "queued",
+  "starting",
+  "running",
+  "waiting",
+]);
 
 /** A client command, as far as these go. */
 export interface AldoThreadCommand {
@@ -80,14 +88,14 @@ export function aldoCommandPatch(
   now: string,
   asleep: boolean,
 ): AldoShellPatch | AldoCommandRefusal | "nothing" | null {
-  if (command.type === "thread.session.stop") return asleep ? "nothing" : null;
+  if (command.type === "thread.stop") return asleep ? "nothing" : null;
   // Archived threads (not in the shell) can still be deleted.
   if (command.type === "thread.delete") return { remove: true };
   if (thread === null) return null;
   // Work T3 won't let be parked: a request waiting on the user, or a message no turn has taken up.
-  const asks = thread.hasPendingApprovals === true || thread.hasPendingUserInput === true;
+  const asks = thread.pendingRuntimeRequest != null;
   const blocked = asks || hasQueuedTurnStart(thread, now);
-  const working = thread.session?.status === "starting" || thread.session?.status === "running";
+  const working = WORKING.has(thread.status ?? "idle");
   const unsnoozed = thread.snoozedUntil != null ? { snoozedUntil: null, snoozedAt: null } : {};
 
   switch (command.type) {
@@ -95,7 +103,7 @@ export function aldoCommandPatch(
       return { remove: true };
 
     case "thread.settle": {
-      // (Its turn stays open while it asks, so its session reads as running.)
+      // (Its run stays open while it asks, so it reads as running.)
       if (asks && asleep) return { refuse: ALDO_SETTLE_BLOCKED };
       if (working || blocked) return null;
       const already = thread.settledOverride === "settled" && thread.settledAt != null;
@@ -211,7 +219,7 @@ export function aldoCommandPatch(
       };
     }
 
-    case "thread.meta.update": {
+    case "thread.metadata.update": {
       // A rename; anything else a meta update does needs the machine.
       const fields = Object.keys(command).filter(
         (key) => !["type", "commandId", "threadId", "createdAt"].includes(key),

@@ -52,6 +52,9 @@ import {
   canPickExternalProjectFavicon,
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
+import { ALDO_PROJECT_REMOVAL_NOTE, removeAldoProjectSandbox } from "../../aldo/directory";
+import { isAldoCloud, isAldoEnvironmentId } from "../../aldo/api";
+import { AldoProjectCodeSettings } from "../../aldo/AldoProjectCode";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import {
@@ -369,8 +372,16 @@ function ProjectDetail({
       },
       resolveMessage,
     );
+    // Aldo hides the machines: no paths, and the removal takes the threads' computers with it.
+    const inAldo =
+      isAldoCloud && members.every((member) => isAldoEnvironmentId(member.environmentId));
     const confirmed = await settlePromise(() =>
-      api.dialogs.confirm(confirmationMessage, { variant: "destructive" }),
+      api.dialogs.confirm(
+        inAldo
+          ? [confirmationMessage.split("\n")[0], ALDO_PROJECT_REMOVAL_NOTE].join("\n")
+          : confirmationMessage,
+        { variant: "destructive" },
+      ),
     );
     if (confirmed._tag === "Failure" || !confirmed.value) return;
     if (checkProjectAccess(members, gt("Failed to remove project"))) return;
@@ -402,6 +413,15 @@ function ProjectDetail({
         reportProjectFailure(gt('Failed to remove "{title}"', { title: member.title }), result);
         return;
       }
+      void removeAldoProjectSandbox(member.environmentId).catch((cause: unknown) =>
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt('Removed "{title}", but not its cloud agents', { title: member.title }),
+            description: cause instanceof Error ? cause.message : gt("Aldo couldn't delete it."),
+          }),
+        ),
+      );
       const projectRef = scopeProjectRef(member.environmentId, member.id);
       await waitForProjectRemoval(projectRef);
       releaseProjectDraftUploads(
@@ -555,9 +575,11 @@ function ProjectDetail({
           ) : null}
           <SettingsRow
             title={gt("Name")}
-            description={gt(
-              "The shared name for this project group in the sidebar and thread lists.",
-            )}
+            description={
+              isAldoCloud
+                ? gt("The name for this project in the sidebar and thread lists.")
+                : gt("The shared name for this project group in the sidebar and thread lists.")
+            }
             resetAction={
               canResetScratchTitle ? (
                 <SettingResetButton
@@ -690,15 +712,21 @@ function ProjectDetail({
             </>
           ) : null}
         </SettingsSection>
-        <ProjectDefaultsSettings category="project" />
-        <ProjectActionsSettings />
-        {checkoutChoices}
+        {isAldoCloud ? (
+          <AldoProjectCodeSettings environmentId={group.memberProjects[0]!.environmentId} />
+        ) : (
+          <>
+            <ProjectDefaultsSettings category="project" />
+            <ProjectActionsSettings />
+            {checkoutChoices}
+          </>
+        )}
         <SettingsSection title={gt("Danger")}>
           <SettingsRow
             title={
               hasOtherMembers
                 ? gt("Remove checkout")
-                : group.memberProjects.length > 1
+                : group.memberProjects.length > 1 && !isAldoCloud
                   ? gt("Remove this project everywhere")
                   : gt("Remove project")
             }
@@ -707,12 +735,16 @@ function ProjectDetail({
                 ? gt(
                     "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched.",
                   )
-                : group.memberProjects.length > 1
-                  ? gt(
-                      "{count, plural, other {Deletes all {count} checkout entries and their threads on every machine. Files on disk are not touched.}}",
-                      { count: group.memberProjects.length },
-                    )
-                  : gt("Deletes the project entry and its threads. Files on disk are not touched.")
+                : isAldoCloud
+                  ? gt("Deletes the project, its threads and their cloud agents.")
+                  : group.memberProjects.length > 1
+                    ? gt(
+                        "{count, plural, other {Deletes all {count} checkout entries and their threads on every machine. Files on disk are not touched.}}",
+                        { count: group.memberProjects.length },
+                      )
+                    : gt(
+                        "Deletes the project entry and its threads. Files on disk are not touched.",
+                      )
             }
             control={
               <Button
@@ -724,7 +756,7 @@ function ProjectDetail({
                 <Trash2Icon />
                 {hasOtherMembers
                   ? gt("Remove checkout")
-                  : group.memberProjects.length > 1
+                  : group.memberProjects.length > 1 && !isAldoCloud
                     ? gt("Remove all entries")
                     : gt("Remove project")}
               </Button>

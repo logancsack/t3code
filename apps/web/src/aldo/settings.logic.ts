@@ -3,11 +3,16 @@
 // search result must not lead to a page or row that isn't there), and the
 // settings scope Aldo keeps.
 
+import { createContext } from "react";
+
 import {
   validateSettingsScopeSearch,
   type SettingsScopeSearch,
 } from "../components/settings/settingsScope";
 import type { SettingsPath } from "../components/settings/settingsSearch";
+
+/** Remounts the settings page after this device's settings are reset, so its fields reread them. */
+export const AldoSettingsRestoredContext = createContext<(() => void) | undefined>(undefined);
 
 /** Pages only Aldo has: T3's own nav and search leave them out. */
 export const ALDO_SETTINGS_PATHS: ReadonlySet<string> = new Set([
@@ -251,6 +256,21 @@ export function aldoSettingsPage(
   return ALDO_SETTINGS_PAGES[path] ?? null;
 }
 
+/** T3 pages outside Aldo's nav that a thread still links to: snooze defaults, voice input, a thread's scheduled tasks. */
+const ALDO_LINKED_SETTINGS_PATHS: ReadonlySet<string> = new Set([
+  "/settings/threads",
+  "/settings/voice",
+  "/settings/scheduled-tasks",
+]);
+
+/** Whether Aldo shows a settings page: its own, and the few of T3's a thread links to. */
+export function aldoKeepsSettingsPage(pathname: string): boolean {
+  const path = pathname.replace(/\/+$/, "");
+  return (
+    path === "/settings" || aldoSettingsPage(path) !== null || ALDO_LINKED_SETTINGS_PATHS.has(path)
+  );
+}
+
 /** Whether a nav entry is the page shown, or one it opens onto. */
 export function aldoSettingsNavActive(
   item: { readonly to: string; readonly also?: ReadonlyArray<string> },
@@ -331,6 +351,10 @@ const ALDO_HIDDEN_SETTINGS_ROWS: ReadonlySet<string> = new Set([
   "project-grouping",
   "project-actions",
 ]);
+
+export function aldoHidesSettingsRow(id: string): boolean {
+  return ALDO_HIDDEN_SETTINGS_ROWS.has(id);
+}
 
 /**
  * T3's rows Aldo shows on a page of its own: the model new threads start on

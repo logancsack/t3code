@@ -1,6 +1,8 @@
 import type { KeybindingCommand, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { useEffect, useEffectEvent } from "react";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { aldoDesktopOwnsKeyboard } from "../../aldo/desktopInput.logic";
+import { ALDO_DEVELOPER_COMMANDS, useAldoDeveloperTools } from "../../aldo/developerTools";
 import { resolveChatShortcutCommand, type ShortcutMatchContext } from "../../keybindings";
 import { isTerminalCloseConfirmPending } from "../../lib/terminalCloseConfirm";
 import {
@@ -60,8 +62,11 @@ interface ChatShortcutsInput {
 export function useChatShortcuts(input: ChatShortcutsInput) {
   const embedded = input.embedded === true;
   const composerElement = embedded ? (input.composerElement ?? null) : null;
+  const aldoDeveloperTools = useAldoDeveloperTools();
   const handleShortcut = useEffectEvent((event: KeyboardEvent) => {
     const { keybindings } = input;
+    // Keystrokes in the agent's shared desktop belong to it.
+    if (aldoDesktopOwnsKeyboard(event.target)) return;
     if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
       event.stopPropagation();
       return;
@@ -93,6 +98,8 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
       context: shortcutContext,
     });
     if (!command || (inSideChatPane && !SIDE_CHAT_PANE_COMMANDS.has(command))) return;
+    // Without Aldo's developer tools there is no Terminal or Diff to open.
+    if (!aldoDeveloperTools && ALDO_DEVELOPER_COMMANDS.has(command)) return;
     const run =
       input.commands[command] ??
       composerShortcutCommands(input.composerRef, input.branchToolbarRef)[command] ??

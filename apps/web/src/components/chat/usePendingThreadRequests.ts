@@ -20,7 +20,8 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { useRef, useState, type RefObject, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type RefObject, type SetStateAction } from "react";
+import { isAldoCloud } from "../../aldo/api";
 import { useShallow } from "zustand/react/shallow";
 import {
   type ComposerThreadDraftState,
@@ -44,6 +45,7 @@ import {
   carryDisplacedCustomAnswerIntoPrompt,
   withdrawDisplacedCustomAnswerFromPrompt,
   derivePendingUserInputProgress,
+  derivePendingUserInputCarryOn,
   answerContextRecords,
   projectPendingUserInputAnswer,
   threadContextsReferencedByAnswer,
@@ -496,6 +498,44 @@ export function usePendingThreadRequests(input: {
     });
   };
 
+  // Aldo: a question whose provider recommends an answer carries on with it after ten
+  // minutes unanswered, so a thread left alone doesn't stall. This page keeps the time.
+  const [carriedOnRequestKeys, setCarriedOnRequestKeys] = useState<ReadonlyArray<string>>([]);
+  const [shownAtByRequestKey, setShownAtByRequestKey] = useState<Record<string, number>>({});
+  const answerStarted = usePendingUserInputAnswers(
+    (state) => state[activePendingRequestKey] !== undefined,
+  );
+  const canCarryOn =
+    isAldoCloud &&
+    pendingApprovals.length === 0 &&
+    activePendingUserInput !== null &&
+    activePendingUserInput.responseCapability !== "not_resumable" &&
+    !answerStarted &&
+    !carriedOnRequestKeys.includes(activePendingRequestKey);
+  const shownAt = shownAtByRequestKey[activePendingRequestKey];
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stamps when this page first showed the question; a clock read can't happen in render
+  useEffect(() => {
+    if (!canCarryOn || shownAt !== undefined) return;
+    // oxlint-disable-next-line react/set-state-in-effect -- the clock is read once, when the question first shows
+    setShownAtByRequestKey((existing) => ({ [activePendingRequestKey]: Date.now(), ...existing }));
+  }, [activePendingRequestKey, canCarryOn, shownAt]);
+  const activePendingCarryOn =
+    canCarryOn && activePendingUserInput && shownAt !== undefined
+      ? derivePendingUserInputCarryOn(activePendingUserInput, shownAt)
+      : null;
+  const carryOnNow = useStableCallback(() => {
+    if (!activePendingUserInput || !activePendingCarryOn) return;
+    setCarriedOnRequestKeys((existing) => [...existing, activePendingRequestKey]);
+    void onRespondToUserInput(activePendingUserInput.requestId, activePendingCarryOn.answers);
+  });
+  const carryOnAt = activePendingCarryOn?.at ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer that answers the open question when its wait is over
+  useEffect(() => {
+    if (carryOnAt === null) return;
+    const timer = window.setTimeout(carryOnNow, Math.max(0, carryOnAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [carryOnAt, carryOnNow]);
+
   const onDismissUserInput = async (requestId: RuntimeRequestId) => {
     if (!activeThreadId) return;
 
@@ -667,6 +707,7 @@ export function usePendingThreadRequests(input: {
     activePendingApproval,
     activePendingUserInput,
     activePendingIsResponding,
+    activePendingCarryOn,
     respondingRequestIds,
     onRespondToApproval: onRespondToApprovalStable,
     onDismissUserInput: onDismissUserInputStable,

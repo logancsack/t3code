@@ -1,3 +1,4 @@
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import {
   ClipboardApiUnavailableError,
@@ -704,15 +705,22 @@ export const BranchToolbar = memo(function BranchToolbar({
     openAddProjectToMachine({ projectRef: activeProjectRef, targetEnvironmentId });
   // A project on one machine still gets the picker when it can be added to another.
   const hasMultipleEnvironments = (availableEnvironments?.length ?? 0) > 1 || addTargets.length > 0;
-  const showEnvironmentPicker = hasMultipleEnvironments && onEnvironmentChange !== undefined;
+  // Aldo: every thread has its own cloud machine, so there's no machine or
+  // workspace to pick; only the branch shows.
+  const aldoThread = isAldoCloud && isAldoEnvironmentId(environmentId);
+  const showRunContext = showGitControls && !aldoThread;
+  const showEnvironmentPicker =
+    !aldoThread && hasMultipleEnvironments && onEnvironmentChange !== undefined;
   const activeEnvironmentOption =
     availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null;
   // Started threads get no handler but still show which machine they run on,
   // matching the strip visibility ChatView computes from the same inputs.
-  const showEnvironmentIndicator = shouldShowEnvironmentIndicator({
-    activeEnvironment: activeEnvironmentOption,
-    canPickEnvironment: hasMultipleEnvironments,
-  });
+  const showEnvironmentIndicator =
+    !aldoThread &&
+    shouldShowEnvironmentIndicator({
+      activeEnvironment: activeEnvironmentOption,
+      canPickEnvironment: hasMultipleEnvironments,
+    });
   const [attachStrip, labelsOverflow] = useLabelsOverflow();
 
   if (!activeProject) return null;
@@ -795,11 +803,11 @@ export const BranchToolbar = memo(function BranchToolbar({
           />
         </div>
       ) : null}
-      {showGitControls || showEnvironmentIndicator ? (
+      {showRunContext || showEnvironmentIndicator ? (
         <div
           className={cn(
             "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
-            showGitControls ? "hidden @xl/composer-surface:flex" : "flex",
+            showRunContext ? "hidden @xl/composer-surface:flex" : "flex",
             "flex-1",
           )}
         >
@@ -814,7 +822,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
                 {...(addTargets.length > 0 ? { onAddToMachine: () => onAddToMachine(null) } : {})}
               />
-              {showGitControls ? (
+              {showRunContext ? (
                 <Separator
                   orientation="vertical"
                   className="mx-0.5 h-3.5!"
@@ -823,7 +831,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               ) : null}
             </>
           )}
-          {showGitControls ? (
+          {showRunContext ? (
             <BranchToolbarEnvModeSelector
               forceNewWorktree={forceNewWorktree}
               envLocked={envModeLocked}

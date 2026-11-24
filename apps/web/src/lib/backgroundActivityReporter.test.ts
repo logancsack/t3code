@@ -95,6 +95,7 @@ describe("layer", () => {
       let calls = 0;
       const registry = EnvironmentRegistry.EnvironmentRegistry.of({
         entries,
+        dormant: yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(new Set()),
         run: () => {
           calls += 1;
           return calls === 1 ? Effect.failCause(Cause.interrupt()) : Effect.void;
@@ -120,6 +121,7 @@ describe("layer", () => {
       let calls = 0;
       const registry = EnvironmentRegistry.EnvironmentRegistry.of({
         entries,
+        dormant: yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(new Set()),
         run: () => {
           calls += 1;
           return calls === 1 ? Effect.never : Effect.void;

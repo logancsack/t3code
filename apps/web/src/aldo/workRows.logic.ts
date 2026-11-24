@@ -10,8 +10,6 @@
 // joins the group for its kind of work, or starts one, so a group never moves
 // while a turn streams.
 
-import { omitSupersededLifecycleMarkers } from "@t3tools/client-runtime/work-log/presentation";
-
 import type { WorkWords } from "../components/chat/MessagesTimeline.logic";
 import type { WorkLogEntry } from "../session-logic";
 import { aldoStepsInOrder, aldoWorkWords, type AldoStep } from "./workLabels.logic";
@@ -32,15 +30,14 @@ type Entry = Pick<
   | "tone"
   | "toolLifecycleStatus"
   | "toolCallId"
-  | "turnId"
+  | "runId"
+  | "viewedImagePath"
   | "sourceActivityKind"
 >;
 
 /** The tool calls among a run of work: what "84 steps" counts (not thoughts or notices). */
 export function aldoStepCount(entries: ReadonlyArray<Entry>): number {
-  return omitSupersededLifecycleMarkers(entries, (entry) => entry).filter(
-    (entry) => entry.tone === "tool",
-  ).length;
+  return entries.filter((entry) => entry.tone === "tool").length;
 }
 
 /** "40 sec", "6 min", "1 hr 12 min". */
@@ -321,9 +318,7 @@ export function aldoWorkGroups(
   entries: ReadonlyArray<Entry>,
   endedAt: string | null = null,
 ): AldoWorkGroup[] {
-  const work = omitSupersededLifecycleMarkers(entries, (entry) => entry).filter(
-    (entry) => entry.tone !== "info" && entry.tone !== "thinking",
-  );
+  const work = entries.filter((entry) => entry.tone !== "info" && entry.tone !== "thinking");
   // A step with no words of its own still says which tool it used ("Used gig lookup").
   const found = aldoStepsInOrder(work).map((step, index): AldoStep | null => {
     if (step) return step;

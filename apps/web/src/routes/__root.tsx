@@ -12,11 +12,24 @@ import {
 } from "@tanstack/react-router";
 import { msg, T, useGT, Var } from "gt-react";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { AldoAssistantDock } from "../aldo/AldoAssistantDock";
+import { AldoHandoffTakeoverHost } from "../aldo/AldoHandoffTakeover";
+import { AldoRepositoryPicker } from "../aldo/AldoRepositoryPicker";
+import { AldoShareReceiver } from "../aldo/AldoShareReceiver";
+import { AldoShareViewerHost } from "../aldo/AldoShareViewer";
+import { AldoSummon } from "../aldo/AldoSummon";
+import { AldoAttentionSync } from "../aldo/attentionBadge";
+import { isAldoCloud } from "../aldo/api";
+import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { demoEnvironmentId, demoThreadId } from "../landingDemo/runtime";
+import { isLandingDemo, isWorkReplay } from "../landingDemo/mode";
+import { useRightPanelStore } from "../rightPanelStore";
+import { useEnvironments } from "../state/environments";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
@@ -24,7 +37,6 @@ import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachine
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
-import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
@@ -115,6 +127,14 @@ export const Route = createRootRoute({
   }),
 });
 
+// T3 Connect's onboarding reads Clerk's session: it loads only where T3 Connect
+// is configured, so a first screen without it (Aldo's among them) has no Clerk.
+const ConnectOnboardingDialog = lazy(() =>
+  import("../components/cloud/ConnectOnboardingDialog").then((module) => ({
+    default: module.ConnectOnboardingDialog,
+  })),
+);
+
 function RootRouteNotFoundView() {
   return (
     <main className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-6">
@@ -194,12 +214,23 @@ function RootRouteBranch() {
       ) : null}
       {isElectron ? <RunningThreadKeepAlive /> : null}
       <RelayClientInstallDialog />
-      <ConnectOnboardingDialog />
+      {hasCloudPublicConfig() ? (
+        <Suspense fallback={null}>
+          <ConnectOnboardingDialog />
+        </Suspense>
+      ) : null}
       <SshPasswordPromptDialog />
       <SnapShotCoordinator />
       <ReopenClosedViewShortcut />
       <ConfirmDialogHost />
       <CustomSnoozeDialogHost />
+      <AldoRepositoryPicker />
+      {isAldoCloud ? <AldoAttentionSync /> : null}
+      <AldoAssistantDock />
+      <AldoSummon />
+      {isAldoCloud ? <AldoShareReceiver /> : null}
+      {isAldoCloud ? <AldoShareViewerHost /> : null}
+      <LandingDemoBootstrap />
       <GuestShareDialogHost />
       <ProjectCloneToastCoordinator />
       <ConnectDeviceApprovalCoordinator />
@@ -228,19 +259,45 @@ function RootRouteBranch() {
       ) : (
         <FirstRunGate
           enabled={primaryEnvironmentAuthenticated}
-          hostedStatic={authGateState.status === "hosted-static"}
+          hostedStatic={authGateState.status === "hosted-static" && !isAldoCloud}
         >
           {appHosts}
           {primaryEnvironmentAuthenticated ? (
             <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
           ) : null}
           {appShell}
+          {/* After the app shell, so the full-screen takeover covers its floating sidebar toggle. */}
+          {isAldoCloud ? <AldoHandoffTakeoverHost /> : null}
         </FirstRunGate>
       )}
       {/* Above both shells and the router, so drafts survive navigation, including to /welcome. */}
       <ThemeEditorHost />
     </>
   );
+}
+
+function LandingDemoBootstrap() {
+  const navigate = useNavigate();
+  const { environments } = useEnvironments();
+  const started = useRef(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the demo thread once its environment connects
+  useEffect(() => {
+    if (!isLandingDemo() || isWorkReplay() || started.current) return;
+    if (!environments.some((environment) => environment.environmentId === demoEnvironmentId))
+      return;
+    started.current = true;
+    useRightPanelStore
+      .getState()
+      .open({ environmentId: demoEnvironmentId, threadId: demoThreadId }, "workspaceBrowser");
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: demoEnvironmentId, threadId: demoThreadId },
+      replace: true,
+    });
+  }, [environments, navigate]);
+
+  return null;
 }
 
 function RootRouteErrorView({ error }: ErrorComponentProps) {

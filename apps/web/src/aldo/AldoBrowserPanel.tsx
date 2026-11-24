@@ -23,7 +23,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useParams } from "@tanstack/react-router";
 
-import { readComposerThreadPrompt, useComposerDraftStore } from "../composerDraftStore";
+import { readComposerDraftPrompt, useComposerDraftStore } from "../composerDraftStore";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -762,7 +762,7 @@ export function AldoBrowserPanel({
           .getState()
           .setPrompt(
             target,
-            promptWith(readComposerThreadPrompt(target), aldoTeachMessage(sentence, steps)),
+            promptWith(readComposerDraftPrompt(target) ?? "", aldoTeachMessage(sentence, steps)),
           );
         // Those steps, by their id, may go now; a machine that forgot them as it gave them ignores this.
         send({ type: "teach", action: "taken", ...(id ? { id } : {}) });

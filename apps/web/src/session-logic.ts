@@ -1,3 +1,4 @@
+import type { AldoApproval } from "./aldo/homeApi";
 import type { ThreadStructureRuntime } from "@t3tools/client-runtime/state/shell";
 import { msg } from "gt-react";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
@@ -152,6 +153,13 @@ export type TimelineEntry = (
       readonly kind: "event";
       readonly createdAt: string;
       readonly projectedItem: OrchestrationV2ProjectedTurnItem;
+    }
+  | {
+      /** Aldo: an approval the agent asked the user for, at the point it asked (aldo/approvals.logic.ts). */
+      readonly id: string;
+      readonly kind: "aldo-approval";
+      readonly createdAt: string;
+      readonly approval: AldoApproval;
     }
 ) & {
   readonly attempt?: TimelineAttempt;

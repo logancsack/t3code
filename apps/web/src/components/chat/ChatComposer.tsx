@@ -61,6 +61,7 @@ import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model"
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   memo,
+  type ReactNode,
   use,
   useEffect,
   useEffectEvent,
@@ -246,7 +247,7 @@ import { observeResize } from "~/lib/observeResize";
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
 import { toastManager } from "../ui/toast";
 import { m as resolveMessage } from "../../i18n/messages";
-import { BuildingIcon, PlayIcon, ReplyIcon } from "lucide-react";
+import { BuildingIcon, PlayIcon, PlusIcon, ReplyIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { assistantCitationLabel } from "@t3tools/shared/assistantCitations";
 import { assistantCitationNavigation } from "../../lib/assistantCitationNavigation";
@@ -290,6 +291,13 @@ import {
   useSubmitAfterPreparingImages,
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
+import { isAldoCloud } from "../../aldo/api";
+import { AldoAttachMenu } from "../../aldo/AldoAttach";
+import { aldoRoutesModels } from "../../aldo/directory";
+import { startAldoUpload } from "../../aldo/files";
+import { useAldoMachineSettings } from "../../aldo/machineSettings";
+import { modelDisplayName } from "../../aldo/modelNames.logic";
+import { hasExplicitComposerModelSelection } from "../../lib/chatThreadActions";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 import { useFreshSessionArmed } from "./freshSessionArms";
@@ -364,6 +372,13 @@ export interface ChatComposerProps {
   canOperateThread: boolean;
   attachmentUploadsCapabilityKnown: boolean;
   supportsAttachmentUploads: boolean;
+  /** Aldo: attachments go to Aldo with the message, or wait for a cloud agent that isn't up yet. */
+  attachmentUploadsDeferred?: boolean;
+  /** Aldo: where a draft works, before the model picker, at the controls' size. */
+  renderLeadingControl?: ((size: "sm" | "xs") => ReactNode) | undefined;
+  /** Aldo: what an empty composer says when nothing else needs saying. */
+  idlePlaceholder?: string | undefined;
+  pendingUserInputNote?: string | null | undefined;
   supportsQuestionAttachments: boolean;
   maxFileAttachmentBytes: number | null;
   routeKind: "server" | "draft";
@@ -502,6 +517,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     canOperateThread,
     attachmentUploadsCapabilityKnown,
     supportsAttachmentUploads,
+    attachmentUploadsDeferred = false,
+    renderLeadingControl,
+    idlePlaceholder,
+    pendingUserInputNote,
     supportsQuestionAttachments,
     maxFileAttachmentBytes,
     routeKind,
@@ -798,8 +817,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           ? gt("Attach the interrupted file again or remove it")
           : gt("Attach the interrupted files again or remove them")
         : // A plain send waits for its uploads. Answers and approval redirects need them first.
-          questionAttachmentTarget ||
-            pendingApprovals.some((approval) => !heldRequestIds.has(approval.requestId))
+          !attachmentUploadsDeferred &&
+            (questionAttachmentTarget ||
+              pendingApprovals.some((approval) => !heldRequestIds.has(approval.requestId)))
           ? attachmentUploadBlockReason(
               {
                 imageIds: [...composerImages, ...composerFiles].map((attachment) => attachment.id),
@@ -837,9 +857,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const setComposerDraftReplyTo = useComposerDraftStore((store) => store.setReplyTo);
   const navigate = useNavigate();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts uploading to Aldo the attachments that go with the message, as they are attached
+  useEffect(() => {
+    if (!attachmentUploadsDeferred) return;
+    for (const attachment of [...composerImages, ...composerFiles]) {
+      startAldoUpload(environmentId, attachment);
+    }
+  }, [attachmentUploadsDeferred, composerFiles, composerImages, environmentId]);
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts or releases server attachment uploads as upload capability, limits and draft attachments change
   useEffect(() => {
-    if (!attachmentUploadsCapabilityKnown) {
+    if (!attachmentUploadsCapabilityKnown || attachmentUploadsDeferred) {
       return;
     }
     if (!supportsAttachmentUploads) {
@@ -877,6 +905,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   }, [
     attachmentUploadsCapabilityKnown,
+    attachmentUploadsDeferred,
     attachmentDraftTarget,
     canOperateThread,
     composerFiles,
@@ -961,12 +990,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         (multipleModelSelections === null ? providerSendBlockReason : null)));
   const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderStatus = selectedProviderEntry?.snapshot ?? null;
-  const selectedProviderSkills = selectedProviderStatus
-    ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
-    : NO_PROVIDER_SKILLS;
-  const selectedProviderSlashCommands = selectedProviderStatus
-    ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
-    : NO_PROVIDER_SLASH_COMMANDS;
+  // Aldo: a routed draft has no model yet; Aldo picks one when its first message is sent.
+  const aldoRoutesDraft = isAldoCloud && aldoRoutesModels() && routeKind === "draft";
+  const aldoDefaultModel = aldoRoutesDraft && !hasExplicitComposerModelSelection(composerDraft);
+  const aldoDefaultSelection = useAldoMachineSettings()?.defaultModelSelection;
+  const selectedProviderSkills =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
+      : NO_PROVIDER_SKILLS;
+  const selectedProviderSlashCommands =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
+      : NO_PROVIDER_SLASH_COMMANDS;
   const { refresh: refreshWorkspaceSnapshotOnTyping, scanning: workspaceSkillsScanning } =
     useProviderWorkspaceSnapshotRefresh({
       environmentId,
@@ -2502,6 +2537,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : composerControlsCollapsed
       ? 0
       : expandedControlsIconOnlyBlockCount;
+  const aldoDefaultModelName = aldoDefaultSelection
+    ? modelDisplayName(
+        providerInstanceEntries,
+        aldoDefaultSelection.instanceId,
+        aldoDefaultSelection.model,
+      )
+    : null;
   const composerControls = (
     <ComposerControlsBar
       environmentId={environmentId}
@@ -2549,6 +2591,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onModelPickerOpenChange={setIsComposerModelPickerOpen}
       modelPickerIconClassName={composerProviderState.modelPickerIconClassName}
       getModelDisabledReason={getModelDisabledReason}
+      leadingControl={renderLeadingControl?.(composerControlsCollapsed ? "xs" : "sm")}
+      {...(aldoRoutesDraft
+        ? {
+            automaticModel: {
+              label: aldoDefaultModelName
+                ? gt("Use default: {model}", { model: aldoDefaultModelName })
+                : gt("Let Aldo decide"),
+              triggerLabel: aldoDefaultModelName
+                ? gt("Default: {model}", { model: aldoDefaultModelName })
+                : gt("Let Aldo decide"),
+              selected: aldoDefaultModel,
+              onSelect: () =>
+                useComposerDraftStore.getState().setModelSelection(composerDraftTarget, null),
+            },
+          }
+        : {})}
     />
   );
   // An open question owns the space above the composer. Only a machine problem,
@@ -3417,12 +3475,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
-  const composerAttachButton = showComposerAttachAction ? (
+  const composerAttachButton = !showComposerAttachAction ? null : isAldoCloud ? (
+    <AldoAttachMenu
+      trigger={
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={gt("Add photos and files")}
+        />
+      }
+      align="end"
+      photos="image/*,video/*"
+      files
+      onPick={(files) => {
+        void addComposerAttachments(files).then((inserted) => {
+          if (!inserted) focusComposer();
+        });
+      }}
+    >
+      <PlusIcon />
+    </AldoAttachMenu>
+  ) : (
     <ComposerAttachButton
       addComposerAttachments={addComposerAttachments}
       focusComposer={focusComposer}
     />
-  ) : null;
+  );
   return (
     <form
       ref={composerFormRef}
@@ -3498,6 +3577,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onToggleOption={onSelectActivePendingUserInputOption}
                     onAdvance={onAdvanceActivePendingUserInput}
                     onDismiss={onDismissActivePendingUserInput}
+                    note={pendingUserInputNote}
                   />
                 ) : null}
               </ComposerBanner.Root>
@@ -3742,7 +3822,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? gt("Choose a project above to start a thread")
                             : showProviderUnavailable
                               ? gt("Enable a provider in Settings to send a message")
-                              : (offeredPromptSuggestion ?? m(DEFAULT_COMPOSER_PLACEHOLDER))
+                              : (offeredPromptSuggestion ??
+                                idlePlaceholder ??
+                                m(DEFAULT_COMPOSER_PLACEHOLDER))
                     }
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (

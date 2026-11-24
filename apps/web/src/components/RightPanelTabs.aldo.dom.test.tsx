@@ -1,8 +1,20 @@
 // @vitest-environment jsdom
 
+import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+vi.mock("gt-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("gt-react")>()),
+  useGT:
+    () =>
+    (text: string, values: Record<string, unknown> = {}) =>
+      text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key])),
+  useMessages: () => (text: string) => text,
+  T: ({ children }: { children: ReactNode }) => children,
+  Var: ({ children }: { children: ReactNode }) => children,
+}));
 
 vi.stubEnv("VITE_ALDO_CLOUD", "1");
 vi.resetModules();
@@ -50,6 +62,15 @@ describe("RightPanelTabs in Aldo, on work that isn't code", () => {
           mode="inline"
           maximized={false}
           offersPullRequests={false}
+          keybindings={[]}
+          getShortcutContext={() => ({
+            terminalFocus: false,
+            terminalOpen: false,
+            previewFocus: false,
+            previewOpen: false,
+            isWeb: true,
+            isDesktop: false,
+          })}
           surfaces={[{ id: "browser:tab-1", kind: "preview", resourceId: "tab-1" }]}
           environmentId={null}
           activeSurfaceId="browser:tab-1"
@@ -70,16 +91,13 @@ describe("RightPanelTabs in Aldo, on work that isn't code", () => {
           onAddFiles={() => {}}
           onAddPullRequest={() => {}}
           onAddPullRequests={() => {}}
-          onAddAgents={() => {}}
           onAddDevice={() => {}}
-          liveAgentCount={0}
           browserAvailable
           terminalAvailable
           diffAvailable
           filesAvailable
           pullRequestAvailable={false}
           pullRequestsAvailable={false}
-          agentsAvailable
           deviceAvailable
         >
           {null}
@@ -98,7 +116,7 @@ describe("RightPanelTabs in Aldo, on work that isn't code", () => {
       group.textContent?.startsWith("More"),
     );
     expect(more?.textContent).toContain("Terminal");
-    expect(more?.textContent).toContain("Helpers");
+    expect(more?.textContent).toContain("Diff");
     expect(menu?.textContent).not.toContain("Device");
     expect(menu?.textContent).not.toContain("iOS Simulator");
   });

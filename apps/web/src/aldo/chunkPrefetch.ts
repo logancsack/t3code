@@ -68,8 +68,8 @@ async function prefetch(router: AppRouter): Promise<void> {
     () => import("../components/files/ProjectFilePicker"),
     () => import("../components/search/ProjectContentSearchDialog"),
     ...(isAldoCloud ? [() => import("./AldoRepositoryDialog")] : []),
-    route("/settings"),
-    route(isAldoCloud ? "/settings/agents" : "/settings/general"),
+    route("/_chat/settings"),
+    route(isAldoCloud ? "/_chat/settings/agents" : "/_chat/settings/general"),
     () => import("../components/settings/SettingsSidebarNav"),
   ];
   // One at a time, so they don't crowd out what the page is fetching. A failed

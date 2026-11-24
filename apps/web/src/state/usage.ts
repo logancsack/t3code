@@ -1,3 +1,5 @@
+import { isAldoCloud } from "../aldo/api";
+import { aldoUsageAtom, withAldoUsages } from "../aldo/usage";
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthDiagnosticsReadScope,
@@ -76,7 +78,10 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         summary,
       });
     }
-    return statuses;
+    // Aldo answers for the cloud agents that sleep (aldo/usage.ts).
+    return isAldoCloud
+      ? withAldoUsages(statuses, presentations, get(aldoUsageAtom(windowKey)))
+      : statuses;
   }).pipe(Atom.withLabel(`web-usage:window:${windowKey}`)),
 );
 
@@ -184,8 +189,10 @@ export function useUsage(
   }
   const { selectedEnvironments, merged } = current;
 
-  const refresh = (nextInput?: UsageSummaryInput) =>
-    refreshUsage({
+  const refresh = (nextInput?: UsageSummaryInput) => {
+    // Aldo's answers for the agents that sleep rescan with the rest (aldo/usage.ts).
+    if (isAldoCloud) appAtomRegistry.refresh(aldoUsageAtom(windowKey));
+    return refreshUsage({
       registry: appAtomRegistry,
       server: serverEnvironment,
       presentations: environmentPresentations,
@@ -198,6 +205,7 @@ export function useUsage(
         .map(({ environmentId }) => environmentId),
       input: nextInput ?? (JSON.parse(windowKey) as UsageSummaryInput),
     });
+  };
 
   const answeredCount = selectedEnvironments.filter(
     (environment) => environment.summary !== null,

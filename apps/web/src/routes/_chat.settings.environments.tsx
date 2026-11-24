@@ -4,7 +4,7 @@ import { isAldoCloud } from "../aldo/api";
 import { aldoSettingsRedirect } from "../aldo/settings.logic";
 
 // Aldo's ready-to-go environments are on Settings → Code now.
-export const Route = createFileRoute("/settings/environments")({
+export const Route = createFileRoute("/_chat/settings/environments")({
   beforeLoad: ({ location }) => {
     if (isAldoCloud) {
       throw redirect({ href: aldoSettingsRedirect(location) ?? "/settings/code", replace: true });

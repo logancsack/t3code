@@ -89,8 +89,14 @@ import {
   speedCostSegments,
   tokenTypeSegments,
 } from "./usageBreakdown";
+import { AldoProviderLimitsSection, useAldoProviderLimits } from "../../aldo/AldoProviderLimits";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoUsageNotes } from "../../aldo/usage.logic";
+import { useAldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
+import { AldoWorkspaceUsageSection } from "./AldoWorkspaceUsage";
+import { aldoUsageSentence } from "./aldoWorkspaceUsageView";
 import {
-  METRIC_OPTIONS,
+  METRIC_OPTIONS as USAGE_METRIC_OPTIONS,
   WINDOW_OPTIONS,
   resolveUsageShortcut,
   type UsageMetric,
@@ -106,6 +112,12 @@ import {
   saveUsagePagePreferences,
   type UsagePagePreferences,
 } from "./usagePagePreferences";
+
+// Aldo has no Limits tab: its own plan limits head the page, read by its server,
+// while T3's would count only the machines that are awake.
+const METRIC_OPTIONS = isAldoCloud
+  ? USAGE_METRIC_OPTIONS.filter((option) => option.value !== "limits")
+  : USAGE_METRIC_OPTIONS;
 
 function isUsageMetric(value: string | null | undefined): value is UsageMetric {
   return METRIC_OPTIONS.some((option) => option.value === value);
@@ -199,7 +211,12 @@ export function UsagePage() {
       preferences.windowDays === 1 ? "hour" : "day",
     ),
   }));
-  const metric = preferences.metric;
+  const metric = isAldoCloud && preferences.metric === "limits" ? "cost" : preferences.metric;
+  const aldoWorkspace = useAldoWorkspaceUsage();
+  const aldoUsage = aldoWorkspace.state.status === "unavailable" ? null : aldoWorkspace.state.usage;
+  const aldoSentence = isAldoCloud && aldoUsage ? aldoUsageSentence(aldoUsage) : null;
+  const providerLimits = useAldoProviderLimits();
+  const [tokenDetails, setTokenDetails] = useState(!isAldoCloud);
   const showingLimits = metric === "limits";
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [limitsNow, setLimitsNow] = useState(() => Date.now());
@@ -319,6 +336,8 @@ export function UsagePage() {
     ) {
       setWindowSelection({ days: windowDays, window: nextWindow });
     }
+    aldoWorkspace.refresh();
+    providerLimits.refresh();
     refreshingRef.current = true;
     setIsRefreshing(true);
     void refresh(nextWindow).finally(() => {
@@ -521,6 +540,12 @@ export function UsagePage() {
 
         <ScrollArea className="min-h-0 flex-1">
           <WorkspacePageContainer width="wide">
+            {aldoSentence ? <p className="text-base text-foreground">{aldoSentence}</p> : null}
+            <AldoProviderLimitsSection state={providerLimits.state} />
+            <AldoWorkspaceUsageSection
+              state={aldoWorkspace.state}
+              onChanged={aldoWorkspace.refresh}
+            />
             {selectedEnvironments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 {environments.length === 0
@@ -537,6 +562,15 @@ export function UsagePage() {
                 hiddenProviders={hiddenProviders}
                 now={limitsNow}
               />
+            ) : !tokenDetails ? (
+              <Button
+                className="self-start"
+                size="xs"
+                variant="ghost"
+                onClick={() => setTokenDetails(true)}
+              >
+                <T>Details: tokens, cache and models</T>
+              </Button>
             ) : shown === null ? (
               <UsageSkeleton />
             ) : !canReadDiagnostics ? (
@@ -1154,14 +1188,18 @@ function UsageCoverageNotice({
 
   return (
     <div className="flex flex-col gap-1 border-t border-border px-2 py-2 text-xs text-muted-foreground">
-      {failed.map((environment) => (
-        <span key={environment.label}>
-          {gt("{environment}: {error}", {
-            environment: environment.label,
-            error: environment.error,
-          })}
-        </span>
-      ))}
+      {isAldoCloud
+        ? aldoUsageNotes(failed.map((environment) => environment.error ?? "")).map((note) => (
+            <span key={note}>{note}</span>
+          ))
+        : failed.map((environment) => (
+            <span key={environment.label}>
+              {gt("{environment}: {error}", {
+                environment: environment.label,
+                error: environment.error,
+              })}
+            </span>
+          ))}
       {incompatible.map(({ environment, mismatch }) => (
         <span key={environment.environmentId}>
           {formatUsageContractMismatch(environment.label, mismatch, m)}
@@ -1234,15 +1272,20 @@ function UsageEnvironmentFilter({
         </span>
       </MenuTrigger>
       <MenuPopup align="start">
-        <MenuCheckboxItem
-          checked={allSelected}
-          closeOnClick={false}
-          onCheckedChange={(checked) => onSelectionChange(checked ? null : new Set())}
-        >
-          <T>All environments</T>
-        </MenuCheckboxItem>
-        <MenuSeparator />
-        {environments.map((environment) => {
+        {/* Aldo keeps its machines out of sight: usage covers them all. */}
+        {isAldoCloud ? null : (
+          <>
+            <MenuCheckboxItem
+              checked={allSelected}
+              closeOnClick={false}
+              onCheckedChange={(checked) => onSelectionChange(checked ? null : new Set())}
+            >
+              <T>All environments</T>
+            </MenuCheckboxItem>
+            <MenuSeparator />
+          </>
+        )}
+        {(isAldoCloud ? [] : environments).map((environment) => {
           const checked =
             selectedEnvironmentIds === null ||
             selectedEnvironmentIds.has(environment.environmentId);
@@ -1293,7 +1336,7 @@ function UsageEnvironmentFilter({
             </MenuCheckboxItem>
           );
         })}
-        {environments.length === 0 ? (
+        {environments.length === 0 && !isAldoCloud ? (
           <p className="px-2 py-2 text-xs text-muted-foreground">
             <T>No environments connected.</T>
           </p>
@@ -1310,11 +1353,16 @@ function UsageEnvironmentFilter({
             contractMismatches={contractMismatches}
           />
         ) : null}
-        <MenuSeparator />
-        <MenuItem onClick={onOpenModelPrices}>
-          <SlidersHorizontalIcon aria-hidden />
-          <T>Model prices</T>
-        </MenuItem>
+        {/* Aldo: prices written to the awake machines never reach new threads. */}
+        {isAldoCloud ? null : (
+          <>
+            <MenuSeparator />
+            <MenuItem onClick={onOpenModelPrices}>
+              <SlidersHorizontalIcon aria-hidden />
+              <T>Model prices</T>
+            </MenuItem>
+          </>
+        )}
       </MenuPopup>
     </Menu>
   );

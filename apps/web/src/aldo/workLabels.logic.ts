@@ -26,6 +26,7 @@ type Entry = Pick<
   | "requestKind"
   | "tone"
   | "toolLifecycleStatus"
+  | "viewedImagePath"
 >;
 
 export type AldoStepKind =
@@ -214,7 +215,14 @@ function aldoToolCall(entry: Entry): ToolCall | null {
   const title = entry.toolTitle?.trim();
   if (title && !/\s/.test(title.replace(/\s*·\s*/, ""))) {
     const { server, tool } = splitName(title);
-    return { server, tool, args: null, output: detail || null };
+    // T3's record of a tool call keeps what it was given and what it answered.
+    const input = data?.input;
+    return {
+      server,
+      tool,
+      args: typeof input === "string" ? parseArgs(input) : record(input),
+      output: resultText(data?.output) ?? (detail || null),
+    };
   }
   return null;
 }
@@ -249,11 +257,11 @@ export function aldoShareOf(entry: Entry): {
 
 /** The files a timeline's turns shared by link, by turn. */
 export function aldoSharesByTurn(
-  entries: ReadonlyArray<Entry & Pick<WorkLogEntry, "turnId">>,
+  entries: ReadonlyArray<Entry & Pick<WorkLogEntry, "runId">>,
 ): Array<[string, Array<NonNullable<ReturnType<typeof aldoShareOf>>>]> {
   const byTurn = new Map<string, Array<NonNullable<ReturnType<typeof aldoShareOf>>>>();
   for (const entry of entries) {
-    if (!entry.turnId) continue;
+    if (!entry.runId) continue;
     // Cheaply past every step that isn't one.
     const tool = record(entry.toolData)?.tool;
     if (
@@ -264,9 +272,9 @@ export function aldoSharesByTurn(
       continue;
     const share = aldoShareOf(entry);
     if (!share) continue;
-    const list = byTurn.get(entry.turnId) ?? [];
+    const list = byTurn.get(entry.runId) ?? [];
     list.push(share);
-    byTurn.set(entry.turnId, list);
+    byTurn.set(entry.runId, list);
   }
   return [...byTurn];
 }
@@ -797,7 +805,7 @@ function workStep(entry: Entry): AldoStep | null {
         })
       : step("read", "Read a file", "Reading a file");
   }
-  if (entry.itemType === "image_view")
+  if (entry.viewedImagePath !== undefined)
     return step("read", "Looked at an image", "Looking at an image");
   if (/^(webfetch|web_fetch|fetch)$/.test(tool)) {
     const site = aldoSiteOf(text(call?.args?.url));

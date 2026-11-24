@@ -47,6 +47,13 @@ import {
   useState,
 } from "react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { useNavigate } from "@tanstack/react-router";
+import { isAldoCloud } from "~/aldo/api";
+import {
+  ALDO_PULL_REQUEST_CHECKOUT,
+  aldoOpensThreadOn,
+  openAldoPullRequestThread,
+} from "~/aldo/pullRequestThreads";
 
 import { m } from "~/i18n/messages";
 
@@ -827,7 +834,7 @@ export function PullRequestDetailPanel({
   const newThread = useNewThreadHandler();
   const { environments } = useEnvironments();
   const pickableEnvironments =
-    context === "page"
+    context === "page" && !isAldoCloud
       ? resolvePickableEnvironments(
           { environmentId, projectId: reference.projectId },
           projects,
@@ -944,10 +951,32 @@ export function PullRequestDetailPanel({
     reviewComments?: ReadonlyArray<ReviewCommentContext>;
   };
 
-  const attachTarget = composerDraftTarget ?? null;
+  // Aldo resolves the pull request's own thread; the panel may be open on another machine.
+  const attachTarget = isAldoCloud && context !== "thread" ? null : (composerDraftTarget ?? null);
+  const navigate = useNavigate();
+  const openAldoPr = async (
+    kind: string,
+    pr: Parameters<typeof openAldoPullRequestThread>[1],
+    task: ThreadTask | null,
+  ) => {
+    setHandoff(kind);
+    try {
+      await openAldoPullRequestThread(
+        environmentId,
+        pr,
+        newThread,
+        task === null ? null : (target) => writeHandoffToComposer(target, task),
+        async (target) => {
+          await navigate({ to: "/$environmentId/$threadId", params: target });
+        },
+      );
+    } finally {
+      setHandoff(null);
+    }
+  };
   const canPrepareWorktree = prepareThread.isAllowed && canOperateThread;
-  const canFixFindings = attachTarget !== null || canPrepareWorktree;
-  const handoffLabels = pullRequestHandoffLabels(attachTarget !== null, resolve);
+  const canFixFindings = isAldoCloud || attachTarget !== null || canPrepareWorktree;
+  const handoffLabels = pullRequestHandoffLabels(isAldoCloud || attachTarget !== null, resolve);
   const guideWriter = useReviewGuideWriter({
     environmentId,
     reference,
@@ -981,6 +1010,7 @@ export function PullRequestDetailPanel({
     options?: { readonly keepGuide?: boolean },
   ) => {
     if (!detail || handoff !== null) return;
+    if (isAldoCloud && attachTarget === null) return openAldoPr(kind, detail, task);
     if (attachTarget !== null) {
       writeHandoffToComposer(attachTarget, task);
       toastManager.add({
@@ -1051,6 +1081,9 @@ export function PullRequestDetailPanel({
     mode: "worktree" | "local" = "worktree",
   ) => {
     if (!handoffSummary || handoff !== null) return;
+    if (isAldoCloud && (attachTarget === null || task === null)) {
+      return openAldoPr(kind, handoffSummary, task);
+    }
     if (attachTarget !== null && task !== null) {
       writeHandoffToComposer(attachTarget, task);
       toastManager.add({
@@ -1497,12 +1530,13 @@ export function PullRequestDetailPanel({
       : 0;
 
   const checkoutControl =
-    context === "page" ? (
+    context === "page" && !(isAldoCloud && !aldoOpensThreadOn(handoffSummary)) ? (
       <PullRequestCheckoutMenu
         term={changeRequestTermKind(terminology)}
         handoff={handoff}
-        checkoutRoot={checkoutRoot}
-        canPrepareWorktree={canPrepareWorktree}
+        checkoutRoot={isAldoCloud ? environmentId : checkoutRoot}
+        canPrepareWorktree={isAldoCloud || canPrepareWorktree}
+        {...(isAldoCloud ? { only: ALDO_PULL_REQUEST_CHECKOUT } : {})}
         canCheckoutHere={prepareThread.isAllowed}
         onCheckout={startCheckout}
         pickableEnvironments={pickableEnvironments}
@@ -1514,7 +1548,9 @@ export function PullRequestDetailPanel({
   const resolveConflictsControl = (
     <PullRequestResolveConflictsButton
       handoff={handoff}
-      unavailable={attachTarget === null && (checkoutRoot === null || !canPrepareWorktree)}
+      unavailable={
+        !isAldoCloud && attachTarget === null && (checkoutRoot === null || !canPrepareWorktree)
+      }
       onResolve={startResolveConflicts}
     />
   );

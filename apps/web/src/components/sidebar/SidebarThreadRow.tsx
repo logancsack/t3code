@@ -115,6 +115,11 @@ import {
 } from "../ThreadStatusIndicators";
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
+import { isAldoCloud } from "../../aldo/api";
+import { useAldoThreadAwaitsApproval } from "../../aldo/AldoApprovals";
+import { aldoThreadInKeptRepo, displayedThreadBranch } from "../../aldo/directory";
+import { unlistedModelLabel } from "../../aldo/modelNames";
+import { useAldoThreadStart } from "../../aldo/threadStart";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
@@ -758,7 +763,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
-  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
+  const checkoutThread = withoutRemovedCheckout(
+    isAldoCloud
+      ? { ...thread, branch: displayedThreadBranch(thread.environmentId, thread.branch) }
+      : thread,
+    visibleGitStatus,
+  );
   const pr = linkedPullRequestStatus?.pr ?? null;
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
   const currentLinkedPr = supportsMultiplePullRequests
@@ -766,7 +776,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     : null;
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarRowStatus({ ...thread, lastVisitedAt });
+  const aldoAsks = useAldoThreadAwaitsApproval(thread.environmentId, thread.id);
+  const status = aldoAsks ? "approval" : resolveSidebarRowStatus({ ...thread, lastVisitedAt });
+  const aldoStart = useAldoThreadStart(thread.environmentId, thread.id);
   const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
   const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
   const isWoke =
@@ -781,74 +793,84 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isSelected,
   });
   const topStatus =
-    status === "preparing" || status === "working"
-      ? {
-          label:
-            status === "preparing"
-              ? gt("Setting up")
-              : thread.goal?.status === "active"
-                ? gt("Goal", { $context: "thread status: working on a goal" })
-                : gt("Working", { $context: "thread status" }),
-          icon: "working" as const,
-          className: "text-info-foreground",
-        }
-      : status === "waiting"
+    aldoStart !== null
+      ? aldoStart.tone === "failed"
         ? {
-            label: gt("Waiting", { $context: "thread status" }),
-            icon: "waiting" as const,
-            className: "text-muted-foreground",
+            label: gt("Failed", { $context: "thread status" }),
+            icon: "failed" as const,
+            className: "text-error-foreground",
           }
-        : status === "approval"
+        : { label: aldoStart.label, icon: "working" as const, className: "text-info-foreground" }
+      : status === "preparing" || status === "working"
+        ? {
+            label:
+              status === "preparing"
+                ? gt("Setting up")
+                : thread.goal?.status === "active"
+                  ? gt("Goal", { $context: "thread status: working on a goal" })
+                  : gt("Working", { $context: "thread status" }),
+            icon: "working" as const,
+            className: "text-info-foreground",
+          }
+        : status === "waiting"
           ? {
-              label: gt("Approval", { $context: "thread status: needs approval" }),
-              icon: "approval" as const,
-              className: "text-warning-foreground",
+              label: gt("Waiting", { $context: "thread status" }),
+              icon: "waiting" as const,
+              className: "text-muted-foreground",
             }
-          : status === "input"
+          : status === "approval"
             ? {
-                label: gt("Input", { $context: "thread status: needs user input" }),
-                icon: "input" as const,
-                className: "text-indigo-600 dark:text-indigo-300",
+                label: gt("Approval", { $context: "thread status: needs approval" }),
+                icon: "approval" as const,
+                className: "text-warning-foreground",
               }
-            : status === "request"
+            : status === "input"
               ? {
-                  label: gt("Request", { $context: "thread status: guest request" }),
-                  icon: "request" as const,
-                  className: "text-guest-foreground",
+                  label: gt("Input", { $context: "thread status: needs user input" }),
+                  icon: "input" as const,
+                  className: "text-indigo-600 dark:text-indigo-300",
                 }
-              : status === "limited"
+              : status === "request"
                 ? {
-                    label: gt("Limited", { $context: "thread status: usage limited" }),
-                    icon: "failed" as const,
-                    className: "text-warning-foreground",
+                    label: gt("Request", { $context: "thread status: guest request" }),
+                    icon: "request" as const,
+                    className: "text-guest-foreground",
                   }
-                : status === "failed"
+                : status === "limited"
                   ? {
-                      label: gt("Failed", { $context: "thread status" }),
+                      label: gt("Limited", { $context: "thread status: usage limited" }),
                       icon: "failed" as const,
-                      className: "text-error-foreground",
+                      className: "text-warning-foreground",
                     }
-                  : isWoke
+                  : status === "failed"
                     ? {
-                        label: gt("Woke", { $context: "thread status: woke from snooze" }),
-                        icon: "woke" as const,
-                        className: "text-warning-foreground",
+                        label: gt("Failed", { $context: "thread status" }),
+                        icon: "failed" as const,
+                        className: "text-error-foreground",
                       }
-                    : isUnread
+                    : isWoke
                       ? {
-                          label: gt("Done", { $context: "thread status" }),
-                          icon: "done" as const,
-                          className: "text-success-foreground",
+                          label: gt("Woke", { $context: "thread status: woke from snooze" }),
+                          icon: "woke" as const,
+                          className: "text-warning-foreground",
                         }
-                      : null;
+                      : isUnread
+                        ? {
+                            label: gt("Done", { $context: "thread status" }),
+                            icon: "done" as const,
+                            className: "text-success-foreground",
+                          }
+                        : null;
   const isWokeStatus = topStatus?.icon === "woke";
 
-  const branchMismatch = resolveLocalCheckoutBranchMismatch({
-    effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
-    activeWorktreePath: thread.worktreePath,
-    activeThreadBranch: thread.branch,
-    currentGitBranch: visibleGitStatus?.refName ?? null,
-  });
+  const branchMismatch = aldoThreadInKeptRepo(thread.environmentId)
+    ? null
+    : resolveLocalCheckoutBranchMismatch({
+        effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
+        activeWorktreePath: thread.worktreePath,
+        activeThreadBranch: thread.branch,
+        currentGitBranch: visibleGitStatus?.refName ?? null,
+      });
   const prStatus = prStatusIndicator(pr, linkedPullRequestStatus?.sourceControlProvider, messages);
 
   const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
@@ -861,9 +883,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   );
   const modelLabel = selectedModel
     ? getTriggerDisplayModelName(selectedModel, providerEntry?.driverKind)
-    : thread.modelSelection.model;
+    : isAldoCloud
+      ? unlistedModelLabel(thread.modelSelection.model, providerEntry?.models)
+      : thread.modelSelection.model;
 
-  const isRemote = thread.environmentId !== props.currentEnvironmentId;
+  // Aldo: every thread is its own machine, so the marker would tell nothing apart.
+  const isRemote = !isAldoCloud && thread.environmentId !== props.currentEnvironmentId;
   const showsScratchMachine = !checkoutThread.branch && props.scratchMachineLabel !== null;
 
   const detailsTooltip = (
@@ -1823,13 +1848,20 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
-  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
-  const branchMismatch = resolveLocalCheckoutBranchMismatch({
-    effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
-    activeWorktreePath: thread.worktreePath,
-    activeThreadBranch: thread.branch,
-    currentGitBranch: visibleGitStatus?.refName ?? null,
-  });
+  const checkoutThread = withoutRemovedCheckout(
+    isAldoCloud
+      ? { ...thread, branch: displayedThreadBranch(thread.environmentId, thread.branch) }
+      : thread,
+    visibleGitStatus,
+  );
+  const branchMismatch = aldoThreadInKeptRepo(thread.environmentId)
+    ? null
+    : resolveLocalCheckoutBranchMismatch({
+        effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
+        activeWorktreePath: thread.worktreePath,
+        activeThreadBranch: thread.branch,
+        currentGitBranch: visibleGitStatus?.refName ?? null,
+      });
   const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const showInstanceBadge =

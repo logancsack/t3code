@@ -16,6 +16,10 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts";
 
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
+import { keepAldoMachineSettings } from "../../aldo/machineSettings";
+import { withAldoMachineSettings } from "../../aldo/machineSettings.logic";
 import { persistClientSettingsPatch, useMergedSettings } from "../../hooks/useSettings";
 import { m } from "../../i18n/messages";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
@@ -44,8 +48,16 @@ const writeScopedSettings = createScopedSettingsWriter(readSettings);
 export function useScopedSettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
-  const { target } = useSettingsScope();
-  return useMergedSettings(target?.settings ?? DEFAULT_SERVER_SETTINGS, selector);
+  const { target, aldo } = useSettingsScope();
+  // Aldo: with no machine connected, the user's values over the defaults.
+  const serverSettings =
+    target?.settings ??
+    withAldoMachineSettings(
+      DEFAULT_SERVER_SETTINGS,
+      aldo?.settings ?? null,
+      isAldoCloud && aldoRoutesModels(),
+    );
+  return useMergedSettings(serverSettings, selector);
 }
 
 export function useScopedSettingsMixed(keys: readonly (keyof ServerSettings)[]): boolean {
@@ -142,13 +154,17 @@ function useRunScopedPlan() {
 }
 
 export function useUpdateScopedSettings() {
-  const { scope, environments, deviceOnly } = useSettingsScope();
+  const { scope, environments, deviceOnly, aldo } = useSettingsScope();
   const run = useRunScopedPlan();
   /** `onFailed` runs when any target rejects or drops the patch, so a draft can fall back. */
   return (patch: ScopedSettingsPatch, options?: { readonly onFailed?: () => void }) =>
     run(
       environments,
-      (current) => planScopedSettingsPatch(scope, current, patch, { deviceOnly }),
+      (current) => {
+        const plan = planScopedSettingsPatch(scope, current, patch, { deviceOnly });
+        // Aldo: the user's settings go to Aldo too, for the machines that aren't connected.
+        return isAldoCloud ? keepAldoMachineSettings(aldo, patch, plan) : plan;
+      },
       options?.onFailed,
     );
 }

@@ -12,7 +12,7 @@ function SettingsMemoryRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/memory")({
+export const Route = createFileRoute("/_chat/settings/memory")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

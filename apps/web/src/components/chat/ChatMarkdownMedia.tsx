@@ -16,6 +16,7 @@ import {
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import type { MessageResolver } from "../../i18n/messages";
 import { cn } from "../../lib/utils";
+import { AldoMediaGridVideo, useInAldoMediaGrid } from "../../aldo/AldoMediaGrid";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { MediaActions, type MediaActionSource } from "../media/MediaActions";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
@@ -309,7 +310,26 @@ export function ChatMarkdownVideo(props: {
   readonly mediaIdentity?: string | undefined;
   readonly actionsSource?: MediaActionSource | undefined;
   readonly onRetry?: (() => Promise<unknown>) | undefined;
+  /** Aldo: a media grid's tile opens the viewer; the fragment is what it signs the file with. */
+  readonly srcFragment?: string | undefined;
+  readonly onExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
+  if (useInAldoMediaGrid()) {
+    return (
+      <AldoMediaGridVideo
+        key={props.mediaIdentity ?? props.copyMarkdown ?? props.src}
+        src={props.src}
+        sourceFailed={props.sourceFailed}
+        label={props.alt}
+        originalUrl={props.originalUrl}
+        copyMarkdown={props.copyMarkdown}
+        srcFragment={props.srcFragment}
+        actionsSource={props.actionsSource}
+        onRetry={props.onRetry}
+        onExpand={props.onExpand}
+      />
+    );
+  }
   return (
     <MediaVideoPlayer
       key={props.mediaIdentity ?? props.copyMarkdown ?? props.src}
@@ -467,6 +487,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         originalUrl={props.originalUrl}
         style={props.style}
         mediaIdentity={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+        srcFragment={props.srcFragment}
+        onExpand={props.onImageExpand}
         // Re-signing cannot grant the file access this connection lacks.
         onRetry={missingFileAccess ? undefined : refreshAssetUrl}
         actionsSource={actionsSource}

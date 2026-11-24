@@ -6,6 +6,7 @@ import { m, type MessageResolver } from "../i18n/messages";
 
 export type ThreadActionMenuId =
   | "find"
+  | "move-project"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
@@ -98,6 +99,8 @@ export interface ThreadActionMenuState {
   readonly canFind?: boolean;
   /** False where no inline title editor is rendered, such as sidebar search results. */
   readonly canRename?: boolean;
+  /** Aldo: the thread can move to another project. */
+  readonly moveProject?: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
     readonly label: string;
@@ -148,6 +151,15 @@ export function buildThreadActionMenuItems(
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
     ...(state.canFind
       ? [{ id: "find" as const, label: resolve(msg("Find in thread")), icon: "text-search" }]
+      : []),
+    ...(state.moveProject
+      ? [
+          {
+            id: "move-project" as const,
+            label: resolve(msg("Move to another project…")),
+            icon: "folder",
+          },
+        ]
       : []),
     ...(state.branch
       ? [

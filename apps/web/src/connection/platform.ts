@@ -30,7 +30,7 @@ import {
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
-  type EnvironmentId,
+  EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -64,6 +64,13 @@ import {
 import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
 import { m } from "../i18n/messages";
+import { isAldoCloud } from "../aldo/api";
+import {
+  aldoAsleepEnvironments,
+  aldoEnvironmentGateway,
+  aldoPlatformRegistrations,
+} from "../aldo/directory";
+import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo, isWorkReplay } from "../landingDemo/mode";
 
 let nextObservedRpcRequestId = 0;
 
@@ -463,6 +470,12 @@ const layerCapabilities = Layer.effectContext(
       Context.add(ClientCapabilities.RelayDeviceIdentity, identity),
       Context.add(ClientCapabilities.ClientPresentation, presentation),
       Context.add(ClientCapabilities.SshEnvironmentGateway, ssh),
+      // Only answers for Aldo sandbox connections; every other bearer environment keeps
+      // using its stored profile and credential.
+      Context.add(
+        ClientCapabilities.PlatformEnvironmentGateway,
+        ClientCapabilities.PlatformEnvironmentGateway.of(aldoEnvironmentGateway),
+      ),
     );
   }),
 );
@@ -671,6 +684,27 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
 const layerPlatformConnectionSource = Layer.effect(
   PlatformConnectionSource.PlatformConnectionSource,
   Effect.gen(function* () {
+    if (isLandingDemo()) {
+      const origin = window.location.origin;
+      return PlatformConnectionSource.PlatformConnectionSource.of({
+        registrations: Stream.make([
+          new PrimaryConnectionRegistration({
+            target: new PrimaryConnectionTarget({
+              environmentId: EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID),
+              label: "Aldo browser demo",
+              httpBaseUrl: origin,
+              wsBaseUrl: origin.replace(/^http/, "ws"),
+            }),
+          }),
+        ]),
+      });
+    }
+    if (isAldoCloud) {
+      return PlatformConnectionSource.PlatformConnectionSource.of({
+        registrations: aldoPlatformRegistrations(),
+        asleep: Effect.sync(aldoAsleepEnvironments),
+      });
+    }
     if (isHostedStaticApp() || isLocalEnvironmentDisabled()) {
       return PlatformConnectionSource.PlatformConnectionSource.of({
         registrations: Stream.empty,
@@ -863,8 +897,17 @@ const layerRpcRequestObserver = Layer.succeed(
   }),
 );
 
+// The landing page's replay reads its snapshots from memory, never this browser's storage.
+const layerStorage = isWorkReplay()
+  ? Layer.unwrap(
+      Effect.promise(() =>
+        import("../landingDemo/storage").then((module) => module.workReplayStorageLayer),
+      ),
+    )
+  : ConnectionStorage.layer;
+
 type ConnectionPlatformLayerSource =
-  | typeof ConnectionStorage.layer
+  | typeof layerStorage
   | typeof layerConnectivity
   | typeof layerWakeups
   | typeof layerCapabilities
@@ -877,7 +920,7 @@ export const layer: Layer.Layer<
   Layer.Error<ConnectionPlatformLayerSource>,
   Layer.Services<ConnectionPlatformLayerSource>
 > = Layer.mergeAll(
-  ConnectionStorage.layer,
+  layerStorage,
   layerConnectivity,
   layerWakeups,
   layerCapabilities,

@@ -12,7 +12,7 @@ function SettingsJoiningRoute() {
   );
 }
 
-export const Route = createFileRoute("/settings/joining")({
+export const Route = createFileRoute("/_chat/settings/joining")({
   beforeLoad: () => {
     if (!isAldoCloud) {
       throw redirect({ to: "/settings/general", replace: true });

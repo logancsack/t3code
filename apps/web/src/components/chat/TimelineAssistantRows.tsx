@@ -34,6 +34,12 @@ import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 import { useAtomValue } from "@effect/atom-react";
+import { isAldoCloud } from "../../aldo/api";
+import { AldoNextChips } from "../../aldo/AldoNextChips";
+import AldoTaskResult from "../../aldo/AldoTaskResult";
+import { splitAldoNext } from "../../aldo/next.logic";
+import { splitTaskResult } from "../../aldo/taskResult.logic";
+import { APP_BASE_NAME } from "../../branding";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { vcsEnvironment } from "../../state/vcs";
 
@@ -48,13 +54,17 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
     row.projectedItem?.item.id,
   );
   const text = liveText ?? row.message.text;
-  const messageText =
+  const fullText =
     text || (row.message.streaming || row.suppressEmptyResponse ? "" : gt("(empty response)"));
+  // Aldo's agents end a finished task with its result and follow-ups in fenced blocks: a card and chips, not code.
+  const aldoNext = isAldoCloud ? splitAldoNext(fullText) : null;
+  const aldoResult = isAldoCloud ? splitTaskResult(aldoNext?.text ?? fullText) : null;
+  const messageText = aldoResult?.text ?? aldoNext?.text ?? fullText;
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
-        <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
+        <MessageAuthorHeading>{APP_BASE_NAME}</MessageAuthorHeading>
         <div data-thread-find-text="true">
           <AssistantCitationSource
             messageId={row.message.id}
@@ -80,9 +90,20 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
               onRunShellCommand={ctx.onRunShellCommand}
               onImageExpand={ctx.onImageExpand}
+              mediaGrid={isAldoCloud}
             />
           </AssistantCitationSource>
+          {aldoResult?.result && !row.message.streaming ? (
+            <AldoTaskResult
+              result={aldoResult.result}
+              cwd={ctx.markdownCwd}
+              threadRef={ctx.threadRef ?? undefined}
+            />
+          ) : null}
         </div>
+        {aldoNext && aldoNext.next.length > 0 && row.showAssistantMeta ? (
+          <AldoNextRow runId={row.message.runId} next={aldoNext.next} />
+        ) : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}
@@ -107,6 +128,29 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         ) : null}
       </div>
     </>
+  );
+}
+
+/** Aldo: an agent's offered follow-ups, under the thread's latest answer while nothing runs. */
+function AldoNextRow(props: {
+  readonly runId: RunId | null;
+  readonly next: ReadonlyArray<string>;
+}) {
+  const { onSendAppMessage } = use(TimelineRowCtx);
+  const { isWorking, latestRunId } = use(TimelineRowActivityCtx);
+  if (!onSendAppMessage || isWorking || props.runId === null || props.runId !== latestRunId) {
+    return null;
+  }
+  return (
+    <AldoNextChips
+      next={props.next}
+      onSend={(text) =>
+        onSendAppMessage(text).then(
+          () => true,
+          () => false,
+        )
+      }
+    />
   );
 }
 
@@ -343,7 +387,8 @@ function AssistantCopyButton({
   streaming: boolean;
 }) {
   const assistantCopyState = resolveAssistantMessageCopyState({
-    text: message.text ?? null,
+    // Without Aldo's follow-ups block, which isn't part of the answer.
+    text: isAldoCloud && message.text ? splitAldoNext(message.text).text : (message.text ?? null),
     showCopyButton,
     streaming,
   });

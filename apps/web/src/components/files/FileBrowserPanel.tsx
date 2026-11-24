@@ -40,6 +40,10 @@ import {
 } from "./fileTreeExpansion";
 import { buildFileTreePathUpdates, shouldRebuildFileTree } from "./fileTreePathReconciliation";
 import { loadFileAncestors } from "./loadFileAncestors";
+import { isAgentFilePath, withoutAgentFiles } from "~/aldo/agentFiles.logic";
+import { AldoFilesEmpty } from "~/aldo/AldoEmptyStates";
+import { isAldoCloud } from "~/aldo/api";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
 import { isMacPlatform } from "~/lib/utils";
@@ -171,7 +175,7 @@ export default function FileBrowserPanel({
   const composerRef = useComposerHandleContext();
   const fileContextMenu = useFileContextMenu(environmentId);
   const {
-    entries: directoryEntries,
+    entries: listedEntries,
     load,
     refresh,
     ready,
@@ -187,8 +191,17 @@ export default function FileBrowserPanel({
     undefined,
     messages,
   );
+  // Aldo: a thread without a repository lists the user's files, not the agent's own
+  // (dotfiles, AGENTS.md, tool folders); one opened by name still opens.
+  const hideAgentFiles = useAldoKeptRepo(environmentId);
+  const directoryEntries = hideAgentFiles ? withoutAgentFiles(listedEntries) : listedEntries;
   const { entries, entryKinds, treePaths, directoryPaths, expandableDirectoryPaths } =
-    buildTreeEntries(directoryEntries, pathSearch.entries, pathSearch.isPending, query);
+    buildTreeEntries(
+      directoryEntries,
+      hideAgentFiles ? withoutAgentFiles(pathSearch.entries) : pathSearch.entries,
+      pathSearch.isPending,
+      query,
+    );
   const entryKindsRef = useRef(entryKinds);
   const previousTreePathsRef = useRef<readonly string[] | null>(null);
   const syncingSelectionRef = useRef(false);
@@ -411,11 +424,19 @@ export default function FileBrowserPanel({
   useEffect(() => {
     if (!selectedPath) return;
     const controller = new AbortController();
-    void loadFileAncestors(selectedPath, load, { signal: controller.signal });
+    void loadFileAncestors(
+      selectedPath,
+      // Aldo: a folder the tree hides isn't read for a file opened inside it.
+      (directory) =>
+        hideAgentFiles && directory && isAgentFilePath(directory)
+          ? Promise.resolve()
+          : load(directory),
+      { signal: controller.signal },
+    );
     return () => {
       controller.abort();
     };
-  }, [load, selectedPath]);
+  }, [hideAgentFiles, load, selectedPath]);
   const stopFollowingReveal = () => {
     followedRevealRef.current = null;
   };
@@ -634,6 +655,7 @@ export default function FileBrowserPanel({
           <T>Loading files…</T>
         </div>
       )}
+      {isAldoCloud && ready && directoryEntries.length === 0 ? <AldoFilesEmpty /> : null}
       {hasNoSearchMatches ? (
         ready && !isPending && !pathSearch.isPending && !error && !pathSearch.error ? (
           <div role="status" className="px-3 py-4 text-xs text-muted-foreground">

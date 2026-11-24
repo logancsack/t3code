@@ -7,6 +7,8 @@ import { msg, useGT, useMessages } from "gt-react";
 import { memo } from "react";
 import { EllipsisIcon, TriangleAlertIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
+import { aldoApprovalOption } from "~/aldo/approvalWords";
+import { isAldoCloud } from "~/aldo/api";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -52,11 +54,13 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
   const gt = useGT();
   const m = useMessages();
   // Provider options carry server-authored labels; only the built-in defaults are translated.
-  const optionLabel = (label: string) => (options === DEFAULT_APPROVAL_OPTIONS ? m(label) : label);
-  const primaryOptions = options.filter(
+  const optionLabel = (label: string) =>
+    options === DEFAULT_APPROVAL_OPTIONS && !isAldoCloud ? m(label) : label;
+  const displayedOptions = isAldoCloud ? options.map(aldoApprovalOption) : options;
+  const primaryOptions = displayedOptions.filter(
     (option) => option.decision === "decline" || option.decision === "accept",
   );
-  const moreOptions = options.filter(
+  const moreOptions = displayedOptions.filter(
     (option) => option.decision !== "decline" && option.decision !== "accept",
   );
 

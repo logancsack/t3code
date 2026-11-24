@@ -125,7 +125,7 @@ describe("a page that stays current in a thread's Library", () => {
       environmentId: "env-1",
     };
     const library = aldoThreadLibrary({
-      turns: [{ turnId: "turn-1", completedAt: "2026-09-01T08:01:00.000Z", files: [] }],
+      turns: [{ runId: "turn-1", completedAt: "2026-09-01T08:01:00.000Z", files: [] }],
       sharesByTurn: new Map([["turn-1", [{ path: null, title: page.title, url: page.url }]]]),
       workspaceRoot: "/vercel/work/general",
       shares: [page],

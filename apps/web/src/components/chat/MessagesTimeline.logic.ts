@@ -144,6 +144,25 @@ function workEntryReadPaths(entry: WorkLogEntry, workspaceRoot: string | undefin
 }
 
 /** Components pass `useMessages()` so the label follows a language switch. */
+/**
+ * Aldo: steps in words, for threads that aren't code (aldo/workRows.logic.ts).
+ * Each returns null to keep the timeline's own label.
+ */
+export interface WorkWords {
+  /** One step, under way or done. */
+  readonly step: (entry: WorkLogEntry, active: boolean) => string | null;
+  /** What a run of steps did, in a line. */
+  readonly recap: (entries: ReadonlyArray<WorkLogEntry>) => string | null;
+  /** What the turn is doing now, given its steps so far. */
+  readonly working: (entries: ReadonlyArray<WorkLogEntry>) => string | null;
+  /** A settled turn's work in a line ("Worked 31 min · 84 steps"). */
+  readonly worked?: (
+    entries: ReadonlyArray<WorkLogEntry>,
+    elapsedMs: number | null,
+    stopped: boolean,
+  ) => string;
+}
+
 export function workEntryDisplayLabel(
   entry: WorkLogEntry,
   workspaceRoot: string | undefined,
@@ -681,6 +700,12 @@ type MessagesTimelineRowContent =
       id: string;
       createdAt: string;
       text: string;
+    }
+  | {
+      kind: "aldo-approval";
+      id: string;
+      createdAt: string;
+      approval: Extract<TimelineEntry, { kind: "aldo-approval" }>["approval"];
     }
   | {
       kind: "mcp-app";
@@ -2233,6 +2258,16 @@ export function deriveMessagesTimelineRows(
       continue;
     }
 
+    if (timelineEntry.kind === "aldo-approval") {
+      nextRows.push({
+        kind: "aldo-approval",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        approval: timelineEntry.approval,
+      });
+      continue;
+    }
+
     if (timelineEntry.kind === "mcp-app") {
       nextRows.push({
         kind: "mcp-app",
@@ -2842,6 +2877,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       const bs = b as typeof a;
       return a.createdAt === bs.createdAt && a.text === bs.text;
     }
+
+    case "aldo-approval":
+      return a.approval === (b as typeof a).approval;
 
     case "mcp-app": {
       const bm = b as typeof a;

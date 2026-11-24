@@ -1,3 +1,4 @@
+import { isAldoCloud } from "./aldo/api";
 import type {
   EnvironmentId,
   ServerConfig,
@@ -51,6 +52,8 @@ export function resolveVersionMismatch(
   clientVersion: string = APP_VERSION,
   resolve: MessageResolver = m,
 ): VersionMismatch | null {
+  // Aldo updates its machines' servers itself, and `npx t3` would replace the fork's server.
+  if (isAldoCloud) return null;
   const normalizedClientVersion = normalizeVersion(clientVersion);
   const normalizedServerVersion = normalizeVersion(serverVersion);
   if (!normalizedClientVersion || !normalizedServerVersion) {

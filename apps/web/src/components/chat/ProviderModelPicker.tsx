@@ -17,7 +17,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { CheckIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { unlistedModelLabel } from "../../aldo/modelNames";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -128,6 +131,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
    */
   effortColumn?: ReactNode;
   footer?: ReactNode;
+  /** Aldo: leaving the choice of model to Aldo, above the models. */
+  automaticOption?: { label: string; selected: boolean; onSelect: () => void };
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
@@ -176,7 +181,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
     : props.model === ANTIGRAVITY_DEFAULT_MODEL
       ? gt("Choose model")
-      : props.model || gt("Choose model");
+      : unlistedModelLabel(props.model, selectedInstanceOptions) || gt("Choose model");
   const withUnavailable = (model: string, isUnavailable: boolean | undefined) =>
     isUnavailable ? gt("{model} (Unavailable)", { model }) : model;
   const triggerLabel = selectedModel
@@ -469,6 +474,21 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         padding="none"
         touchBackdrop
       >
+        {props.automaticOption ? (
+          <div className="flex flex-col border-b border-border/70 p-1">
+            <Button
+              variant="ghost"
+              aria-pressed={props.automaticOption.selected}
+              onClick={() => {
+                props.automaticOption?.onSelect();
+                setIsMenuOpen(false);
+              }}
+            >
+              {props.automaticOption.selected ? <CheckIcon /> : null}
+              {props.automaticOption.label}
+            </Button>
+          </div>
+        ) : null}
         {props.effortColumn ? (
           <DockedPickerContext value={{ modelLabel: triggerTitle }}>
             <div className="flex max-h-(--available-height) flex-col">

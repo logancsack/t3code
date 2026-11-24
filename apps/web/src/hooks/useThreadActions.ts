@@ -60,6 +60,9 @@ import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
 import * as ThreadUndo from "@t3tools/client-runtime/state/thread-undo";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
+import { aldoThreadIsAloneOnMachine } from "../aldo/deleteThread.logic";
+import { deleteAldoThreadWithMachine } from "../aldo/threads";
 import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
@@ -527,6 +530,36 @@ export function useThreadActions() {
             }),
           )
         : undefined;
+    // Aldo: a thread alone on its machine is deleted with the machine, and
+    // nothing is sent to the machine first (that would wake a sleeping one).
+    if (
+      isAldoCloud &&
+      isAldoEnvironmentId(threadRef.environmentId) &&
+      aldoThreadIsAloneOnMachine({
+        threadId: threadRef.threadId,
+        machineThreadIds: threads.map((entry) => entry.id),
+        deletedThreadIds: deletedIds,
+      })
+    ) {
+      const routeThreadRef = getCurrentRouteThreadRef();
+      // Leaves the sidebar at once; comes back if Aldo can't delete it.
+      const deletion = settlePromise(() => deleteAldoThreadWithMachine(threadRef.environmentId));
+      const navigationResult =
+        routeThreadRef?.threadId === threadRef.threadId &&
+        routeThreadRef.environmentId === threadRef.environmentId
+          ? await settlePromise(() => router.navigate({ to: "/", replace: true }))
+          : null;
+      const deleteResult = await deletion;
+      if (deleteResult._tag === "Failure") return deleteResult;
+      releaseComposerDraftUploads(threadRef);
+      clearComposerDraftForThread(threadRef);
+      clearProjectDraftThreadById(
+        scopeProjectRef(threadRef.environmentId, thread.projectId),
+        threadRef,
+      );
+      clearTerminalUiState(threadRef);
+      return navigationResult?._tag === "Failure" ? navigationResult : deleteResult;
+    }
     // Deleting a thread also deletes its side chats, which share its worktree.
     const removedIds = new Set<ThreadId>(deletedIds);
     for (const entry of threads) {
@@ -1029,7 +1062,13 @@ export function useThreadActions() {
             title === null
               ? m(msg('Delete thread "this thread"?'))
               : m(msg('Delete thread "{title}"?', { title })),
-            m(msg("This permanently clears conversation history for this thread.")),
+            isAldoCloud && isAldoEnvironmentId(target.environmentId)
+              ? m(
+                  msg(
+                    "This permanently deletes the thread and its computer, including any changes it hasn't pushed.",
+                  ),
+                )
+              : m(msg("This permanently clears conversation history for this thread.")),
           ].join("\n"),
           { variant: "destructive" },
         ),

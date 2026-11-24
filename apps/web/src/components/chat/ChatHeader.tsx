@@ -44,6 +44,13 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/api";
+import { AldoThreadHeader } from "~/aldo/AldoThreadHeader";
+import { AldoMoveThreadPicker, useAldoMovesThreads } from "~/aldo/AldoThreadPlace";
+import { useAldoPlaceOf } from "~/aldo/places";
+import { draftTitle } from "~/aldo/places.logic";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -58,6 +65,12 @@ interface ChatHeaderProps {
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  /** Aldo: a draft's header reads its title from the composer. */
+  draftId?: DraftId | undefined;
+  /** Aldo: the thread's agent is working on a turn. */
+  working?: boolean;
+  /** Aldo: sends a message to a sent thread's agent (moving the thread is one it hands off). */
+  onSendAldoMessage?: ((text: string) => Promise<boolean>) | undefined;
 }
 
 function resolveRenameCommit(input: {
@@ -83,6 +96,9 @@ export const ChatHeader = memo(function ChatHeader({
   onNewThreadInProject,
   onOpenProjectSettings,
   onFindInThread,
+  draftId,
+  working = false,
+  onSendAldoMessage,
 }: ChatHeaderProps) {
   const gt = useGT();
   const activeProjectName = activeProject?.isScratch ? gt("No project") : activeProject?.title;
@@ -199,12 +215,30 @@ export const ChatHeader = memo(function ChatHeader({
       }
     });
   };
+  // Aldo: where the thread works leads the header. A draft moves from its
+  // composer's chip; a sent thread moves here, as a handoff its agent makes.
+  const aldoThread = isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId);
+  const aldoPlace = useAldoPlaceOf(aldoThread ? activeThreadEnvironmentId : null, activeProject);
+  const aldoDraft = aldoThread && !isServerThread && draftId !== undefined;
+  const aldoMoves = useAldoMovesThreads() && aldoThread && isServerThread && !!onSendAldoMessage;
+  const [aldoMoveOpen, setAldoMoveOpen] = useState(false);
+  const aldoPlaceAnchorRef = useRef<HTMLSpanElement | null>(null);
+  // A draft's title is its first line until it's sent, and it's untitled before that.
+  const aldoDraftPrompt = useComposerDraftStore((store) =>
+    aldoDraft && draftId ? (store.getComposerDraft(draftId)?.prompt ?? "") : "",
+  );
+  const aldoTitle = aldoDraft
+    ? (draftTitle(
+        replaceComposerContextReferences(aldoDraftPrompt, (occurrence) => occurrence.label),
+      ) ?? "Untitled")
+    : activeThreadTitle;
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
     onFind: onFindInThread,
     canShareWithGuest,
+    onMoveThread: aldoMoves ? () => setAldoMoveOpen(true) : undefined,
   });
   const openMenuFromTitle = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (isTrailingDoubleClick(event.detail)) return;
@@ -248,6 +282,73 @@ export const ChatHeader = memo(function ChatHeader({
       setRenaming(null);
     }
   };
+  const titleEditor =
+    renamingTitle !== null ? (
+    <input
+      autoFocus
+      dir="auto"
+      aria-label={gt("Thread title")}
+      className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
+      defaultValue={renamingTitle}
+      onBlur={(event) => {
+        if (renameCommittedRef.current) return;
+        if (
+          event.relatedTarget instanceof HTMLElement &&
+          event.relatedTarget.closest("button")
+        ) {
+          setRenaming(null);
+          return;
+        }
+        commitRename(event.currentTarget.value);
+      }}
+      onFocus={(event) => event.currentTarget.select()}
+      onKeyDown={handleRenameKeyDown}
+    />
+    ) : null;
+  if (aldoThread) {
+    return (
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+          // A phone opens the panels from the header's menu, so nothing is reserved for their toggles.
+          rightPanelOpen ? "pr-10 max-md:pr-0" : "pr-24 max-md:pr-0",
+        )}
+        onContextMenu={handleHeaderContextMenu}
+      >
+        <span ref={aldoPlaceAnchorRef} className="flex min-w-0 flex-1 items-center gap-2">
+          <AldoThreadHeader
+            environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
+            title={aldoTitle}
+            titleEditor={titleEditor}
+            place={aldoPlace}
+            working={working}
+            isServerThread={isServerThread}
+            onActions={
+              isServerThread
+                ? (button) => {
+                    const rect = button.getBoundingClientRect();
+                    openMenu({ x: rect.left, y: rect.bottom + 4 });
+                  }
+                : undefined
+            }
+            actionsRef={null}
+            actionsClassName=""
+          />
+          {aldoMoves && onSendAldoMessage ? (
+            <AldoMoveThreadPicker
+              environmentId={activeThreadEnvironmentId}
+              project={activeProject}
+              onSendMessage={onSendAldoMessage}
+              open={aldoMoveOpen}
+              onOpenChange={setAldoMoveOpen}
+              anchor={aldoPlaceAnchorRef}
+            />
+          ) : null}
+        </span>
+      </div>
+    );
+  }
   return (
     <div
       ref={breadcrumbContainerRef}
@@ -333,26 +434,7 @@ export const ChatHeader = memo(function ChatHeader({
         ) : null}
         <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
           {renamingTitle !== null ? (
-            <input
-              autoFocus
-              dir="auto"
-              aria-label={gt("Thread title")}
-              className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
-              defaultValue={renamingTitle}
-              onBlur={(event) => {
-                if (renameCommittedRef.current) return;
-                if (
-                  event.relatedTarget instanceof HTMLElement &&
-                  event.relatedTarget.closest("button")
-                ) {
-                  setRenaming(null);
-                  return;
-                }
-                commitRename(event.currentTarget.value);
-              }}
-              onFocus={(event) => event.currentTarget.select()}
-              onKeyDown={handleRenameKeyDown}
-            />
+            titleEditor
           ) : isServerThread ? (
             <Tooltip>
               <TooltipTrigger

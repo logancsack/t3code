@@ -16,13 +16,9 @@ const PRIME_AGENT_SUBSCRIPTION_METHODS: ReadonlyArray<AuthConnectorMethodOption>
     description:
       "Sign in to ChatGPT Plus or Pro for Prime Agent. This creates a separate secure grant and does not copy your Codex credentials.",
     browserName: "OpenAI",
-    workspaceBrowser: true,
     authorizeInstruction:
-      "Prime Agent opened OpenAI in the workspace browser so the localhost callback stays inside your workspace.",
-    manualAuthorizeInstruction:
       "Open OpenAI in this browser, approve access, then return here with the complete localhost:1455 redirect URL.",
-    returnInstruction:
-      "Prime Agent normally finishes automatically. If you used the fallback in this browser, paste the complete localhost:1455 redirect URL below.",
+    returnInstruction: "Paste the complete localhost:1455 redirect URL below.",
   },
   {
     method: "anthropic-account",
@@ -31,13 +27,9 @@ const PRIME_AGENT_SUBSCRIPTION_METHODS: ReadonlyArray<AuthConnectorMethodOption>
     description:
       "Sign in to Claude Pro or Max for Prime Agent. This creates a separate secure grant and does not copy your Claude Code credentials.",
     browserName: "Anthropic",
-    workspaceBrowser: true,
     authorizeInstruction:
-      "Prime Agent opened Anthropic in the workspace browser so the localhost callback stays inside your workspace.",
-    manualAuthorizeInstruction:
       "Open Anthropic in this browser, approve access, then return here with the redirect URL or authorization code.",
-    returnInstruction:
-      "Prime Agent normally finishes automatically. If you used the fallback in this browser, paste the redirect URL or authorization code below.",
+    returnInstruction: "Paste the redirect URL or authorization code below.",
   },
 ];
 

@@ -1,3 +1,4 @@
+import { isLandingDemo } from "./landingDemo/mode";
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
 
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@t3tools/shared/remote";
@@ -32,6 +33,13 @@ function originFromUrl(value: string): string | null {
 }
 
 export function isHostedStaticApp(url?: URL): boolean {
+  if (isLandingDemo(url)) {
+    return true;
+  }
+  // Aldo serves this client with no local server; environments are sandboxes.
+  if (import.meta.env.VITE_ALDO_CLOUD === "1") {
+    return true;
+  }
   if (configuredBackendUrl()) {
     return false;
   }

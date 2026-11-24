@@ -1,4 +1,7 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { isAldoCloud } from "../../aldo/api";
+import { useAldoThreadApprovals } from "../../aldo/AldoApprovals";
+import { withThreadApprovals } from "../../aldo/approvals.logic";
 import { type ComponentProps, useLayoutEffect } from "react";
 import { useIncrementalTimelineEntries } from "../../hooks/useIncrementalTimelineEntries";
 import type { TimelineEntriesInput, TimelineEntry } from "../../session-logic";
@@ -54,7 +57,17 @@ export function ThreadTimeline({
     }
     rememberReadyThreadTimeline({ threadKey: activeThreadKey, entries });
   }, [activeThreadKey, detailLoading, entries]);
+  // Aldo: the approvals this thread's agent asked, in its timeline where it asked.
+  const aldoApprovals = useAldoThreadApprovals(
+    threadDetailRef?.environmentId ?? null,
+    threadDetailRef?.threadId ?? null,
+    isAldoCloud,
+  );
   return (
-    <MessagesTimeline {...timelineProps} syncing={syncing} timelineEntries={displayedEntries} />
+    <MessagesTimeline
+      {...timelineProps}
+      syncing={syncing}
+      timelineEntries={withThreadApprovals(displayedEntries, aldoApprovals)}
+    />
   );
 }
