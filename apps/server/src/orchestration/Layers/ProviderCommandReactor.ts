@@ -51,6 +51,7 @@ import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderAuthService } from "../../provider/Services/ProviderAuthService.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import * as ProviderSessionDirectory from "../../provider/Services/ProviderSessionDirectory.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -229,6 +230,7 @@ const make = Effect.gen(function* () {
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const providerAuthService = yield* ProviderAuthService;
   const providerService = yield* ProviderService;
+  const sessionDirectory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -855,7 +857,12 @@ const make = Effect.gen(function* () {
     // session after a restart) owns the old provider's native resume state.
     const sessions = yield* providerService.listSessions();
     const active = sessions.find((session) => session.threadId === input.threadId);
-    const previousInstance = active?.providerInstanceId ?? thread.session?.providerInstanceId;
+    let previousInstance = active?.providerInstanceId ?? thread.session?.providerInstanceId;
+    if (previousInstance === undefined) {
+      // Imports have a native binding before their first T3 session exists.
+      const binding = yield* sessionDirectory.getBinding(input.threadId);
+      previousInstance = Option.getOrUndefined(binding)?.providerInstanceId;
+    }
     const desired = input.modelSelection ?? thread.modelSelection;
     let handoff = false;
     if (previousInstance !== undefined) {

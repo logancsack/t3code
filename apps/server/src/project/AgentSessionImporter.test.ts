@@ -866,18 +866,29 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
       }),
   );
 
-  for (const source of ["codex", "claudeAgent"] as const) {
-    it.effect(`resumes imported ${source} history only after the first prompt`, () =>
+  for (const [source, switched] of [
+    ["codex", false],
+    ["codex", true],
+    ["claudeAgent", false],
+    ["claudeAgent", true],
+  ] as const) {
+    const title = `continues imported ${source} history on its first prompt (provider switch: ${switched})`;
+    it.effect(title, () =>
       Effect.gen(function* () {
         const engine = yield* OrchestrationEngine.OrchestrationEngineService;
         const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
         const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
         const fileSystem = yield* FileSystem.FileSystem;
         const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped();
-        const projectId = ProjectId.make(`project-import-resume-${source}`);
+        const projectId = ProjectId.make(`project-import-resume-${source}-${switched}`);
         const sourceThread = {
           ...makeThread(source),
-          providerSessionId: source === "codex" ? "codex-first-resume" : CLAUDE_SESSION_ID,
+          providerSessionId:
+            source === "codex"
+              ? `codex-first-resume-${switched}`
+              : switched
+                ? "223e4567-e89b-42d3-a456-426614174000"
+                : CLAUDE_SESSION_ID,
         };
         const threadId = ThreadId.make(
           `import:${sourceThread.providerInstanceId}:${sourceThread.providerSessionId}`,
@@ -887,7 +898,12 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
             ? { threadId: sourceThread.providerSessionId }
             : { threadId, resume: sourceThread.providerSessionId };
         const provider = ProviderDriverKind.make(source);
-        const harness = yield* makeTestProviderAdapterHarness({ provider });
+        const target = switched ? (source === "codex" ? "claudeAgent" : "codex") : source;
+        const targetProvider = ProviderDriverKind.make(target);
+        const sourceHarness = yield* makeTestProviderAdapterHarness({ provider });
+        const harness = switched
+          ? yield* makeTestProviderAdapterHarness({ provider: targetProvider })
+          : sourceHarness;
         const importSettled = yield* Deferred.make<void>();
         const turnSent = yield* Deferred.make<void>();
         const startSession = vi.fn(harness.adapter.startSession);
@@ -901,7 +917,8 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
             Layer.succeed(
               ProviderAdapterRegistry,
               makeAdapterRegistryMock({
-                [provider]: { ...harness.adapter, startSession, sendTurn },
+                [provider]: sourceHarness.adapter,
+                [targetProvider]: { ...harness.adapter, startSession, sendTurn },
               }),
             ),
           ),
@@ -945,7 +962,7 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
 
         yield* engine.dispatch({
           type: "project.create",
-          commandId: CommandId.make(`create-import-resume-project-${source}`),
+          commandId: CommandId.make(`create-import-resume-project-${source}-${switched}`),
           projectId,
           title: "Import resume",
           workspaceRoot,
@@ -969,17 +986,30 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
           expect(importedThread.session).toBeNull();
           expect(importedThread.latestTurn).toBeNull();
 
+          const selection = switched
+            ? {
+                instanceId: ProviderInstanceId.make(target),
+                model: target === "codex" ? "gpt-6.1-sol" : "claude-fable-5-2",
+              }
+            : importedThread.modelSelection;
+          if (switched)
+            yield* engine.dispatch({
+              type: "thread.meta.update",
+              commandId: CommandId.make(`save-import-switch-${source}`),
+              threadId,
+              modelSelection: selection,
+            });
           yield* engine.dispatch({
             type: "thread.turn.start",
-            commandId: CommandId.make(`resume-imported-${source}`),
+            commandId: CommandId.make(`resume-imported-${source}-${switched}`),
             threadId,
             message: {
-              messageId: MessageId.make(`resume-imported-message-${source}`),
+              messageId: MessageId.make(`resume-imported-message-${source}-${switched}`),
               role: "user",
               text: "Continue this session",
               attachments: [],
             },
-            modelSelection: importedThread.modelSelection,
+            modelSelection: selection,
             runtimeMode: importedThread.runtimeMode,
             interactionMode: importedThread.interactionMode,
             createdAt: "2026-08-24T10:02:00.000Z",
@@ -989,19 +1019,31 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
           expect(startSession).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({
               threadId,
-              provider,
-              providerInstanceId: sourceThread.providerInstanceId,
-              resumeCursor,
+              provider: targetProvider,
+              providerInstanceId: ProviderInstanceId.make(target),
+              resumeCursor: switched ? undefined : resumeCursor,
+              ...(switched ? { fresh: true } : {}),
               cwd: workspaceRoot,
             }),
           );
           expect(sendTurn).toHaveBeenCalledExactlyOnceWith(
-            expect.objectContaining({ threadId, input: "Continue this session" }),
+            expect.objectContaining({
+              threadId,
+              input: switched
+                ? expect.stringContaining("user: Fix the bug")
+                : "Continue this session",
+            }),
           );
+          if (switched) {
+            expect(sendTurn.mock.calls[0]?.[0].input).toContain("assistant: Fixed");
+            expect(sendTurn.mock.calls[0]?.[0].input).toContain(
+              "Continuation:\nContinue this session",
+            );
+          }
           expect(Option.getOrThrow(yield* directory.getBinding(threadId))).toMatchObject({
-            provider,
-            providerInstanceId: sourceThread.providerInstanceId,
-            resumeCursor,
+            provider: targetProvider,
+            providerInstanceId: ProviderInstanceId.make(target),
+            ...(!switched ? { resumeCursor } : {}),
           });
         }).pipe(
           Effect.provide(reactorLayer),
