@@ -1793,13 +1793,16 @@ export default function ChatView(props: ChatViewProps) {
     useAtomValue(serverEnvironment.configValueAtom(openInEnvironmentId))?.availableEditors ?? [];
   const hostEnvironmentId = useAtomValue(hostEnvironmentIdAtom);
   const remoteOpenState = useRemoteOpenState(openInEnvironmentId);
-  const showOpenInPicker = shouldShowOpenInPicker({
-    activeProjectName: activeProject?.title,
-    activeThreadEnvironmentId: openInEnvironmentId,
-    primaryEnvironmentId: primaryEnvironment?.environmentId ?? null,
-    hostEnvironmentId,
-    remoteOpenMode: remoteOpenState.mode,
-  });
+  // Aldo: a cloud machine has no editor to open and takes its setup from the environment, not scripts.
+  const showOpenInPicker =
+    !isAldoCloud &&
+    shouldShowOpenInPicker({
+      activeProjectName: activeProject?.title,
+      activeThreadEnvironmentId: openInEnvironmentId,
+      primaryEnvironmentId: primaryEnvironment?.environmentId ?? null,
+      hostEnvironmentId,
+      remoteOpenMode: remoteOpenState.mode,
+    });
   useOpenFavoriteEditorShortcut({
     enabled: showOpenInPicker && !backgroundThread,
     environmentId: openInEnvironmentId,
