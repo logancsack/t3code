@@ -1,4 +1,5 @@
 import { pipe } from "effect/Function";
+import { isAldoCloud } from "./aldo/api";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
@@ -167,6 +168,26 @@ export function brandProviderInstanceEntries(
   return entries.map((entry) => applyProviderInstanceBranding(entry, settings));
 }
 
+/**
+ * Aldo: a machine on the older runtime keeps its provider switches where these settings cannot
+ * see them, so an instance they do not name follows the machine's own report.
+ */
+export function providerInstanceEnabled(
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
+  projectId: ProjectId | null,
+  provider: Pick<ServerProvider, "instanceId" | "enabled">,
+  reportedWhenUnnamed = isAldoCloud,
+): boolean {
+  const named =
+    Object.hasOwn(settings.providerInstances, provider.instanceId) ||
+    (projectId !== null &&
+      settings.projectSettingsOverrides[projectId]?.providerInstances?.[provider.instanceId]
+        ?.enabled !== undefined);
+  return reportedWhenUnnamed && !named
+    ? provider.enabled
+    : resolveProjectProviderInstanceEnabled(settings, projectId, provider.instanceId);
+}
+
 /** projectId applies project overrides; explicit null uses machine settings. */
 export function applyProviderInstanceSettings(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -174,7 +195,7 @@ export function applyProviderInstanceSettings(
   projectId: ProjectId | null,
 ): ReadonlyArray<ProviderInstanceEntry> {
   return entries.map((entry) => {
-    const enabled = resolveProjectProviderInstanceEnabled(settings, projectId, entry.instanceId);
+    const enabled = providerInstanceEnabled(settings, projectId, entry);
     return applyProviderInstanceBranding(
       enabled === entry.enabled ? entry : { ...entry, enabled },
       settings,

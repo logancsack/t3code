@@ -13,6 +13,7 @@ import {
   deriveProviderInstanceEntries,
   getDefaultProviderInstanceModel,
   isProviderInstancePickerReady,
+  providerInstanceEnabled,
   resolveDefaultProviderModelSelection,
   resolveSelectableProviderInstance,
   shouldShowInstanceBadge,
@@ -134,6 +135,17 @@ describe("isProviderInstancePickerReady", () => {
 });
 
 describe("applyProviderInstanceSettings", () => {
+  it("follows an Aldo machine's own report for an instance the settings do not name", () => {
+    const opencode = provider({
+      provider: ProviderDriverKind.make("opencode"),
+      instanceId: "opencode",
+    });
+    const settings = { providerInstances: {}, projectSettingsOverrides: {} };
+
+    expect(providerInstanceEnabled(settings, null, opencode, true)).toBe(true);
+    expect(providerInstanceEnabled(settings, null, opencode, false)).toBe(false);
+  });
+
   it("uses settings when a streamed snapshot still reports a disabled default as enabled", () => {
     const entries = deriveProviderInstanceEntries([
       provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
