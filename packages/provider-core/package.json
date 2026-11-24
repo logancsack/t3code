@@ -27,6 +27,10 @@
       "types": "./src/server/auth.ts",
       "import": "./src/server/auth.ts"
     },
+    "./server/codeReview": {
+      "types": "./src/server/codeReview.ts",
+      "import": "./src/server/codeReview.ts"
+    },
     "./server/collectStreamText": {
       "types": "./src/server/collectStreamText.ts",
       "import": "./src/server/collectStreamText.ts"

@@ -1033,6 +1033,40 @@ describe("OpenCodeAdapterV2", () => {
           },
         }),
       );
+      // OpenCode writes the compaction's summary as an assistant message; it is not the reply.
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: {
+              id: "compaction-summary",
+              sessionID: "root",
+              role: "assistant",
+              summary: true,
+              mode: "compaction",
+              time: { created: 2 },
+              parentID: promptId,
+            },
+          },
+        }),
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.part.updated",
+          properties: {
+            sessionID: "root",
+            part: {
+              id: "compaction-summary-text",
+              sessionID: "root",
+              messageID: "compaction-summary",
+              type: "text",
+              text: "## Summary of the conversation so far",
+              time: { start: 2 },
+            },
+          },
+        }),
+      );
       yield* Effect.promise(() =>
         nativeEvents.push({ type: "session.compacted", properties: { sessionID: "root" } }),
       );
@@ -1079,6 +1113,14 @@ describe("OpenCodeAdapterV2", () => {
             event.type === "turn_item.updated" &&
             event.turnItem.type === "assistant_message" &&
             event.turnItem.text === "Post-compaction step",
+        ),
+      );
+      assert.isFalse(
+        events.some(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "assistant_message" &&
+            event.turnItem.text.includes("Summary of the conversation"),
         ),
       );
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),

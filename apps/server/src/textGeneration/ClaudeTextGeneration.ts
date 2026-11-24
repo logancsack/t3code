@@ -422,5 +422,6 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     "ClaudeTextGeneration",
     <S extends Schema.Top>(request: TextGenerationOperations.Request<S>) =>
       Effect.scoped(runClaudeJson(request)),
+    { nativeStructuredOutput: true },
   );
 });

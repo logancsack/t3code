@@ -126,3 +126,12 @@ export function normalizeCliError(
     cause: error,
   });
 }
+
+/** Append a trusted JSON Schema contract for providers without native structured-output support. */
+export function withStructuredOutputSchemaPrompt(prompt: string, schema: Schema.Top): string {
+  return `${prompt.trim()}\n\nReturn only one JSON object matching this schema exactly:\n<output_schema>\n${JSON.stringify(
+    toJsonSchemaObject(schema),
+    null,
+    2,
+  )}\n</output_schema>`;
+}

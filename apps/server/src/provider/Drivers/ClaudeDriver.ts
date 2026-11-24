@@ -1,4 +1,4 @@
-import { ClaudeSettings, ProviderDriverKind } from "@t3tools/contracts";
+import { ClaudeSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import type * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -73,6 +73,23 @@ const withoutUsage = (capabilities: ClaudeCapabilitiesProbe): ClaudeCapabilities
   delete result.usage;
   return result;
 };
+
+const CLAUDE_AUTHENTICATION_REQUIRED_MESSAGE =
+  "Your Claude sign-in expired. Reconnect Claude to retry the last message automatically.";
+
+/** The probe still reports an expired OAuth login as signed in; only a turn finds out. */
+export function applyClaudeRuntimeAuthenticationState(
+  snapshot: ServerProvider,
+  authenticationRequired: boolean,
+): ServerProvider {
+  if (!authenticationRequired) return snapshot;
+  return {
+    ...snapshot,
+    status: "error",
+    auth: { ...snapshot.auth, status: "unauthenticated" },
+    message: CLAUDE_AUTHENTICATION_REQUIRED_MESSAGE,
+  };
+}
 
 export type ClaudeDriverEnv =
   | ClaudeAdapterV2DriverEnv
@@ -170,6 +187,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ),
       stateDir,
     );
+    const runtimeAuthenticationRequired = yield* Ref.make(false);
     // Retain reports until the registry subscribes; end its listener on teardown.
     const workspaceRescans = yield* Queue.unbounded<string, Cause.Done>();
     yield* Effect.addFinalizer(() => Queue.end(workspaceRescans));
@@ -186,6 +204,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         scopedLimitNames,
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         onSessionInit: (cwd) => Queue.offer(workspaceRescans, cwd).pipe(Effect.asVoid),
+        onAuthenticationStateChanged: (authenticated) =>
+          Ref.getAndSet(runtimeAuthenticationRequired, !authenticated).pipe(
+            Effect.flatMap((wasRequired) =>
+              wasRequired === !authenticated ? Effect.void : Effect.asVoid(snapshot.refresh),
+            ),
+          ),
         modelCatalog,
         routeModelCatalog: modelRoutes.route,
       },
@@ -295,6 +319,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
               : Effect.void,
           ),
           Effect.map(stampIdentity),
+          Effect.flatMap((provider) =>
+            Ref.get(runtimeAuthenticationRequired).pipe(
+              Effect.map((required) => applyClaudeRuntimeAuthenticationState(provider, required)),
+            ),
+          ),
         ),
       ),
       // Disabled, failed version checks and interruption never reach the probe.

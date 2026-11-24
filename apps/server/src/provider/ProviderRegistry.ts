@@ -337,6 +337,20 @@ const retainsReadyCatalog = (
     (previousProvider.modelsRetained === true &&
       previousProvider.checkedAt === nextProvider.checkedAt));
 
+/** A managed machine's host installs and pins the CLIs, so its clients are offered no update. */
+export const withoutProviderUpdate = (provider: ServerProvider): ServerProvider =>
+  provider.versionAdvisory
+    ? {
+        ...provider,
+        versionAdvisory: {
+          ...provider.versionAdvisory,
+          updateCommand: null,
+          canUpdate: false,
+          canInstallVersion: false,
+        },
+      }
+    : provider;
+
 export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
   nextProvider: ServerProvider,
@@ -579,12 +593,13 @@ export const layer = Layer.effect(
     ) {
       const maintenanceActionStates = yield* Ref.get(maintenanceActionStatesRef);
       const updateState = maintenanceActionStates.get(provider.instanceId)?.update;
+      const offered = config.managedDevPc ? withoutProviderUpdate(provider) : provider;
       if (!updateState) {
-        const { updateState: _updateState, ...providerWithoutUpdateState } = provider;
+        const { updateState: _updateState, ...providerWithoutUpdateState } = offered;
         return providerWithoutUpdateState;
       }
       return {
-        ...provider,
+        ...offered,
         updateState,
       };
     });

@@ -17,6 +17,7 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  withStructuredOutputSchemaPrompt,
 } from "./textGenerationUtils.ts";
 
 export const TranscriptionPostProcessingOutput = Schema.Struct({ transcription: Schema.String });
@@ -84,7 +85,22 @@ export const generatedThreadTitle = (raw: string) => {
     : Effect.succeed(title);
 };
 
-export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
+export function fromRunner(
+  name: string,
+  run: Runner,
+  options: { readonly nativeStructuredOutput?: boolean } = {},
+): ProviderTextGeneration {
+  const generateStructured: NonNullable<ProviderTextGeneration["generateStructured"]> = (input) =>
+    run({
+      operation: "generateStructured",
+      cwd: input.cwd,
+      prompt: options.nativeStructuredOutput
+        ? input.prompt
+        : withStructuredOutputSchemaPrompt(input.prompt, input.outputSchema),
+      outputSchema: input.outputSchema,
+      modelSelection: input.modelSelection,
+    }).pipe(Effect.withSpan(`${name}.generateStructured`));
+
   const generateCommitMessage: ProviderTextGeneration["generateCommitMessage"] = Effect.fn(
     `${name}.generateCommitMessage`,
   )(function* (input) {
@@ -201,5 +217,6 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     generateThreadTitle,
     generateReviewGuide,
     generateTranscriptionPostProcessing,
+    generateStructured,
   } satisfies ProviderTextGeneration;
 }

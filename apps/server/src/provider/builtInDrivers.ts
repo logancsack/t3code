@@ -15,7 +15,24 @@ import type {
   AnyProviderDriver,
   ProviderUsageReaderEnv,
 } from "@t3tools/provider-core/server/driver";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { KiroDriver, type KiroDriverEnv } from "@t3tools/provider-kiro/server";
+import * as Digest from "effect/crypto/Digest";
+import * as Effect from "effect/Effect";
+
+import { makeGrokCodeReview } from "../review/GrokCodeReview.ts";
+
+/** Grok instances also carry the CLI review swarm `aldo_review` prefers. */
+const GrokDriverWithReview: AnyProviderDriver<GrokDriverEnv | Digest.Digest> = {
+  ...GrokDriver,
+  create: Effect.fn("GrokDriver.createWithCodeReview")(function* (input) {
+    const instance = yield* GrokDriver.create(input);
+    if (!input.enabled) return instance;
+    const environment = yield* mergeProviderInstanceEnvironment(input.environment);
+    const codeReview = yield* makeGrokCodeReview({ ...input.config, enabled: true }, environment);
+    return { ...instance, codeReview };
+  }),
+};
 
 export type BuiltInDriversEnv =
   | AcpRegistryDriverEnv
@@ -25,6 +42,7 @@ export type BuiltInDriversEnv =
   | CursorDriverEnv
   | FxDriverEnv
   | GrokDriverEnv
+  | Digest.Digest
   | KiroDriverEnv
   | OpenCodeDriverEnv
   | PiDriverEnv
@@ -34,7 +52,7 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   CodexDriver,
   ClaudeDriver,
   CursorDriver,
-  GrokDriver,
+  GrokDriverWithReview,
   FxDriver,
   OpenCodeDriver,
   AntigravityDriver,

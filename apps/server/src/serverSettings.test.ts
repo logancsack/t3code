@@ -961,6 +961,45 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("loads the settings file Aldo writes for a new machine", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        JSON.stringify({
+          enableProviderUpdateChecks: true,
+          enableAgentBrowserAccess: false,
+          providers: {
+            claudeAgent: { enabled: true },
+            codex: { enabled: true },
+            opencode: { enabled: true },
+            grok: { enabled: true },
+            cursor: { enabled: false },
+            muse: { enabled: true },
+            primeAgent: { enabled: false },
+          },
+        }),
+      );
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.isTrue(settings.enableProviderUpdateChecks);
+      assert.isFalse(settings.enableAgentBrowserAccess);
+      // primeAgent has no driver here; its disabled instance must not fail the load.
+      assert.deepEqual(
+        Object.entries(settings.providerInstances).map(([id, instance]) => [id, instance.enabled]),
+        [
+          ["opencode", true],
+          ["grok", true],
+          ["muse", true],
+          ["primeAgent", false],
+        ],
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("keeps an explicit default instance over the legacy blob for its driver", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;

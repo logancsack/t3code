@@ -1025,6 +1025,15 @@ it.layer(
   });
 
   describe("ProviderRegistry.layer", () => {
+    it("offers no update on a managed machine while keeping the advisory", () => {
+      const provider = codexUpdateSnapshot("behind_latest");
+      assert.deepStrictEqual(ProviderRegistry.withoutProviderUpdate(provider).versionAdvisory, {
+        ...provider.versionAdvisory,
+        canUpdate: false,
+        canInstallVersion: false,
+      });
+    });
+
     it("marks folder catalogs pending when a machine refresh changes the machine models", () => {
       const machineModel = {
         slug: "opencode/big-pickle",

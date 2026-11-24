@@ -98,6 +98,17 @@ export function resolveMuseReasoningEffort(
   return descriptor.options.find((option) => option.id === descriptor.currentValue)?.id;
 }
 
+const PREFERRED_DEFAULT_MODEL = "muse-spark-1.3";
+
+/** Meta's own default is a Contributor model, on which Meta may train; Muse Spark 1.3 stays ours while listed. */
+export function withPreferredMuseDefault(
+  models: ReadonlyArray<ServerProviderModel>,
+): ReadonlyArray<ServerProviderModel> {
+  return models.some((model) => model.slug === PREFERRED_DEFAULT_MODEL)
+    ? models.map((model) => ({ ...model, isDefault: model.slug === PREFERRED_DEFAULT_MODEL }))
+    : models;
+}
+
 class MuseCatalogError extends Schema.TaggedError<MuseCatalogError>()("MuseCatalogError", {
   detail: Schema.String,
 }) {}
@@ -131,22 +142,24 @@ export const discoverMuseModels = Effect.fn("discoverMuseModels")(function* (
     return yield* new MuseCatalogError({ detail: "Muse returned a catalog for another provider." });
   }
   const seen = new Set<string>();
-  return catalog.models.flatMap((model): ServerProviderModel[] => {
-    if (model.providerId !== "meta" || seen.has(model.modelId)) return [];
-    seen.add(model.modelId);
-    const label = model.displayLabel.trim() || model.modelId;
-    const name =
-      label === model.modelId && label.startsWith("muse-")
-        ? label.replaceAll("-", " ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
-        : label;
-    return [
-      {
-        slug: model.modelId,
-        name,
-        isCustom: false,
-        isDefault: model.isDefault,
-        capabilities: museModelCapabilities(model),
-      },
-    ];
-  });
+  return withPreferredMuseDefault(
+    catalog.models.flatMap((model): ServerProviderModel[] => {
+      if (model.providerId !== "meta" || seen.has(model.modelId)) return [];
+      seen.add(model.modelId);
+      const label = model.displayLabel.trim() || model.modelId;
+      const name =
+        label === model.modelId && label.startsWith("muse-")
+          ? label.replaceAll("-", " ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+          : label;
+      return [
+        {
+          slug: model.modelId,
+          name,
+          isCustom: false,
+          isDefault: model.isDefault,
+          capabilities: museModelCapabilities(model),
+        },
+      ];
+    }),
+  );
 });

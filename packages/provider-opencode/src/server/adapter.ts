@@ -424,7 +424,8 @@ interface OpenCodeThreadState {
   activeTurn: ActiveOpenCodeTurn | null;
   readonly providerTurns: Map<string, OrchestrationV2ProviderTurn>;
   readonly runtimeRequests: Map<string, OrchestrationV2RuntimeRequest>;
-  readonly messageRoles: Map<string, "user" | "assistant">;
+  // "summary" is a compaction's assistant message, which would read as the reply in the timeline.
+  readonly messageRoles: Map<string, "user" | "assistant" | "summary">;
   readonly userMessageIds: Array<string>;
   parentSubagent: OpenCodeSubagentContext | null;
   // null: a child resumed after a restart, whose next ordinal is recovered from OpenCode.
@@ -547,6 +548,15 @@ function protocolError(
     detail,
     ...(payload === undefined ? {} : { payload }),
   });
+}
+
+/** OpenCode writes a compaction's summary as an assistant message. */
+function isCompactionSummary(
+  message: Extract<OpenCodeEvent, { type: "message.updated" }>["properties"]["info"],
+): boolean {
+  return (
+    message.role === "assistant" && (message.summary === true || message.mode === "compaction")
+  );
 }
 
 function nativeThreadId(providerThread: OrchestrationV2ProviderThread): string {
@@ -2666,7 +2676,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const state = threads.get(event.properties.sessionID);
           if (state === undefined) return;
           const message = event.properties.info;
-          state.messageRoles.set(message.id, message.role);
+          state.messageRoles.set(
+            message.id,
+            isCompactionSummary(message) ? "summary" : message.role,
+          );
           if (message.role === "assistant") {
             const usage = state.activeTurn?.usage;
             if (usage === undefined) return;
@@ -2723,6 +2736,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           if (state === undefined || turn === null || turn === undefined || turn.finalized) return;
           if (part.type === "text" && state.messageRoles.get(part.messageID) === "user") {
             if (!turn.isRoot) yield* projectChildUserPart(state, turn, part);
+            return;
+          }
+          if (
+            (part.type === "text" || part.type === "reasoning") &&
+            state.messageRoles.get(part.messageID) === "summary"
+          ) {
             return;
           }
           if (part.type === "step-finish") {
@@ -3439,6 +3458,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const snapshotNow = yield* DateTime.now;
           const messages: Array<OrchestrationV2ConversationMessage> = nativeMessages.flatMap(
             ({ info, parts }) => {
+              if (isCompactionSummary(info)) return [];
               const text = parts
                 .filter(
                   (part): part is Extract<OpenCodePart, { type: "text" }> => part.type === "text",

@@ -73,14 +73,6 @@ export const SourceControlRepositorySummary = Schema.Struct({
 });
 export type SourceControlRepositorySummary = typeof SourceControlRepositorySummary.Type;
 
-export const SourceControlRepositoryListInput = Schema.Struct({
-  provider: SourceControlProviderKind,
-});
-export type SourceControlRepositoryListInput = typeof SourceControlRepositoryListInput.Type;
-
-export const SourceControlRepositoryListResult = Schema.Array(SourceControlRepositorySummary);
-export type SourceControlRepositoryListResult = typeof SourceControlRepositoryListResult.Type;
-
 export const SourceControlRepositoryLookupInput = Schema.Struct({
   provider: SourceControlProviderKind,
   repository: TrimmedNonEmptyString,

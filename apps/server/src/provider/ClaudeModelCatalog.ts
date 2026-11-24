@@ -1,4 +1,3 @@
-import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import {
   type CustomModelSetting,
   type ModelCapabilities,
@@ -570,61 +569,4 @@ export function resolveClaudeCatalogContextWindowTokens(
   if (entry.runtime.fixedContextWindowTokens) return entry.runtime.fixedContextWindowTokens;
   const contextWindow = resolveClaudeCatalogContextWindow(catalog, modelSelection);
   return contextWindow ? entry.runtime.contextWindowTokens?.[contextWindow] : undefined;
-}
-
-/** Native discovery adds models without assigning a new default or guessing runtime profiles. */
-export function withDiscoveredClaudeModels(
-  catalog: ClaudeModelCatalog,
-  models: ReadonlyArray<ServerProviderModel>,
-): ClaudeModelCatalog {
-  const known = new Set(catalog.models.map((entry) => entry.model.slug));
-  return {
-    models: [
-      ...catalog.models,
-      ...models
-        .filter((model) => !known.has(model.slug))
-        .map((model) => ({ model, runtime: {}, compatibility: {} })),
-    ],
-  };
-}
-
-export function claudeModelsFromSdk(
-  fallback: ReadonlyArray<ServerProviderModel>,
-  native: ReadonlyArray<ModelInfo>,
-): ReadonlyArray<ServerProviderModel> {
-  const discovered: ServerProviderModel[] = [];
-  for (const entry of native) {
-    const slug = entry.resolvedModel || entry.value;
-    if (
-      !slug ||
-      fallback.some((m) => m.slug === slug || m.aliases?.includes(slug)) ||
-      discovered.some((m) => m.slug === slug)
-    )
-      continue;
-    const efforts = entry.supportedEffortLevels ?? [];
-    discovered.push({
-      slug,
-      name: entry.displayName || slug,
-      isCustom: false,
-      ...(entry.value !== slug ? { aliases: [entry.value] } : {}),
-      capabilities: {
-        optionDescriptors: [
-          ...(efforts.length
-            ? [
-                {
-                  id: "effort",
-                  label: "Reasoning",
-                  type: "select" as const,
-                  options: efforts.map((id) => ({ id, label: id })),
-                },
-              ]
-            : []),
-          ...(entry.supportsFastMode
-            ? [{ id: "fastMode", label: "Fast mode", type: "boolean" as const }]
-            : []),
-        ],
-      },
-    });
-  }
-  return [...fallback, ...discovered];
 }

@@ -231,6 +231,15 @@ function selectOpenCodeRuntimeTextGeneration(
         v1: v1.generateTranscriptionPostProcessing(input),
         v2: v2.generateTranscriptionPostProcessing(input),
       }),
+    ...(v1.generateStructured && v2.generateStructured
+      ? {
+          generateStructured: (input) =>
+            byOpenCodeRuntime(resolve, {
+              v1: v1.generateStructured!(input),
+              v2: v2.generateStructured!(input),
+            }),
+        }
+      : {}),
   };
 }
 

@@ -7,6 +7,7 @@ import type {
   TextGenerationError,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
+import type * as Schema from "effect/Schema";
 
 import type { TextGenerationPolicy } from "./textGenerationPolicy.ts";
 import type { ThreadTitleForkSource } from "./textGenerationPrompts.ts";
@@ -114,7 +115,19 @@ export interface TranscriptionPostProcessingResult {
   transcription: string;
 }
 
+export interface StructuredGenerationInput<S extends Schema.Top> {
+  cwd: string;
+  prompt: string;
+  outputSchema: S;
+  modelSelection: ModelSelection;
+}
+
 export interface ProviderTextGeneration {
+  /** Absent on providers that cannot return schema-shaped output. */
+  readonly generateStructured?: <S extends Schema.Top>(
+    input: StructuredGenerationInput<S>,
+  ) => Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]>;
+
   readonly generateTranscriptionPostProcessing: (
     input: TranscriptionPostProcessingInput,
   ) => Effect.Effect<TranscriptionPostProcessingResult, TextGenerationError>;
