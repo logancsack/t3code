@@ -1567,13 +1567,13 @@ const make = Effect.gen(function* () {
       }
     }
 
-    let compactionSessionEnsured = false;
+    let compactionStarted = false;
     const handleCompactionFailure = (cause: Cause.Cause<unknown>) => {
       if (Cause.hasInterruptsOnly(cause)) {
         return Effect.void;
       }
       const detail = formatFailureDetail(cause);
-      if (!compactionSessionEnsured) {
+      if (!compactionStarted) {
         return setThreadSessionErrorOnTurnStartFailure({
           threadId: event.payload.threadId,
           detail,
@@ -1634,20 +1634,26 @@ const make = Effect.gen(function* () {
       );
       yield* holdTurnStart;
       yield* Effect.gen(function* () {
-        yield* ensureSessionForThread(
-          event.payload.threadId,
-          event.payload.createdAt,
-          event.payload.modelSelection !== undefined
-            ? { modelSelection: event.payload.modelSelection, pendingTurnStart: true }
-            : { pendingTurnStart: true },
-        );
-        compactionSessionEnsured = true;
-        if (event.payload.modelSelection !== undefined) {
-          threadModelSelections.set(event.payload.threadId, event.payload.modelSelection);
+        // Compact the binding that owns this conversation. The provider service
+        // recovers its saved session when needed; a draft selection must not
+        // replace it before the next message can perform a context handoff.
+        const current = yield* resolveThreadShell(event.payload.threadId);
+        if (current?.session && current.session.status !== "stopped") {
+          yield* setThreadSession({
+            threadId: event.payload.threadId,
+            session: {
+              ...current.session,
+              status: "starting",
+              activeTurnId: null,
+              updatedAt: event.payload.createdAt,
+            },
+            createdAt: event.payload.createdAt,
+          });
         }
+        compactionStarted = true;
         yield* providerService.compactThread(
           event.payload.threadId,
-          event.payload.modelSelection,
+          undefined,
           event.payload.messageId,
         );
       }).pipe(

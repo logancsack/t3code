@@ -99,6 +99,7 @@ import {
   readFileAsDataUrl,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
+  threadHasStarted,
   threadShellHasStarted,
 } from "../ChatView.logic";
 import {
@@ -1941,6 +1942,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [providerStatuses, settings],
   );
   const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
+  const allowProviderFallback =
+    !threadHasStarted(activeThread) && !threadShellHasStarted(props.activeThreadShell);
   const {
     selectedProviderEntry,
     requestedDriverKind,
@@ -1957,12 +1960,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           activeProjectDefaultModelSelection?.instanceId,
         ],
         lockedProvider,
+        allowFallback: allowProviderFallback,
         lockedInstanceId:
           activeThread?.session?.providerInstanceId ?? activeThreadModelSelection?.instanceId,
       }),
     [
       activeProjectDefaultModelSelection?.instanceId,
       activeThread?.session?.providerInstanceId,
+      allowProviderFallback,
       activeThreadModelSelection?.instanceId,
       selectedProviderByThreadId,
       lockedProvider,
@@ -5161,7 +5166,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         aldoDefaultSelection.model,
       )
     : null;
-  const composerControls = showProviderUnavailable ? (
+  // Keep the picker reachable when a started thread needs an explicit replacement.
+  const canReplaceUnavailableProvider =
+    showProviderUnavailable && !allowProviderFallback && lockedProvider === null;
+  const unavailableModelSelection = unavailableProviderInstanceId
+    ? (composerDraft.modelSelectionByProvider[unavailableProviderInstanceId] ??
+      (activeThreadModelSelection?.instanceId === unavailableProviderInstanceId
+        ? activeThreadModelSelection
+        : undefined))
+    : undefined;
+  const showProviderSetup = showProviderUnavailable && !canReplaceUnavailableProvider;
+  const composerControls = showProviderSetup ? (
     <ComposerControl
       type="button"
       disabled={!providerSetupInstanceId}
@@ -5191,6 +5206,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) : null}
       {renderLeadingControl?.(composerControlsInStrip ? "xs" : "sm")}
       <ProviderModelPicker
+        {...(canReplaceUnavailableProvider ? { triggerLabel: "Choose another model" } : {})}
         {...(isAldoCloud && aldoRoutesModels() && routeKind === "draft"
           ? {
               automaticOption: {
@@ -5257,14 +5273,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             }
           : {})}
         activeInstanceId={
-          providerCatalogPending
+          unavailableProviderInstanceId ??
+          (providerCatalogPending
             ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
-            : selectedInstanceId
+            : selectedInstanceId)
         }
         model={
-          providerCatalogPending
+          unavailableModelSelection?.model ??
+          (providerCatalogPending
             ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
-            : selectedModelForPickerWithCustomFallback
+            : selectedModelForPickerWithCustomFallback)
         }
         lockedProvider={lockedProvider}
         lockedContinuationGroupKey={lockedContinuationGroupKey}

@@ -4553,6 +4553,79 @@ describe("ProviderCommandReactor", () => {
     },
   );
 
+  it.each(["cross-provider", "same-provider"])(
+    "compacts the current session before a pending %s switch and seeds the next message",
+    async (kind) => {
+      const harness = await createHarness({ sessionModelSwitch: "unsupported" });
+      const threadId = ThreadId.make("thread-1");
+      const next = {
+        instanceId: ProviderInstanceId.make(kind === "cross-provider" ? "claudeAgent" : "codex"),
+        model: kind === "cross-provider" ? "claude-fable-5-2" : "gpt-6.1-sol",
+      };
+      let index = 0;
+      const dispatch = (id: string, text: string, modelSelection?: ModelSelection) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(id),
+          threadId,
+          message: { messageId: asMessageId(id), role: "user", text, attachments: [] },
+          ...(modelSelection ? { modelSelection } : {}),
+          runtimeMode: "approval-required",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          createdAt: `2026-01-01T00:00:0${++index}.000Z`,
+        });
+      await harness.runEffect(dispatch("initial", "Keep the existing plan unapproved."));
+      await harness.runEffect(harness.drainTurnStarts);
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("ready-before-compact-handoff"),
+          threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "codex",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-01-01T00:00:01.000Z",
+          },
+          createdAt: "2026-01-01T00:00:01.000Z",
+        }),
+      );
+      // Another client may already have persisted the pending selection.
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("pending-compact-handoff"),
+          threadId,
+          modelSelection: next,
+        }),
+      );
+      await harness.runEffect(dispatch("compact-pending", "/compact", next));
+      await harness.runEffect(harness.drainTurnStarts);
+      expect(harness.compactThread).toHaveBeenCalledWith(threadId, undefined, "compact-pending");
+      expect(harness.startSession).toHaveBeenCalledTimes(1);
+      expect(harness.stopSession).not.toHaveBeenCalled();
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      expect((await harness.readModel()).threads[0]?.modelSelection).toEqual(next);
+
+      await harness.runEffect(dispatch("after-compact", "Continue here", next));
+      await harness.runEffect(harness.drainTurnStarts);
+      expect(harness.startSession).toHaveBeenCalledTimes(2);
+      expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+        fresh: true,
+        modelSelection: next,
+      });
+      expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
+      expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+        modelSelection: next,
+        input: expect.stringContaining("Keep the existing plan unapproved."),
+      });
+    },
+  );
+
   it("reports a refused named model without starting a substitute", async () => {
     const harness = await createHarness();
     const at = "2026-01-01T00:00:00.000Z";

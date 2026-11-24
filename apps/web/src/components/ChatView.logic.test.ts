@@ -526,6 +526,66 @@ describe("resolveComposerProviderSelection", () => {
     ).toBe("Sign in to Antigravity in provider settings before sending.");
   });
 
+  it.each(["missing", "disabled", "unavailable"] as const)(
+    "keeps a %s selection blocked with an unlocked handoff picker until explicitly replaced",
+    (state) => {
+      const current = entry("claudeAgent", "claude_work", {
+        ...(state === "disabled" ? { enabled: false } : {}),
+        ...(state === "unavailable" ? { availability: "unavailable" } : {}),
+      });
+      const replacement = entry("codex");
+      const entries = [replacement, entry("claudeAgent", "claude_other")];
+      if (state !== "missing") entries.push(current);
+      const thread = importedThread(current.instanceId);
+      const lockedProvider = deriveLockedProvider({
+        threadModelHandoff: true,
+        thread,
+        selectedProvider: null,
+        threadProvider: current.instanceId,
+        providers: entries.map((entry) => entry.snapshot),
+      });
+      expect(lockedProvider).toBeNull();
+      const resolve = (selected: ProviderInstanceId | null) =>
+        resolveComposerProviderSelection({
+          entries,
+          candidateInstanceIds: [selected, current.instanceId, replacement.instanceId],
+          lockedProvider,
+          lockedInstanceId: current.instanceId,
+          allowFallback: false,
+        });
+      expect(resolve(null).selectedProviderEntry).toBeUndefined();
+      expect(resolve(null).unavailableProviderInstanceId).toBe(current.instanceId);
+      expect(resolve(replacement.instanceId).selectedProviderEntry).toBe(replacement);
+    },
+  );
+
+  it("keeps an unavailable explicit replacement instead of reverting to the current provider", () => {
+    const current = entry("claudeAgent");
+    const replacement = entry("codex", "codex_work", { enabled: false });
+    const selection = resolveComposerProviderSelection({
+      entries: [current, replacement],
+      candidateInstanceIds: [replacement.instanceId, current.instanceId],
+      lockedProvider: null,
+      lockedInstanceId: current.instanceId,
+      allowFallback: false,
+    });
+    expect(selection.selectedProviderEntry).toBeUndefined();
+    expect(selection.unavailableProviderInstanceId).toBe(replacement.instanceId);
+  });
+
+  it("can still choose an available default for a new draft", () => {
+    const available = entry("codex");
+    expect(
+      resolveComposerProviderSelection({
+        entries: [available],
+        candidateInstanceIds: [ProviderInstanceId.make("missing")],
+        lockedProvider: null,
+        lockedInstanceId: null,
+        allowFallback: true,
+      }).selectedProviderEntry,
+    ).toBe(available);
+  });
+
   it("blocks sends until the selected Antigravity profile is installed", () => {
     const provider = entry("antigravity", "google_work", {
       installed: false,

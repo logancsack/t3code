@@ -479,6 +479,8 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
+  threadHasStarted,
+  threadShellHasStarted,
   getAntigravitySendBlockReason,
   resolveDraftHeroState,
   findRecordedWorktreeSetup,
@@ -2994,6 +2996,8 @@ export default function ChatView(props: ChatViewProps) {
       ),
     [providerStatuses, settings],
   );
+  const allowProviderFallback =
+    !threadHasStarted(activeThread) && !threadShellHasStarted(activeThreadShell);
   const { selectedProviderEntry, requestedDriverKind } = useMemo(
     () =>
       resolveComposerProviderSelection({
@@ -3005,6 +3009,7 @@ export default function ChatView(props: ChatViewProps) {
           activeProjectDefaultModelSelection?.instanceId,
         ],
         lockedProvider,
+        allowFallback: allowProviderFallback,
         lockedInstanceId:
           activeThread?.session?.providerInstanceId ?? activeThread?.modelSelection.instanceId,
       }),
@@ -3012,6 +3017,7 @@ export default function ChatView(props: ChatViewProps) {
       activeProjectDefaultModelSelection?.instanceId,
       activeThread?.modelSelection.instanceId,
       activeThread?.session?.providerInstanceId,
+      allowProviderFallback,
       lockedProvider,
       providerInstanceEntries,
       selectedProviderByThreadId,
@@ -7621,7 +7627,7 @@ export default function ChatView(props: ChatViewProps) {
     const context = composerRef.current?.getSendContext();
     if (!context?.providerAvailable) return;
 
-    // Compaction is a standalone command; the draft and its attachments stay local.
+    // Compact the current session; the draft model switch and attachments stay local.
     const threadId = activeThread.id;
     const messageId = newMessageId();
     const createdAt = new Date().toISOString();
@@ -7645,7 +7651,6 @@ export default function ChatView(props: ChatViewProps) {
       const settingsResult = await persistThreadSettingsForNextTurn({
         threadId,
         createdAt,
-        modelSelection: context.selectedModelSelection,
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
@@ -7660,7 +7665,6 @@ export default function ChatView(props: ChatViewProps) {
               input: {
                 threadId,
                 message: { messageId, role: "user", text: "/compact", attachments: [] },
-                modelSelection: context.selectedModelSelection,
                 runtimeMode,
                 interactionMode: context.interactionMode,
                 createdAt,
