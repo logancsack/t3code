@@ -581,38 +581,6 @@ const make = Effect.gen(function* () {
     return thread?.session?.status === "running" && thread.session.activeTurnId !== null;
   });
 
-  const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
-    readonly threadId: ThreadId;
-    readonly currentModelSelection: ModelSelection;
-    readonly requestedModelSelection: ModelSelection | undefined;
-  }) {
-    const requestedModelSelection = input.requestedModelSelection;
-    if (
-      requestedModelSelection === undefined ||
-      (input.currentModelSelection.instanceId === requestedModelSelection.instanceId &&
-        input.currentModelSelection.model === requestedModelSelection.model)
-    ) {
-      return;
-    }
-    const providers = yield* providerRegistry.getProviders;
-    const requiresNewThread =
-      providers.find((snapshot) => snapshot.instanceId === input.currentModelSelection.instanceId)
-        ?.requiresNewThreadForModelChange === true ||
-      providers.find((snapshot) => snapshot.instanceId === requestedModelSelection.instanceId)
-        ?.requiresNewThreadForModelChange === true;
-    if (!requiresNewThread) {
-      return;
-    }
-    return yield* new ProviderAdapterRequestError({
-      provider: providerErrorLabelFromInstanceHint({
-        instanceId: String(requestedModelSelection.instanceId),
-        modelSelectionInstanceId: String(input.currentModelSelection.instanceId),
-      }),
-      method: "thread.turn.start",
-      detail: `Thread '${input.threadId}' cannot switch models after the conversation has started. Start a new thread to use '${requestedModelSelection.model}'.`,
-    });
-  });
-
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
@@ -662,7 +630,7 @@ const make = Effect.gen(function* () {
         : thread.modelSelection.instanceId;
     const desiredModelSelection = requestedModelSelection ?? thread.modelSelection;
     const desiredInstanceId = desiredModelSelection.instanceId;
-    const currentInfo = yield* providerService.getInstanceInfo(currentInstanceId).pipe(
+    yield* providerService.getInstanceInfo(currentInstanceId).pipe(
       Effect.mapError(
         () =>
           new ProviderAdapterRequestError({
@@ -712,44 +680,6 @@ const make = Effect.gen(function* () {
         },
         createdAt,
       });
-    }
-    if (thread.session !== null && !options?.fresh) {
-      yield* rejectStartedThreadModelChangeIfRequired({
-        threadId,
-        currentModelSelection:
-          activeSession?.model !== undefined
-            ? {
-                ...thread.modelSelection,
-                instanceId: currentInstanceId,
-                model: activeSession.model,
-              }
-            : thread.modelSelection,
-        requestedModelSelection,
-      });
-    }
-    if (
-      !options?.fresh &&
-      thread.session !== null &&
-      requestedModelSelection !== undefined &&
-      requestedModelSelection.instanceId !== currentInstanceId
-    ) {
-      if (currentInfo.driverKind !== desiredInfo.driverKind) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' is bound to driver '${currentInfo.driverKind}' and cannot switch to '${desiredInfo.driverKind}'.`,
-        });
-      }
-      if (
-        currentInfo.continuationIdentity.continuationKey !==
-        desiredInfo.continuationIdentity.continuationKey
-      ) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' cannot switch from instance '${currentInstanceId}' to '${desiredInstanceId}' because their provider resume state is incompatible.`,
-        });
-      }
     }
     const project = yield* resolveProject(thread.projectId);
     const effectiveCwd = resolveThreadWorkspaceCwd({
@@ -916,16 +846,43 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
+    // Metadata can already name the new model. The live session (or the saved
+    // session after a restart) owns the old provider's native resume state.
+    const sessions = yield* providerService.listSessions();
+    const active = sessions.find((session) => session.threadId === input.threadId);
+    const previousInstance = active?.providerInstanceId ?? thread.session?.providerInstanceId;
+    const desired = input.modelSelection ?? thread.modelSelection;
+    let handoff = false;
+    if (previousInstance !== undefined) {
+      const previous = yield* providerService.getInstanceInfo(previousInstance);
+      const next = yield* providerService.getInstanceInfo(desired.instanceId);
+      const capabilities = yield* providerService.getCapabilities(desired.instanceId);
+      const modelChanged = desired.model !== (active?.model ?? thread.modelSelection.model);
+      const providers = yield* providerRegistry.getProviders;
+      handoff =
+        previous.driverKind !== next.driverKind ||
+        previous.continuationIdentity.continuationKey !==
+          next.continuationIdentity.continuationKey ||
+        (modelChanged &&
+          (capabilities.sessionModelSwitch === "unsupported" ||
+            providers.some(
+              (provider) =>
+                (provider.instanceId === previousInstance ||
+                  provider.instanceId === desired.instanceId) &&
+                provider.requiresNewThreadForModelChange,
+            )));
+    }
     let continuationContext = "";
     let continuationAttachments: ReadonlyArray<ChatAttachment> = [];
-    if (input.continuation) {
+    if (input.continuation || handoff) {
       if (
-        thread.latestTurn?.turnId !== input.continuation.turnId ||
-        thread.session?.status === "running" ||
-        thread.hasPendingApprovals ||
-        thread.hasPendingUserInput ||
-        thread.hasActionableProposedPlan ||
-        thread.archivedAt
+        input.continuation &&
+        (thread.latestTurn?.turnId !== input.continuation.turnId ||
+          thread.session?.status === "running" ||
+          thread.hasPendingApprovals ||
+          thread.hasPendingUserInput ||
+          thread.hasActionableProposedPlan ||
+          thread.archivedAt)
       ) {
         return yield* new ProviderAdapterRequestError({
           provider: "continuation",
@@ -950,7 +907,11 @@ const make = Effect.gen(function* () {
           detail: "A newer user message canceled continuation.",
         });
       }
-      const history = detail.messages.filter((message) => message.createdAt < input.createdAt);
+      const pendingIndex = detail.messages.findIndex((message) => message.id === input.messageId);
+      const history =
+        pendingIndex >= 0
+          ? detail.messages.slice(0, pendingIndex)
+          : detail.messages.filter((message) => message.createdAt < input.createdAt);
       continuationAttachments = [
         ...new Map(
           history
@@ -977,7 +938,7 @@ const make = Effect.gen(function* () {
       yield* fileSystem.makeDirectory(directory, { recursive: true });
       const transcriptPath = path.join(
         directory,
-        `${encodeURIComponent(input.threadId)}-${encodeURIComponent(input.continuation.turnId)}.txt`,
+        `${encodeURIComponent(input.threadId)}-${encodeURIComponent(input.continuation?.turnId ?? input.messageId)}.txt`,
       );
       yield* fileSystem.writeFileString(
         transcriptPath,
@@ -987,6 +948,7 @@ const make = Effect.gen(function* () {
       continuationContext =
         `Continue the existing task in the same workspace. Files and prior work remain in place. ` +
         `The provider changed; do not restart the task, repeat completed external actions, reset any spending or computer-time budget, or re-request unchanged approvals. ` +
+        `A pending plan still requires the user's approval; a model switch is not approval to implement it. ` +
         `Prior decisions apply only to their original actions; they do not grant broader permissions. ` +
         `Read the full conversation and recorded decisions at ${transcriptPath} before taking action.\n\n` +
         (transcript.length + decisions.length <= 80000
@@ -998,7 +960,7 @@ const make = Effect.gen(function* () {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       ...(input.titleSeed !== undefined ? { titleSeed: input.titleSeed } : {}),
       pendingTurnStart: true,
-      ...(input.continuation ? { fresh: true } : {}),
+      ...(input.continuation || handoff ? { fresh: true } : {}),
     });
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);

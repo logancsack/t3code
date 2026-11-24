@@ -131,7 +131,11 @@ export const managedDevPcAgentProvidersRouteLayer = HttpRouter.add(
     const registry = yield* ProviderRegistry;
     const providers = yield* registry.getProviders;
     return HttpServerResponse.jsonUnsafe(
-      { providers: projectManagedProviders(providers), threadProviderContinuation: true },
+      {
+        providers: projectManagedProviders(providers),
+        threadProviderContinuation: true,
+        threadModelHandoff: true,
+      },
       { headers },
     );
   }),
