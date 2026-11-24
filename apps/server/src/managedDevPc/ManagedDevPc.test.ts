@@ -48,6 +48,7 @@ const layerWith = (input: {
   readonly dispatch?: (
     command: OrchestrationV2ServerCommand,
   ) => ReturnType<ThreadManagementService.ThreadManagementService["Service"]["dispatch"]>;
+  readonly launched?: ThreadLaunchService.ThreadLaunchInput[];
 }) =>
   ManagedDevPc.layer.pipe(
     Layer.provide(
@@ -64,7 +65,14 @@ const layerWith = (input: {
         },
       }),
     ),
-    Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+    Layer.provide(
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+        launch: (launch) => {
+          input.launched?.push(launch);
+          return Effect.succeed({ threadId, sequence: 1 } as never);
+        },
+      }),
+    ),
     Layer.provide(ThreadLiveWork.layerOff),
     Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
     Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
@@ -291,4 +299,30 @@ it.effect("refuses a turn or a command for a thread that does not exist", () => 
     expect(pin.refused).toBe(true);
     expect(captured).toEqual([]);
   }).pipe(Effect.provide(layerWith({ captured, shell: null })));
+});
+
+it.effect("launches a new thread for a first message, not an update of one that is missing", () => {
+  const launched: ThreadLaunchService.ThreadLaunchInput[] = [];
+  return Effect.gen(function* () {
+    yield* dispatch({
+      type: "thread.turn.start",
+      commandId: "cmd-first",
+      threadId,
+      message: { messageId: "msg-first", role: "user", text: "Hello", attachments: [] },
+      bootstrap: {
+        createThread: {
+          projectId: "project-1",
+          title: "First",
+          modelSelection: { instanceId: "codex", model: "gpt-5" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        },
+      },
+    });
+    expect(launched).toHaveLength(1);
+    expect(launched[0]?.threadId).toBe(threadId);
+    expect(launched[0]?.reuseExistingThread).not.toBe(true);
+  }).pipe(Effect.provide(layerWith({ captured: [], shell: null, launched })));
 });
