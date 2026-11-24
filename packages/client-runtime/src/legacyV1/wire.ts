@@ -36,7 +36,24 @@ export const V1_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
+  getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
 } as const;
+
+export const V1SubscribeShellInput = Schema.Struct({
+  afterSequence: Schema.optionalKey(NonNegativeInt),
+  requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
+});
+
+/** Without `turnLimit` the machine sends the whole thread, which is what the adapter maps. */
+export const V1SubscribeThreadInput = Schema.Struct({
+  threadId: ThreadId,
+  reasoningMessages: Schema.optionalKey(Schema.Boolean),
+  requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
+});
+
+/** Every V1 orchestration failure carries a message; the rest of its shape is not read. */
+export const V1Failure = Schema.Struct({ _tag: Schema.String, message: Schema.String });
+export type V1Failure = typeof V1Failure.Type;
 
 const SourceProposedPlan = Schema.Struct({ threadId: ThreadId, planId: PlanId });
 
@@ -347,6 +364,15 @@ export const V1ClientCommand = Schema.Union([
           worktreePath: Schema.NullOr(TrimmedNonEmptyString),
           createdAt: IsoDateTime,
         }),
+        prepareWorktree: Schema.optional(
+          Schema.Struct({
+            projectCwd: TrimmedNonEmptyString,
+            baseBranch: TrimmedNonEmptyString,
+            branch: Schema.optional(TrimmedNonEmptyString),
+            startFromOrigin: Schema.optional(Schema.Boolean),
+          }),
+        ),
+        runSetupScript: Schema.optional(Schema.Boolean),
       }),
     ),
     sourceProposedPlan: Schema.optional(SourceProposedPlan),

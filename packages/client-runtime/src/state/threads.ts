@@ -31,6 +31,7 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import { connectionProjectionPhase } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ConnectionWakeups from "../connection/wakeups.ts";
+import { isLegacyOrchestration } from "../connection/compatibility.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
@@ -277,11 +278,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 threadId,
                 error: error.message,
               }),
-              Effect.as(Option.none<OrchestrationV2ThreadDetailSnapshot>()),
+              Effect.as(Option.none<Persistence.CachedThreadSnapshot>()),
             ),
           ),
         )
-      : Option.none<OrchestrationV2ThreadDetailSnapshot>();
+      : Option.none<Persistence.CachedThreadSnapshot>();
   // Old bounded caches can omit a pending question's card; replay alone cannot restore it.
   const cached = Option.filter(
     loaded,
@@ -309,6 +310,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const canLoadHistory = Option.isSome(httpClient) && Option.isSome(historyController);
   const acceptsBoundedSocketSnapshots = yield* Ref.make(canLoadHistory);
   const lastSequence = yield* SubscriptionRef.make(initialSequence);
+  // Which orchestration generation numbered the rows held and the session serving them.
+  let legacyRows = Option.exists(cached, (snapshot) => snapshot.legacyOrchestration === true);
+  let legacySession = false;
   let committed: ThreadResumeSnapshot = {
     state: initialState,
     sequence: initialSequence,
@@ -365,33 +369,35 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       )
     )
       return;
-    yield* cache.saveThread(environmentId, snapshot).pipe(
-      Effect.tap(() =>
-        Effect.sync(() => {
-          savedSnapshot = snapshot;
-          if (
-            !matchesThreadSnapshot(
-              committed,
-              snapshot.projection,
-              snapshot.snapshotSequence,
-              historyMetaFromCachedSnapshot(snapshot),
+    yield* cache
+      .saveThread(environmentId, legacyRows ? { ...snapshot, legacyOrchestration: true } : snapshot)
+      .pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            savedSnapshot = snapshot;
+            if (
+              !matchesThreadSnapshot(
+                committed,
+                snapshot.projection,
+                snapshot.snapshotSequence,
+                historyMetaFromCachedSnapshot(snapshot),
+              )
             )
-          )
-            return;
-          committed = { ...committed, persisted: true };
-          if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
-        }),
-      ),
-      Effect.catch((error) =>
-        Effect.logWarning("Could not persist the thread cache.").pipe(
-          Effect.annotateLogs({
-            environmentId,
-            threadId,
-            error: error.message,
+              return;
+            committed = { ...committed, persisted: true };
+            if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
           }),
         ),
-      ),
-    );
+        Effect.catch((error) =>
+          Effect.logWarning("Could not persist the thread cache.").pipe(
+            Effect.annotateLogs({
+              environmentId,
+              threadId,
+              error: error.message,
+            }),
+          ),
+        ),
+      );
   });
 
   yield* Effect.addFinalizer(() =>
@@ -675,6 +681,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 
     if (item.kind === "snapshot") {
       yield* SubscriptionRef.set(lastSequence, item.snapshotSequence);
+      legacyRows = legacySession;
       const hasProgressiveHistory =
         item.historyCursor !== undefined ||
         item.hasMoreHistory !== undefined ||
@@ -1033,6 +1040,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         }
 
         const config = yield* Effect.option(session.initialConfig);
+        legacySession = Option.exists(
+          yield* SubscriptionRef.get(supervisor.prepared),
+          isLegacyOrchestration,
+        );
         yield* Ref.set(awaitingCompletion, true);
         yield* markSynchronizing;
         yield* Ref.set(resumingLive, false);
@@ -1110,7 +1121,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         }
 
         const sequence = yield* SubscriptionRef.get(lastSequence);
-        const canResume = Option.isSome(current.data);
+        // The two generations number events apart, so a cursor from one means nothing to the other.
+        const canResume = Option.isSome(current.data) && legacyRows === legacySession;
         const acceptBoundedSnapshot = yield* Ref.get(acceptsBoundedSocketSnapshots);
 
         return {

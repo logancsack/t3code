@@ -226,15 +226,17 @@ export function toV1Commands(
 }
 
 /**
- * A first message on a V1 machine is a turn start that also creates its thread. Worktree launches
- * are left to the caller: V1 needs the project's folder for them, which the launch input lacks.
+ * A first message on a V1 machine is a turn start that also creates its thread. A new worktree
+ * needs the project's folder, which the launch input lacks; without it the answer is null.
  */
 export function launchToV1Command(
   input: OrchestrationV2ThreadLaunchInput & { readonly threadId: ThreadId },
   now: string,
+  projectCwd?: string,
 ): V1ClientCommand | null {
   const { initialMessage, workspaceStrategy } = input;
-  if (initialMessage?.messageId === undefined || workspaceStrategy.type === "worktree") return null;
+  if (initialMessage?.messageId === undefined) return null;
+  if (workspaceStrategy.type === "worktree" && projectCwd === undefined) return null;
   return {
     type: "thread.turn.start",
     commandId: input.commandId,
@@ -267,6 +269,21 @@ export function launchToV1Command(
                   : null,
               createdAt: now,
             },
+            ...(workspaceStrategy.type === "worktree" && projectCwd !== undefined
+              ? {
+                  prepareWorktree: {
+                    projectCwd,
+                    baseBranch: workspaceStrategy.baseRef,
+                    ...(workspaceStrategy.branch === undefined
+                      ? {}
+                      : { branch: workspaceStrategy.branch }),
+                    ...(workspaceStrategy.startFromOrigin === undefined
+                      ? {}
+                      : { startFromOrigin: workspaceStrategy.startFromOrigin }),
+                  },
+                  runSetupScript: true,
+                }
+              : {}),
           },
         }),
     createdAt: now,

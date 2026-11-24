@@ -48,6 +48,7 @@ import {
   type ServerConfigProjection,
   withoutEnvironmentThemes,
 } from "../state/serverConfigProjection.ts";
+import { isLegacyOrchestration } from "../connection/compatibility.ts";
 import { environmentMismatchError } from "../connection/errors.ts";
 import { recordServerClock } from "../clock.ts";
 
@@ -201,6 +202,10 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       "connection.environment.id": connection.environmentId,
     });
 
+    // Only a generation-1 machine pays for the adapter's code.
+    const legacy = isLegacyOrchestration(connection)
+      ? yield* Effect.promise(() => import("../legacyV1/session.ts"))
+      : null;
     const connected = yield* Deferred.make<void>();
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
     const pingTimedOut = yield* Ref.make(false);
@@ -252,7 +257,11 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
     const layerSocket = Layer.effect(
       Socket.Socket,
-      Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
+      Effect.map(Effect.service(Socket.Socket), (socket) =>
+        legacy === null
+          ? joinSocketFrameParts(socket)
+          : legacy.readLegacySettings(joinSocketFrameParts(socket)),
+      ),
     ).pipe(
       Layer.provide(
         Socket.layerWebSocket(socketUrl.toString(), {
@@ -300,7 +309,9 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       Effect.ignore,
       Effect.forkScoped,
     );
-    const protocolClient = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
+    const protocolClient = yield* (legacy?.makeLegacyClient ?? makeWsRpcProtocolClient).pipe(
+      Effect.provide(protocolContext),
+    );
     const initialConfigDeferred = yield* Deferred.make<ServerConfig>();
     const serverConfigExit = yield* Deferred.make<void, ServerConfigSubscriptionError>();
     const configSubscriptionClosed = yield* Deferred.make<never, ConnectionAttemptError>();

@@ -4,7 +4,10 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
+import {
+  LegacyOrchestrationSupport,
+  orchestrationProtocolCompatibilityError,
+} from "./compatibility.ts";
 
 import * as ConnectionResolver from "./resolver.ts";
 import * as ConnectionDriver from "./driver.ts";
@@ -20,6 +23,7 @@ export const watchDiscoveredCompatibility = Effect.fn("connection.watchDiscovere
   function* () {
     const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
     const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+    const legacySupport = yield* LegacyOrchestrationSupport;
     const seenChecks = new Map<string, RelayEnvironmentStatusResponse>();
     yield* Stream.merge(
       SubscriptionRef.changes(discovery.state),
@@ -56,7 +60,7 @@ export const watchDiscoveredCompatibility = Effect.fn("connection.watchDiscovere
               (previous.descriptor?.orchestrationProtocolVersion ?? 1) !==
                 (descriptor.orchestrationProtocolVersion ?? 1) ||
               previous.descriptor?.serverVersion !== descriptor.serverVersion;
-            const error = orchestrationProtocolCompatibilityError(descriptor);
+            const error = orchestrationProtocolCompatibilityError(descriptor, legacySupport);
             // A replayed health result must not clear a newer socket rejection.
             if (error !== null || fresh) yield* registry.setCompatibility(environmentId, error);
             seenChecks.set(environmentId, status);

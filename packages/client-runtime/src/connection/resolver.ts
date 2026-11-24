@@ -48,6 +48,7 @@ import { ConnectionBlockedError, type ConnectionAttemptError } from "./model.ts"
 import * as ConnectionProfileStore from "./profileStore.ts";
 import {
   appendOrchestrationProtocol,
+  LegacyOrchestrationSupport,
   orchestrationProtocolCompatibilityError,
 } from "./compatibility.ts";
 import { credentialConnectionId } from "./routes.ts";
@@ -307,6 +308,7 @@ export const make = Effect.gen(function* () {
   const relay = yield* makeRelayBroker();
   const ssh = yield* makeSshBroker();
   const httpClient = yield* HttpClient.HttpClient;
+  const legacySupport = yield* LegacyOrchestrationSupport;
 
   const authorize = Effect.fn("clientRuntime.connection.broker.authorize")(function* (
     entry: ConnectionCatalogEntry,
@@ -352,7 +354,7 @@ export const make = Effect.gen(function* () {
     entry: ConnectionCatalogEntry,
   ) {
     const { prepared, descriptor } = yield* authorize(entry);
-    const compatibilityError = orchestrationProtocolCompatibilityError(descriptor);
+    const compatibilityError = orchestrationProtocolCompatibilityError(descriptor, legacySupport);
     if (compatibilityError !== null) {
       return yield* compatibilityError;
     }

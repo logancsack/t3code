@@ -41,8 +41,14 @@ export const StoredOrchestrationThreadSnapshot = Schema.Struct({
   snapshot: OrchestrationV2ThreadDetailSnapshot.mapFields((fields) => ({
     ...fields,
     projection: OrchestrationV2ThreadProjectionJson,
+    /** Mapped from a generation-1 machine, whose sequences a generation-2 one cannot resume. */
+    legacyOrchestration: Schema.optionalKey(Schema.Literal(true)),
   })),
 });
+
+export type CachedThreadSnapshot = OrchestrationV2ThreadDetailSnapshot & {
+  readonly legacyOrchestration?: true;
+};
 
 export function decodeOrDiscardOrchestrationCache<A, E, R, E2, R2>(
   decode: Effect.Effect<Option.Option<A>, E, R>,

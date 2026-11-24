@@ -8,14 +8,40 @@ import {
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 
-import { ConnectionBlockedError } from "./model.ts";
+import * as Context from "effect/Context";
+
+import { ConnectionBlockedError, type PreparedConnection } from "./model.ts";
+
+/**
+ * True on a host whose machines may still run the original wire protocol. The client then talks
+ * to them through `legacyV1/` instead of refusing them.
+ */
+export class LegacyOrchestrationSupport extends Context.Reference<boolean>(
+  "@t3tools/client-runtime/connection/LegacyOrchestrationSupport",
+  { defaultValue: () => false },
+) {}
+
+/**
+ * Servers shipped before negotiation use the original wire protocol. Through the adapter they
+ * lack what only the current one has: queued and steering messages, read state, tags, forks,
+ * subagents and workflows, decline feedback, force stop and earlier-history paging.
+ */
+export const isLegacyOrchestrationDescriptor = (
+  descriptor: Pick<ExecutionEnvironmentDescriptor, "orchestrationProtocolVersion">,
+) => (descriptor.orchestrationProtocolVersion ?? 1) === 1;
+
+export const isLegacyOrchestration = (prepared: PreparedConnection): boolean =>
+  prepared.descriptor !== undefined && isLegacyOrchestrationDescriptor(prepared.descriptor);
 
 export function orchestrationProtocolCompatibilityError(
   descriptor: ExecutionEnvironmentDescriptor,
+  legacySupport = false,
 ): ConnectionBlockedError | null {
-  // Servers shipped before negotiation use the original wire protocol.
   const serverProtocolVersion = descriptor.orchestrationProtocolVersion ?? 1;
-  if (serverProtocolVersion === ORCHESTRATION_PROTOCOL_VERSION) {
+  if (
+    serverProtocolVersion === ORCHESTRATION_PROTOCOL_VERSION ||
+    (legacySupport && isLegacyOrchestrationDescriptor(descriptor))
+  ) {
     return null;
   }
   return serverProtocolVersion > ORCHESTRATION_PROTOCOL_VERSION

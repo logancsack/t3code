@@ -45,6 +45,17 @@ describe("orchestration protocol compatibility", () => {
     }
   });
 
+  it("accepts protocol 1 only on a host that opted in, and never a newer one", () => {
+    expect(orchestrationProtocolCompatibilityError(descriptor(), true)).toBeNull();
+    expect(orchestrationProtocolCompatibilityError(descriptor(1), true)).toBeNull();
+    expect(orchestrationProtocolCompatibilityError(descriptor(1))).toMatchObject({
+      reason: "unsupported",
+    });
+    expect(
+      orchestrationProtocolCompatibilityError(descriptor(ORCHESTRATION_PROTOCOL_VERSION + 1), true),
+    ).toMatchObject({ reason: "unsupported" });
+  });
+
   it("blocks a different protocol before connecting", () => {
     const error = orchestrationProtocolCompatibilityError(
       descriptor(ORCHESTRATION_PROTOCOL_VERSION + 1),

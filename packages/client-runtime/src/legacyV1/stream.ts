@@ -116,26 +116,45 @@ export interface ThreadStreamStep {
   readonly reload: boolean;
 }
 
-/** One V1 stream item in, the V2 items the client should see out. */
+/**
+ * A batch of V1 stream items in, the V2 items the client should see out. Mapping a thread costs
+ * its whole length, so however many events the batch holds, the thread is mapped once.
+ */
 export function stepThreadStream(
   state: ThreadStreamState,
-  item: V1ThreadStreamItem,
+  batch: V1ThreadStreamItem | ReadonlyArray<V1ThreadStreamItem>,
 ): ThreadStreamStep {
-  if (item.kind === "synchronized") return { state, items: [item], reload: false };
-  if (item.kind === "snapshot") {
-    const { thread } = item.snapshot;
-    const sequence = item.snapshot.snapshotSequence;
-    return { state: { thread, sequence }, items: [snapshotItem(thread, sequence)], reload: false };
+  let { thread, sequence } = state;
+  let synchronized = false;
+  let reload = false;
+  for (const item of Array.isArray(batch) ? batch : [batch as V1ThreadStreamItem]) {
+    if (item.kind === "synchronized") {
+      synchronized = true;
+    } else if (item.kind === "snapshot") {
+      thread = item.snapshot.thread;
+      sequence = item.snapshot.snapshotSequence;
+      reload = false;
+    } else if (!reload && item.event.sequence > sequence) {
+      // A replay can repeat what the snapshot already holds.
+      const next = thread === null ? "reload" : applyThreadEvent(thread, item.event);
+      // The snapshot loaded next holds this event and the rest of the batch.
+      if (next === "reload") {
+        reload = true;
+      } else {
+        thread = next;
+        sequence = item.event.sequence;
+      }
+    }
   }
-  // A replay can repeat what the snapshot already holds.
-  if (item.event.sequence <= state.sequence) return { state, items: [], reload: false };
-  const next = state.thread === null ? "reload" : applyThreadEvent(state.thread, item.event);
-  if (next === "reload") return { state, items: [], reload: true };
-  const sequence = item.event.sequence;
   return {
-    state: { thread: next, sequence },
-    items: [snapshotItem(next, sequence)],
-    reload: false,
+    state: { thread, sequence },
+    items: [
+      ...(reload || thread === null || thread === state.thread
+        ? []
+        : [snapshotItem(thread, sequence)]),
+      ...(synchronized ? [{ kind: "synchronized" as const }] : []),
+    ],
+    reload,
   };
 }
 

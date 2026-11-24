@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientError, type HttpClientResponse } from "effect/http";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import { isLegacyOrchestration } from "../connection/compatibility.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import {
@@ -137,6 +138,8 @@ export const layer: Layer.Layer<ShellSnapshotLoader, never, HttpClient.HttpClien
     );
     return ShellSnapshotLoader.of({
       load: Effect.fn("ShellSnapshotLoader.load")(function (prepared, options) {
+        // A generation-1 machine's HTTP snapshot is in V1's shape; its socket one is mapped.
+        if (isLegacyOrchestration(prepared)) return Effect.succeed(Option.none<ShellHttpAnswer>());
         return fetchEnvironmentShellSnapshot({
           prepared,
           signer,

@@ -1,7 +1,6 @@
 import {
   type EnvironmentId,
   type OrchestrationV2ShellSnapshot,
-  type OrchestrationV2ThreadDetailSnapshot,
   type ServerConfig,
   type ThreadId,
   type VcsListRefsResult,
@@ -14,9 +13,9 @@ import * as Schema from "effect/Schema";
 import type { ConnectionRegistration } from "../connection/catalog.ts";
 import type { DeferredShellSnapshot } from "../state/shellPullRequests.ts";
 import type { ConnectionTarget, PersistedConnectionTarget } from "../connection/model.ts";
-import type { ShellCacheOrigin } from "./orchestrationCache.ts";
+import type { CachedThreadSnapshot, ShellCacheOrigin } from "./orchestrationCache.ts";
 
-export type { ShellCacheOrigin };
+export type { CachedThreadSnapshot, ShellCacheOrigin };
 
 export interface CachedShellSnapshot extends DeferredShellSnapshot {
   readonly origin?: ShellCacheOrigin;
@@ -99,22 +98,16 @@ export class EnvironmentCacheStore extends Context.Service<
     readonly loadThread: (
       environmentId: EnvironmentId,
       threadId: ThreadId,
-    ) => Effect.Effect<
-      Option.Option<OrchestrationV2ThreadDetailSnapshot>,
-      ConnectionPersistenceError
-    >;
+    ) => Effect.Effect<Option.Option<CachedThreadSnapshot>, ConnectionPersistenceError>;
     /** Optional remote copy, refreshed after local content is already visible. */
     readonly refreshThread?: (
       environmentId: EnvironmentId,
       threadId: ThreadId,
       afterSequence: number | null,
-    ) => Effect.Effect<
-      Option.Option<OrchestrationV2ThreadDetailSnapshot>,
-      ConnectionPersistenceError
-    >;
+    ) => Effect.Effect<Option.Option<CachedThreadSnapshot>, ConnectionPersistenceError>;
     readonly saveThread: (
       environmentId: EnvironmentId,
-      snapshot: OrchestrationV2ThreadDetailSnapshot,
+      snapshot: CachedThreadSnapshot,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
     readonly removeThread: (
       environmentId: EnvironmentId,

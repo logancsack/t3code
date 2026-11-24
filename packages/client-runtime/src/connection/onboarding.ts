@@ -43,7 +43,10 @@ import {
 } from "./model.ts";
 import * as Persistence from "../platform/persistence.ts";
 import * as EnvironmentRegistry from "./registry.ts";
-import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
+import {
+  LegacyOrchestrationSupport,
+  orchestrationProtocolCompatibilityError,
+} from "./compatibility.ts";
 import { connectionRoutes, routeEntry, sshTargetKey } from "./routes.ts";
 
 export interface PairingConnectionInput {
@@ -152,7 +155,10 @@ export const preparePairingRegistration = Effect.fn(
     const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
     yield* registry.assertKnownAddress({ ...route, profile: Option.some(route.profile) });
   }
-  const compatibilityError = orchestrationProtocolCompatibilityError(descriptor);
+  const compatibilityError = orchestrationProtocolCompatibilityError(
+    descriptor,
+    yield* LegacyOrchestrationSupport,
+  );
   // An outdated server is still saved so it can be updated from this client.
   if (compatibilityError !== null && compatibilityError.serverUpdateRequired !== true) {
     return yield* compatibilityError;

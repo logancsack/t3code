@@ -6,12 +6,17 @@
  * a command the client builds against the mapped state already names the right V1 target.
  */
 import {
+  CheckpointId,
+  CheckpointScopeId,
   MessageId,
   NodeId,
   ProviderApprovalOption,
   ProviderApprovalDecision,
+  ProviderDriverKind,
   ProviderRequestKind,
   ProviderSessionId,
+  ProviderThreadId,
+  ThreadTokenUsageSnapshot,
   ProviderUserInputAnswers,
   RunId,
   RuntimeRequestId,
@@ -25,6 +30,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
@@ -49,6 +55,7 @@ const text = (value: unknown) =>
   typeof value === "string" && value.trim().length > 0 ? value : undefined;
 
 const isRequestKind = Schema.is(ProviderRequestKind);
+const tokenUsage = Schema.decodeUnknownOption(ThreadTokenUsageSnapshot);
 const isApprovalOption = Schema.is(ProviderApprovalOption);
 const isApprovalDecision = Schema.is(ProviderApprovalDecision);
 const isUserInputAnswers = Schema.is(ProviderUserInputAnswers);
@@ -657,21 +664,77 @@ export function mapThreadProjection(thread: V1Thread): Projection {
     );
   }
 
+  // V1 reports context use as an activity; the client reads it off the active provider thread.
+  const usageActivity = thread.activities.findLast(
+    (activity) => activity.kind === "context-window.updated",
+  );
+  const contextUsage =
+    usageActivity === undefined ? Option.none() : tokenUsage(usageActivity.payload);
+  const providerThread: Projection["providerThreads"][number] | null =
+    usageActivity === undefined || Option.isNone(contextUsage)
+      ? null
+      : {
+          id: ProviderThreadId.make(`legacy-v1:${threadId}`),
+          driver: ProviderDriverKind.make(thread.modelSelection.instanceId),
+          providerInstanceId: thread.modelSelection.instanceId,
+          providerSessionId: null,
+          appThreadId: threadId,
+          ownerNodeId: null,
+          nativeThreadRef: null,
+          nativeConversationHeadRef: null,
+          status: "idle",
+          firstRunOrdinal: null,
+          lastRunOrdinal: null,
+          handoffIds: [],
+          forkedFrom: null,
+          pendingBackgroundTasks: [],
+          contextUsage: contextUsage.value,
+          nativeMetadata: null,
+          goal: null,
+          createdAt: at(thread.createdAt),
+          updatedAt: at(usageActivity.createdAt),
+        };
+
   return {
-    thread: { ...threadFields(thread), lastVisitedAt: null, deletedAt: atOrNull(thread.deletedAt) },
+    thread: {
+      ...threadFields(thread),
+      activeProviderThreadId: providerThread?.id ?? null,
+      lastVisitedAt: null,
+      deletedAt: atOrNull(thread.deletedAt),
+    },
     runs: projectedRuns,
     attempts: [],
     nodes: [],
     subagents: [],
     providerSessions: [],
-    providerThreads: [],
+    providerThreads: providerThread === null ? [] : [providerThread],
     providerTurns: [],
     runtimeRequests: [...requests.values()],
     messages,
     plans,
     turnItems: items,
     checkpointScopes: [],
-    checkpoints: [],
+    // Enough for the diff panel: the diff itself is still asked of the machine by turn count.
+    checkpoints: thread.checkpoints.flatMap((checkpoint) =>
+      checkpoint.checkpointTurnCount === 0
+        ? []
+        : [
+            {
+              id: CheckpointId.make(`legacy-v1:${checkpoint.turnId}`),
+              threadId,
+              scopeId: CheckpointScopeId.make(`legacy-v1:${threadId}`),
+              runId: RunId.make(checkpoint.turnId),
+              nodeId: NodeId.make(`legacy-v1:${checkpoint.turnId}`),
+              parentCheckpointId: null,
+              ordinalWithinScope: checkpoint.checkpointTurnCount,
+              appRunOrdinal: checkpoint.checkpointTurnCount,
+              ref: checkpoint.checkpointRef,
+              status: checkpoint.status,
+              files: checkpoint.files,
+              capturedAt: at(checkpoint.completedAt),
+            },
+          ],
+    ),
     contextHandoffs: [],
     contextTransfers: [],
     visibleTurnItems: items.map((item, position) => ({

@@ -1002,6 +1002,23 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("asks again for a thread cached from a generation-1 machine instead of resuming", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        loadCached: Effect.succeedSome({
+          snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+          projection: BASE_PROJECTION,
+          legacyOrchestration: true as const,
+        }),
+      });
+
+      yield* awaitThreadState(harness.observed, (value) => value.status === "live");
+
+      expect(yield* SubscriptionRef.get(harness.subscriptionCount)).toBe(1);
+      expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBeUndefined();
+    }),
+  );
+
   describe("cached work (#18188)", () => {
     const at = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");
     const parentThreadId = ThreadId.make("thread:parent");

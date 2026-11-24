@@ -7,6 +7,7 @@ import * as Option from "effect/Option";
 import { HttpClient } from "effect/http";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import { isLegacyOrchestration } from "../connection/compatibility.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import {
@@ -77,6 +78,12 @@ export const layer: Layer.Layer<
         prepared: PreparedConnection,
         threadId: ThreadId,
       ) {
+        // A generation-1 machine has no bounded snapshot route; its socket snapshot is mapped.
+        if (isLegacyOrchestration(prepared)) {
+          return Effect.succeed<ThreadSnapshotLoader.ThreadSnapshotLoadResult>({
+            _tag: "unavailable",
+          });
+        }
         return fetchEnvironmentBoundedThreadSnapshot({
           prepared,
           threadId,
