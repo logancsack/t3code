@@ -9,7 +9,6 @@ import type {
   SourceControlProviderInfo,
   SourceControlProviderKind,
   SourceControlRepositoryCloneUrls,
-  SourceControlRepositorySummary,
   SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
 
@@ -202,9 +201,6 @@ export class SourceControlProvider extends Context.Service<
       /** The host the repository is on. Without it, the checkout's host. */
       readonly host?: string;
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, SourceControlProviderError>;
-    readonly listRepositories?: (input: {
-      readonly cwd: string;
-    }) => Effect.Effect<ReadonlyArray<SourceControlRepositorySummary>, SourceControlProviderError>;
     readonly createRepository: (input: {
       readonly cwd: string;
       readonly repository: string;

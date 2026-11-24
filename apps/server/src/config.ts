@@ -95,30 +95,14 @@ export class ServerConfig extends Context.Service<
     readonly devAuthToken?: Redacted.Redacted<string> | undefined;
     readonly devAllowedOrigins: ReadonlyArray<string>;
     readonly noBrowser: boolean;
-    readonly managedDevPc: boolean;
-    /**
-     * How long a stopping server waits for the commands it admitted, and the
-     * turn starts they made, to reach their provider, so its stop marks those
-     * turns to continue (`T3CODE_SHUTDOWN_DRAIN_MS`). Claude's stop then waits
-     * as long again for its CLI to take the prompts sent to it. Unset or 0
-     * waits for nothing: set it only where whatever stops the server allows
-     * twice that before it kills it (the desktop app and service launcher
-     * don't).
-     */
-    readonly shutdownDrainMs?: number | undefined;
-    /**
-     * Whether the Muse Code driver and its authentication connector are
-     * available in this server process. Standalone T3 Code enables the driver
-     * by default; managed deployments can explicitly withhold it while still
-     * running the same release artifact.
-     */
-    readonly museCodeEnabled: boolean;
+    /** Aldo's managed cloud workspaces (`T3CODE_MANAGED_DEVPC`): enables the token-gated `/api/_devpc` routes. */
+    readonly managedDevPc?: boolean | undefined;
     /**
      * Explicit operator gate for Prime Agent subscription OAuth. These
      * third-party OAuth routes stay unavailable by default; API-key and cloud
      * credential routes are unaffected.
      */
-    readonly primeAgentSubscriptionOAuthEnabled: boolean;
+    readonly primeAgentSubscriptionOAuthEnabled?: boolean | undefined;
     /**
      * Shared only with Aldo's loopback workspace gateway. It authenticates
      * managed automation routes that are never exposed by standalone T3 Code.
@@ -297,9 +281,6 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     devUrl,
     devAllowedOrigins: [],
     noBrowser: false,
-    managedDevPc: false,
-    museCodeEnabled: true,
-    primeAgentSubscriptionOAuthEnabled: false,
     startupPresentation: "browser",
   });
 });

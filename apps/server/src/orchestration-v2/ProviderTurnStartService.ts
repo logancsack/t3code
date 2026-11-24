@@ -71,6 +71,7 @@ import {
 } from "@t3tools/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import * as TurnInstructions from "../managedDevPc/TurnInstructions.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import {
   isRestartNoteContinuation,
@@ -277,6 +278,10 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    // Present only where the runtime layer provides it; a harness without it sends none.
+    const turnInstructions = Option.getOrUndefined(
+      yield* Effect.serviceOption(TurnInstructions.TurnInstructions),
+    );
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
@@ -1992,7 +1997,12 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, restartNote]
+          // Aldo's per-turn context rides with a prompt; a native resume or command sends none.
+          const managedInstructions =
+            turnInstructions === undefined || compact || goalCommand || turnInput.resume
+              ? ""
+              : yield* turnInstructions.supply({ runId: run.id, userText: providerMessage.text });
+          const context = [delivery.context, sideChatContext, restartNote, managedInstructions]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;

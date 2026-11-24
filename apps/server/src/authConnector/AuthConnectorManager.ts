@@ -12,7 +12,6 @@ import * as NodeChildProcess from "node:child_process";
 import {
   AuthConnectorError,
   defaultInstanceIdForDriver,
-  PrimeSettings,
   ProviderDriverKind,
   type AuthConnectorField,
   type AuthConnectorMethod,
@@ -24,8 +23,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { ServerConfig } from "../config.ts";
-import { deriveProviderInstanceConfigMap } from "../provider/Layers/ProviderInstanceRegistryHydration.ts";
-import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { writeStoredBitbucketCredentials } from "../sourceControl/BitbucketCredentialStore.ts";
 
@@ -38,7 +37,6 @@ const MAX_OUTPUT_CHARS = 48_000;
 const PRIME_AGENT_MAIN_PROMPT_STABILITY_MS = 2_000;
 const PRIME_AGENT_DRIVER_KIND = ProviderDriverKind.make("primeAgent");
 const ANSI_PATTERN =
-  // eslint-disable-next-line no-control-regex
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
 type PtyProcess = {
@@ -162,7 +160,6 @@ function extractUrl(output: string): string | null {
 function extractTerminalHyperlinkUrl(output: string): string | null {
   // Prime's Ink UI wraps long OAuth URLs at the visible terminal width, but
   // preserves the complete target in an OSC-8 hyperlink escape sequence.
-  // eslint-disable-next-line no-control-regex
   const matches = output.matchAll(/\u001B\]8;;(https?:\/\/[^\u0007\u001B]+)(?:\u0007|\u001B\\)/gu);
   return (
     Array.from(matches, (match) => match[1]).findLast(
@@ -325,7 +322,6 @@ function primeAgentInputValue(
 function hasTerminalControlCharacters(input: string): boolean {
   // Credentials are written to an interactive PTY followed by a carriage return.
   // Reject embedded controls so a pasted value cannot inject another terminal command.
-  // eslint-disable-next-line no-control-regex
   return /[\u0000-\u001F\u007F-\u009F]/u.test(input);
 }
 
@@ -1086,7 +1082,13 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
   }
 }
 
-const decodePrimeSettings = Schema.decodeUnknownEffect(PrimeSettings);
+// What sign-in needs of a Prime Agent instance's settings: whether it is on and what to run.
+const decodePrimeSettings = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+    binaryPath: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("prime-agent"))),
+  }),
+);
 
 const resolvePrimeAgentLaunchSpec = Effect.fn("AuthConnectorManager.resolvePrimeAgentLaunchSpec")(
   function* (
@@ -1141,7 +1143,7 @@ const resolvePrimeAgentLaunchSpec = Effect.fn("AuthConnectorManager.resolvePrime
       ...spec,
       command: primeSettings.binaryPath,
       env: {
-        ...mergeProviderInstanceEnvironment(instance.environment, {}),
+        ...(yield* mergeProviderInstanceEnvironment(instance.environment, {})),
         ...spec.env,
       },
     };
@@ -1266,13 +1268,7 @@ export const start = Effect.fn("AuthConnectorManager.start")(function* (
   AuthConnectorError,
   ServerConfig | ServerSettingsService
 > {
-  const { museCodeEnabled, primeAgentSubscriptionOAuthEnabled } = yield* ServerConfig;
-  if (input.connector === "muse" && !museCodeEnabled) {
-    return yield* connectorError(
-      "start",
-      "Muse Code is not available in this T3 Code environment.",
-    );
-  }
+  const { primeAgentSubscriptionOAuthEnabled } = yield* ServerConfig;
   if (
     input.connector === "prime-agent" &&
     isPrimeAgentSubscriptionMethod(input.method) &&

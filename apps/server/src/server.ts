@@ -52,6 +52,9 @@ import * as SpeechService from "./speech/SpeechService.ts";
 import * as CloudSpeech from "./speech/CloudSpeech.ts";
 import { speechHttpApiLayer } from "./speech/http.ts";
 import { speechStreamRouteLayer } from "./speech/stream.ts";
+import * as ManagedDevPc from "./managedDevPc/ManagedDevPc.ts";
+import * as ManagedDevPcHttp from "./managedDevPc/http.ts";
+import * as ManagedTurnInstructions from "./managedDevPc/TurnInstructions.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as IssueService from "./issue/IssueService.ts";
@@ -864,6 +867,9 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
     speechStreamRouteLayer,
+    ManagedDevPcHttp.layer.pipe(
+      Layer.provide(ManagedDevPc.layer.pipe(Layer.provide(ManagedTurnInstructions.layer))),
+    ),
   ),
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),

@@ -114,6 +114,7 @@ import { RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as NativeChildWorkQuery from "./orchestration-v2/NativeChildWorkQuery.ts";
+import * as AuthConnectorManager from "./authConnector/AuthConnectorManager.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -2630,6 +2631,11 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.serverUpdateProvider]: (input) =>
           providerMaintenanceRunner.updateProvider(input),
+        [WS_METHODS.serverStartAuthConnector]: (input) => AuthConnectorManager.start(input),
+        [WS_METHODS.serverGetAuthConnector]: ({ sessionId }) => AuthConnectorManager.get(sessionId),
+        [WS_METHODS.serverSubmitAuthConnector]: (input) => AuthConnectorManager.submit(input),
+        [WS_METHODS.serverCancelAuthConnector]: ({ sessionId }) =>
+          AuthConnectorManager.cancel(sessionId),
         [WS_METHODS.providerConsumeResetCredit]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
@@ -3619,6 +3625,7 @@ export const layer = Layer.unwrap(
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
     const sql = yield* SqlClient.SqlClient;
+    const { managedDevPc } = yield* ServerConfig.ServerConfig;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3699,7 +3706,11 @@ export const layer = Layer.unwrap(
               Layer.provide(DefectReporter.layer),
               Layer.provide(AcpRegistrySessions.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
-              Layer.provide(ProviderMaintenanceRunner.layer),
+              Layer.provide(
+                managedDevPc
+                  ? ProviderMaintenanceRunner.layerHostManaged
+                  : ProviderMaintenanceRunner.layer,
+              ),
               Layer.provide(Layer.succeed(NpmRelease.NpmRelease, npmRelease)),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.

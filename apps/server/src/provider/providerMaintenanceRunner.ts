@@ -725,3 +725,21 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
 });
 
 export const layer = Layer.effect(ProviderMaintenanceRunner, make());
+
+/**
+ * For Aldo's managed workspaces: their host installs and pins the provider CLIs, and an update
+ * here would replace them under it.
+ */
+export const layerHostManaged = Layer.succeed(
+  ProviderMaintenanceRunner,
+  ProviderMaintenanceRunner.of({
+    updateProvider: Effect.fn("ProviderMaintenanceRunner.refuseHostManagedUpdate")(
+      function* (target) {
+        return yield* new ServerProviderUpdateError({
+          provider: typeof target === "string" ? target : target.provider,
+          reason: "This machine's providers are managed by its host.",
+        });
+      },
+    ),
+  }),
+);

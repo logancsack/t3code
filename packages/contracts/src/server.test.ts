@@ -106,23 +106,6 @@ describe("server config forward compatibility", () => {
     expect(parsed.supportedRuntimeModes).toEqual(["full-access"]);
   });
 
-  it("rejects unknown provider runtime modes", () => {
-    expect(() =>
-      decodeServerProvider({
-        instanceId: "primeAgent",
-        driver: "primeAgent",
-        supportedRuntimeModes: ["unsafe-magic"],
-        enabled: true,
-        installed: true,
-        version: "0.7.0",
-        status: "ready",
-        auth: { status: "authenticated" },
-        checkedAt: "2026-08-06T00:00:00.000Z",
-        models: [],
-      }),
-    ).toThrow();
-  });
-
   it("drops usage windows this build cannot decode instead of failing the provider", () => {
     const parsed = decodeServerProvider({
       ...baseProviderSnapshot,

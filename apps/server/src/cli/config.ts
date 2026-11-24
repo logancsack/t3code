@@ -22,6 +22,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { Argument, Flag } from "effect/cli";
 import * as CliError from "effect/cli/CliError";
 
+import { managedGatewayToken } from "../managedGatewayToken.ts";
 import { readBootstrapEnvelope } from "../bootstrap.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
@@ -173,6 +174,12 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   lan: Config.Boolean("T3CODE_LAN").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  managedDevPc: Config.Boolean("T3CODE_MANAGED_DEVPC").pipe(Config.withDefault(false)),
+  primeAgentSubscriptionOAuthEnabled: Config.Boolean(
+    "T3CODE_PRIME_AGENT_SUBSCRIPTION_OAUTH_ENABLED",
+  ).pipe(Config.withDefault(false)),
+  // Taken out of the environment as the server loads (managedGatewayToken.ts).
+  managedGatewayToken: Config.succeed(managedGatewayToken),
 });
 
 const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
@@ -517,6 +524,11 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ...(devAuthToken === undefined ? {} : { devAuthToken }),
     devAllowedOrigins: env.devAllowedOrigins,
     noBrowser,
+    ...(env.managedDevPc ? { managedDevPc: true } : {}),
+    ...(env.primeAgentSubscriptionOAuthEnabled ? { primeAgentSubscriptionOAuthEnabled: true } : {}),
+    ...(env.managedGatewayToken === undefined
+      ? {}
+      : { managedGatewayToken: env.managedGatewayToken }),
     startupPresentation,
     desktopBootstrapToken,
     ...(desktopBootstrapSecret === undefined ? {} : { desktopBootstrapSecret }),

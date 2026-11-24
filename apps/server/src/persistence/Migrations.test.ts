@@ -48,6 +48,32 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
+  // Aldo's fork recorded its own 55 and 56 before upstream claimed those ids for V2.
+  it.effect(
+    "refuses a database the Aldo fork's first-model build wrote, leaving it untouched",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: 54 });
+        yield* sql`
+        INSERT INTO effect_sql_migrations (migration_id, name)
+        VALUES (55, 'ProposedPlanApproval'), (56, 'RepairEncodedModelOptions')
+      `;
+        const before = yield* history;
+
+        const exit = yield* Effect.exit(runMigrations());
+
+        assert.isTrue(Exit.isFailure(exit));
+        assert.include(String(exit), "55_OrchestrationV2 (recorded: ProposedPlanApproval)");
+        assert.include(
+          String(exit),
+          "56_RemoveRedundantProjectionIndexes (recorded: RepairEncodedModelOptions)",
+        );
+        assert.deepStrictEqual(yield* history, before);
+        assert.strictEqual(yield* v2TableCount, 0);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
   it.effect("refuses to start when a later id would skip V2 migrations", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

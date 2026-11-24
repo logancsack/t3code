@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - the test spawns a real child process to see what it inherits.
+// @effect-diagnostics nodeBuiltinImport:off processEnvInEffect:off - the test spawns a real child process and sets the live environment it inherits.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -34,12 +34,12 @@ const inheritedByChild = () =>
   );
 
 describe("managed gateway token", () => {
-  it("is taken out of the environment as the server's entrypoint loads, so no child process inherits it", async () => {
+  it("is taken out of the environment as the CLI module graph loads, so no child process inherits it", async () => {
     process.env[NAME] = "gateway-token-for-this-start";
     expect(inheritedByChild()).toBe("gateway-token-for-this-start");
 
     vi.resetModules();
-    await import("./bin.ts");
+    await import("./binMain.ts");
 
     expect(process.env[NAME]).toBeUndefined();
     expect(inheritedByChild()).toBe("");

@@ -1,3 +1,4 @@
+import "./managedGatewayToken.ts";
 import { enableCliCompileCache } from "./cliCompileCache.ts";
 
 // Packaged builds load this graph with require(esm): top-level await anywhere in it breaks them.

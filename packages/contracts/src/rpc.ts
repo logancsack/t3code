@@ -33,6 +33,13 @@ import {
   ChatGptHandoffInput,
   ChatGptHandoffState,
 } from "./providerSetup.ts";
+import {
+  AuthConnectorError,
+  AuthConnectorSession,
+  AuthConnectorSessionInput,
+  AuthConnectorStartInput,
+  AuthConnectorSubmitInput,
+} from "./authConnector.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -536,6 +543,10 @@ export const WS_METHODS = {
   serverGetNpmRelease: "server.getNpmRelease",
   serverRefreshProviders: "server.refreshProviders",
   serverUpdateProvider: "server.updateProvider",
+  serverStartAuthConnector: "server.startAuthConnector",
+  serverGetAuthConnector: "server.getAuthConnector",
+  serverSubmitAuthConnector: "server.submitAuthConnector",
+  serverCancelAuthConnector: "server.cancelAuthConnector",
   serverUpdateServer: "server.updateServer",
   serverUpdateServerWithProgress: "server.updateServerWithProgress",
   serverCommitDesktopUpdate: "server.commitDesktopUpdate",
@@ -740,6 +751,32 @@ const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
   payload: ServerProviderUpdateInput,
   success: ServerProviderUpdatedPayload,
   error: Schema.Union([ServerProviderUpdateError, EnvironmentAuthorizationError]),
+});
+
+const AuthConnectorRpcError = Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]);
+
+const WsServerStartAuthConnectorRpc = Rpc.make(WS_METHODS.serverStartAuthConnector, {
+  payload: AuthConnectorStartInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorRpcError,
+});
+
+const WsServerGetAuthConnectorRpc = Rpc.make(WS_METHODS.serverGetAuthConnector, {
+  payload: AuthConnectorSessionInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorRpcError,
+});
+
+const WsServerSubmitAuthConnectorRpc = Rpc.make(WS_METHODS.serverSubmitAuthConnector, {
+  payload: AuthConnectorSubmitInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorRpcError,
+});
+
+const WsServerCancelAuthConnectorRpc = Rpc.make(WS_METHODS.serverCancelAuthConnector, {
+  payload: AuthConnectorSessionInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorRpcError,
 });
 
 const ProviderSetupRpcError = Schema.Union([ProviderSetupError, EnvironmentAuthorizationError]);
@@ -2274,6 +2311,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
+  WsServerStartAuthConnectorRpc,
+  WsServerGetAuthConnectorRpc,
+  WsServerSubmitAuthConnectorRpc,
+  WsServerCancelAuthConnectorRpc,
   WsProviderConsumeResetCreditRpc,
   WsProviderAuthStartRpc,
   WsProviderAuthCompleteRpc,

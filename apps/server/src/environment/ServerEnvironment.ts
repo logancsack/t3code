@@ -196,10 +196,13 @@ export const make = Effect.gen(function* () {
   const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
   const machine = yield* detectServerEnvironmentMachineKind();
   const launcher = yield* resolveServiceLauncherMode();
-  const serverSelfUpdate = resolveServerSelfUpdateCapability({
-    desktopManaged: serverConfig.mode === "desktop",
-    launcherManaged: launcher.managed,
-  });
+  // A managed workspace's host installs and pins the server, so it offers no update of itself.
+  const serverSelfUpdate = serverConfig.managedDevPc
+    ? null
+    : resolveServerSelfUpdateCapability({
+        desktopManaged: serverConfig.mode === "desktop",
+        launcherManaged: launcher.managed,
+      });
   const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
   // The desktop reports whether it can install updates; requests travel over its control fd.
   const desktopAppUpdate =
