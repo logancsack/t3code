@@ -21,6 +21,8 @@ const DEFAULT_TURN_LIMIT = 3;
 
 const noStore = { "cache-control": "no-store" };
 const noStorePrivate = { "cache-control": "no-store, private" };
+// Tells Aldo this gateway honours turnLimit and beforeCursor; a generation-1 machine ignores both.
+const paged = { ...noStorePrivate, "x-devpc-paged": "1" };
 
 const decodeThreadId = Schema.decodeUnknownOption(ThreadId);
 const decodeCommand = Schema.decodeUnknownEffect(LegacyCommand);
@@ -140,7 +142,7 @@ export const layer = Layer.unwrap(
                     thread,
                     ...(page === undefined ? {} : { page: { ...page, snapshotSequence } }),
                   },
-                  { headers: noStorePrivate },
+                  { headers: paged },
                 ),
             }),
           }),
