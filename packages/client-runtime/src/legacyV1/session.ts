@@ -25,6 +25,7 @@ import * as Arr from "effect/Array";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Rpc, RpcClient, RpcGroup } from "effect/rpc";
@@ -40,7 +41,17 @@ import type {
 } from "../rpc/client.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import { launchToV1Command, toV1Commands } from "./commands.ts";
-import { stepThreadStream, type ThreadStreamState } from "./stream.ts";
+import {
+  applyQueueCommand,
+  enqueue,
+  isTurnRunning,
+  observeTurn,
+  takeDue,
+  withQueuedRuns,
+  type ThreadQueue,
+  type V1TurnStart,
+} from "./queue.ts";
+import { snapshotItem, stepThreadStream, type ThreadStreamState } from "./stream.ts";
 import { mapShellStreamItem, mapThreadProjection, mapThreadShell } from "./toV2.ts";
 import {
   V1_WS_METHODS as V1,
@@ -96,14 +107,18 @@ const THREAD_BATCH_SIZE = 256;
 const TOKEN_MODE = '"responseStreamingMode":"token"';
 
 /**
- * A V1 machine can hold a streaming mode this client no longer has, and its config would fail to
- * decode. Quotes inside JSON strings are escaped, so only the setting itself can match.
+ * A V1 machine can hold a streaming mode this client no longer has, for itself or for a project,
+ * and its config would fail to decode. It is the one V1 value this client rejects: everything
+ * else V1 alone has is a field the decode drops. Quotes inside JSON strings are escaped, so only
+ * the setting itself can match.
  */
+export const readLegacyFrame = (frame: string | Uint8Array) =>
+  typeof frame === "string" && frame.includes(TOKEN_MODE)
+    ? frame.replaceAll(TOKEN_MODE, '"responseStreamingMode":"paragraph"')
+    : frame;
+
 export function readLegacySettings(socket: Socket.Socket): Socket.Socket {
-  const read = (frame: string | Uint8Array) =>
-    typeof frame === "string" && frame.includes(TOKEN_MODE)
-      ? frame.replaceAll(TOKEN_MODE, '"responseStreamingMode":"paragraph"')
-      : frame;
+  const read = readLegacyFrame;
   return Socket.make({
     reader: Effect.map(socket.reader, (reader) => ({
       upgrade: reader.upgrade,
@@ -153,13 +168,28 @@ const failWith =
 
 type KnownThread = Pick<
   V1ThreadShell,
-  "title" | "runtimeMode" | "interactionMode" | "worktreePath" | "archivedAt"
+  | "title"
+  | "runtimeMode"
+  | "interactionMode"
+  | "worktreePath"
+  | "archivedAt"
+  | "session"
+  | "latestTurn"
 >;
 
+// Kept for the tab, not the connection: a queued message outlives a socket that drops.
+const tabQueues = new Map<ThreadId, ThreadQueue>();
+
 /** Replaces the orchestration methods of `client` with ones that speak V1 through `v1`. */
-export function wrapLegacyClient(client: WsRpcProtocolClient, v1: V1Client): WsRpcProtocolClient {
+export function wrapLegacyClient(
+  client: WsRpcProtocolClient,
+  v1: V1Client,
+  queues = tabQueues,
+): WsRpcProtocolClient {
   // V1 commands need what V2 leaves to the server: a thread's modes and a project's folder.
   const threads = new Map<ThreadId, KnownThread>();
+  // Rewinding names a turn count only the thread itself carries; the list would overwrite it.
+  const checkpoints = new Map<ThreadId, V1Thread["checkpoints"]>();
   const projectRoots = new Map<ProjectId, string>();
   const rememberShell = (item: V1ShellStreamItem) => {
     switch (item.kind) {
@@ -185,6 +215,55 @@ export function wrapLegacyClient(client: WsRpcProtocolClient, v1: V1Client): WsR
         break;
     }
   };
+  const queueWatchers = new Set<(threadId: ThreadId) => void>();
+  const setQueue = (threadId: ThreadId, queue: ThreadQueue) => {
+    if (queue.messages.length === 0) queues.delete(threadId);
+    else queues.set(threadId, queue);
+    for (const notify of queueWatchers) notify(threadId);
+  };
+  const queueChanges = (threadId: ThreadId) =>
+    Stream.callback<"queue">((mailbox) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const notify = (changed: ThreadId) => {
+            if (changed === threadId) Queue.offerUnsafe(mailbox, "queue");
+          };
+          queueWatchers.add(notify);
+          return notify;
+        }),
+        (notify) => Effect.sync(() => queueWatchers.delete(notify)),
+      ),
+    );
+  // One the machine refused goes back to the front and waits for the user, as Stop leaves it.
+  const sendQueued = (threadId: ThreadId, message: V1TurnStart) =>
+    v1[V1.dispatchCommand](message).pipe(
+      Effect.tapError(() =>
+        Effect.sync(() => {
+          const queue = queues.get(threadId);
+          setQueue(threadId, {
+            messages: [message, ...(queue?.messages ?? [])],
+            held: true,
+            turn: queue?.turn ?? "over",
+          });
+        }),
+      ),
+    );
+  const drain = (threadId: ThreadId) =>
+    Effect.suspend(() => {
+      const queue = queues.get(threadId);
+      const due = queue === undefined ? null : takeDue(queue);
+      if (due === null) return Effect.void;
+      setQueue(threadId, due.queue);
+      return Effect.ignore(sendQueued(threadId, due.send));
+    });
+  const followTurn = (thread: V1ThreadShell) =>
+    Effect.suspend(() => {
+      const queue = queues.get(thread.id);
+      if (queue === undefined) return Effect.void;
+      const next = observeTurn(queue, thread);
+      if (next !== queue) setQueue(thread.id, next);
+      return drain(thread.id);
+    });
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const shellFailure = failWith((message) => new OrchestrationV2GetShellSnapshotError({ message }));
   const readThread = (threadId: ThreadId) =>
@@ -206,12 +285,45 @@ export function wrapLegacyClient(client: WsRpcProtocolClient, v1: V1Client): WsR
           message,
         });
       // The method's input type is the payload's constructor form; the value is the command.
-      const result = toV1Commands(command as OrchestrationV2Command, {
+      const typed = command as OrchestrationV2Command;
+      const queue = "threadId" in typed ? queues.get(typed.threadId) : undefined;
+      if (queue !== undefined && "threadId" in typed) {
+        const { threadId } = typed;
+        const queued = applyQueueCommand(queue, typed);
+        if (queued !== null) {
+          setQueue(threadId, queued.queue);
+          if (queued.send === undefined) yield* drain(threadId);
+          else yield* sendQueued(threadId, queued.send).pipe(Effect.mapError(failWith(reject)));
+          return { sequence: 0 };
+        }
+        if (typed.type === "thread.stop" || typed.type === "run.interrupt") {
+          setQueue(threadId, { ...queue, held: true });
+        }
+      }
+      const result = toV1Commands(typed, {
         now: yield* now,
-        thread: (threadId) => threads.get(threadId),
+        thread: (threadId) => {
+          const known = threads.get(threadId);
+          const reverts = checkpoints.get(threadId);
+          return known && reverts ? { ...known, checkpoints: reverts } : known;
+        },
       });
       if (result.kind === "skip") return { sequence: 0 };
       if (result.kind === "unsupported") return yield* reject(UNSUPPORTED);
+      const [turnStart] = result.commands;
+      if (
+        typed.type === "message.dispatch" &&
+        typed.dispatchMode.type === "queue_after_active" &&
+        turnStart?.type === "thread.turn.start"
+      ) {
+        const known = threads.get(typed.threadId);
+        // Behind what already waits, so a new message never overtakes an older one.
+        if (queue !== undefined || (known !== undefined && isTurnRunning(known))) {
+          setQueue(typed.threadId, enqueue(queue, turnStart));
+          yield* drain(typed.threadId);
+          return { sequence: 0 };
+        }
+      }
       let sequence = 0;
       for (const v1Command of result.commands) {
         ({ sequence } = yield* v1[V1.dispatchCommand](v1Command).pipe(
@@ -299,10 +411,16 @@ export function wrapLegacyClient(client: WsRpcProtocolClient, v1: V1Client): WsR
           ? {}
           : { requestCompletionMarker: input.requestCompletionMarker },
       ).pipe(
-        Stream.map((item) => {
+        Stream.tap((item) => {
           rememberShell(item);
-          return mapShellStreamItem(item);
+          if (item.kind === "thread-removed") queues.delete(item.threadId);
+          return item.kind === "snapshot"
+            ? Effect.forEach(item.snapshot.threads, followTurn, { discard: true })
+            : item.kind === "thread-upserted"
+              ? followTurn(item.thread)
+              : Effect.void;
         }),
+        Stream.map(mapShellStreamItem),
         Stream.mapError(shellFailure),
       ),
 
@@ -310,20 +428,33 @@ export function wrapLegacyClient(client: WsRpcProtocolClient, v1: V1Client): WsR
     [V2.subscribeThread]: ({ threadId }) =>
       readThread(threadId).pipe(
         Stream.groupedWithin(THREAD_BATCH_SIZE, THREAD_BATCH_WINDOW),
+        Stream.merge(queueChanges(threadId), { haltStrategy: "left" }),
         Stream.mapAccumEffect(
           (): ThreadStreamState => ({ thread: null, sequence: 0 }),
           Effect.fnUntraced(function* (state, batch) {
+            if (batch === "queue") {
+              const { thread, sequence } = state;
+              return [state, thread === null ? [] : [snapshotItem(thread, sequence)]] as const;
+            }
             const step = stepThreadStream(state, batch);
             const reloaded = step.reload ? yield* threadSnapshot(threadId) : Option.none();
             const next = Option.isSome(reloaded)
               ? stepThreadStream(step.state, reloaded.value)
               : step;
-            if (next.state.thread !== null) threads.set(threadId, next.state.thread);
+            if (next.state.thread !== null) {
+              threads.set(threadId, next.state.thread);
+              checkpoints.set(threadId, next.state.thread.checkpoints);
+            }
             return [
               next.state,
               Option.isSome(reloaded) ? [...next.items, ...step.items] : step.items,
             ] as const;
           }),
+        ),
+        Stream.map((item) =>
+          item.kind === "snapshot"
+            ? { ...item, projection: withQueuedRuns(item.projection, queues.get(threadId)) }
+            : item,
         ),
         Stream.mapError(threadFailure(threadId)),
       ),
@@ -351,7 +482,10 @@ export function wrapLegacyClient(client: WsRpcProtocolClient, v1: V1Client): WsR
                   message: "The machine did not send this thread.",
                 }),
               ),
-            onSome: (item) => Effect.succeed(mapThreadProjection(item.snapshot.thread)),
+            onSome: (item) =>
+              Effect.succeed(
+                withQueuedRuns(mapThreadProjection(item.snapshot.thread), queues.get(threadId)),
+              ),
           }),
         ),
       ),

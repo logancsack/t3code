@@ -12,7 +12,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 
-import type { V1ClientCommand } from "./wire.ts";
+import type { V1ClientCommand, V1Thread } from "./wire.ts";
 
 /** What a V1 command needs that the V2 command leaves to the thread. */
 export interface V1CommandContext {
@@ -22,6 +22,8 @@ export interface V1CommandContext {
     | {
         readonly runtimeMode: RuntimeMode;
         readonly interactionMode: ProviderInteractionMode;
+        /** Known once the thread itself was read; the thread list does not carry them. */
+        readonly checkpoints?: V1Thread["checkpoints"];
       }
     | undefined;
 }
@@ -135,9 +137,16 @@ export function toV1Commands(
       });
     case "message.dispatch": {
       const thread = context.thread(command.threadId);
-      // V1 has no queue and no steering: a message always starts a turn.
-      if (thread === undefined || command.dispatchMode.type === "steer_active") {
-        return { kind: "unsupported", type: `message.dispatch:${command.dispatchMode.type}` };
+      // A V1 machine takes a message sent mid-turn into that turn where the agent can (Codex)
+      // and behind it otherwise: its steering. What should wait is held by `queue.ts`.
+      // Replacing the running turn has no V1 form.
+      const restart =
+        command.deliveryIntent === "restart" || command.dispatchMode.type === "restart_active";
+      if (thread === undefined || restart) {
+        return {
+          kind: "unsupported",
+          type: `message.dispatch:${restart ? "restart" : command.dispatchMode.type}`,
+        };
       }
       const continuation = command.manualContinuationOfRunId ?? command.restartContinuationOfRunId;
       return send({
@@ -215,10 +224,35 @@ export function toV1Commands(
         requestId: ApprovalRequestId.make(command.requestId),
         createdAt,
       });
+    case "checkpoint.rollback": {
+      // The mapped thread names a checkpoint after its turn (`toV2.ts`); V1 counts turns.
+      const checkpoint = context
+        .thread(command.threadId)
+        ?.checkpoints?.find((known) => `legacy-v1:${known.turnId}` === command.checkpointId);
+      return checkpoint === undefined
+        ? { kind: "unsupported", type: command.type }
+        : send({
+            type:
+              command.restoreFiles === false
+                ? "thread.conversation.revert"
+                : "thread.checkpoint.revert",
+            commandId,
+            threadId: command.threadId,
+            turnCount: checkpoint.checkpointTurnCount,
+            createdAt,
+          });
+    }
     // Read state and tags live only on V2 machines.
     case "thread.visit":
     case "thread.mark-unread":
     case "thread.tag.set":
+    // The queue is this tab's (`queue.ts`); one of these reaching here names a message that left.
+    case "queue.resume":
+    case "queued-run.start":
+    case "queued-run.cancel":
+    case "queued-run.edit":
+    case "queued-run.reorder":
+    case "queued-message.promote-to-steer":
       return { kind: "skip" };
     default:
       return { kind: "unsupported", type: command.type };

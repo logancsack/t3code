@@ -128,6 +128,7 @@ import {
   threadSteersDuringCompaction,
   threadSupportsProviderHandoff,
 } from "@t3tools/client-runtime/state/thread-workflows";
+import { isLegacyOrchestrationDescriptor } from "@t3tools/client-runtime/connection";
 import { compactionBlocksSteering } from "@t3tools/client-runtime/state/composer-dispatch";
 import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
 import { HandoffRow } from "./chat/V2LifecycleRow";
@@ -883,7 +884,12 @@ export default function ChatView(props: ChatViewProps) {
     serverProjection === null ? null : deriveProviderSubagentStatus(serverProjection);
   const isProviderSubagent =
     serverThread !== null && isProviderNativeSubagentThread(serverThread.source);
-  const supportsProviderSwitchingViaHandoff = threadSupportsProviderHandoff(serverProjection);
+  const routeServerConfig = environmentById.get(environmentId)?.serverConfig;
+  // An older machine reached through the generation-1 adapter cannot fork or hand a thread over.
+  const legacyEnvironment =
+    routeServerConfig != null && isLegacyOrchestrationDescriptor(routeServerConfig.environment);
+  const supportsProviderSwitchingViaHandoff =
+    !legacyEnvironment && threadSupportsProviderHandoff(serverProjection);
   const activeLatestRun = isServerThread ? serverLatestRun : (activeThread?.latestRun ?? null);
   const activeActivityRun = isServerThread ? serverActivityRun : (activeThread?.latestRun ?? null);
   const activeRuntime = isServerThread ? serverRuntime : (activeThread?.runtime ?? null);
@@ -3725,7 +3731,10 @@ export default function ChatView(props: ChatViewProps) {
                   // Side chat runs keep no checkpoints to diff, and a fork would promote the side chat.
                   {...(embedded
                     ? {}
-                    : { onOpenTurnDiff: onOpenTurnDiffStable, onForkFromRun: onForkFromRunStable })}
+                    : {
+                        onOpenTurnDiff: onOpenTurnDiffStable,
+                        ...(legacyEnvironment ? {} : { onForkFromRun: onForkFromRunStable }),
+                      })}
                   onOpenThread={onOpenRelatedThreadStable}
                   parentThreadLink={parentThreadLink}
                   workflowOpening={workflowOpening}

@@ -235,14 +235,16 @@ function useMarkThreadUnread() {
   });
   const markThreadUnreadLocal = useUiStateStore((state) => state.markThreadUnread);
   return (target: ScopedThreadRef) => {
-    if (readEnvironmentServerConfigLoaded(target.environmentId)) {
+    const thread = readThreadShell(target);
+    // A server without read state leaves `lastVisitedAt` out, and the watermark is this client's.
+    const serverKeepsVisits = thread === null || thread.lastVisitedAt !== undefined;
+    if (readEnvironmentServerConfigLoaded(target.environmentId) && serverKeepsVisits) {
       void markThreadUnreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId },
       });
       return;
     }
-    const thread = readThreadShell(target);
     markThreadUnreadLocal(scopedThreadKey(target), thread?.latestRun?.completedAt);
   };
 }

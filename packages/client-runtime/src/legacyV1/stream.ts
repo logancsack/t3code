@@ -158,7 +158,10 @@ export function stepThreadStream(
   };
 }
 
-const snapshotItem = (thread: V1Thread, sequence: number): OrchestrationV2ThreadStreamItem => ({
+export const snapshotItem = (
+  thread: V1Thread,
+  sequence: number,
+): OrchestrationV2ThreadStreamItem => ({
   kind: "snapshot",
   snapshotSequence: sequence,
   projection: mapThreadProjection(thread),

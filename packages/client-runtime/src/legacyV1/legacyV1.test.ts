@@ -1,4 +1,6 @@
 import {
+  CheckpointId,
+  CheckpointScopeId,
   CommandId,
   MessageId,
   OrchestrationV2ShellSnapshot,
@@ -461,13 +463,44 @@ describe("commands sent to a generation-1 machine", () => {
     ]);
   });
 
+  it("rewinds to a checkpoint by the turn count the machine knows it under", () => {
+    const { checkpoints } = decodeThread(threadCapture.thread);
+    const checkpoint = checkpoints[0]!;
+    const rollback = {
+      type: "checkpoint.rollback",
+      commandId,
+      threadId,
+      scopeId: CheckpointScopeId.make(`legacy-v1:${threadId}`),
+      checkpointId: CheckpointId.make(`legacy-v1:${checkpoint.turnId}`),
+    } satisfies OrchestrationV2Command;
+    const read: V1CommandContext = {
+      ...context,
+      thread: () => ({ runtimeMode: "full-access", interactionMode: "plan", checkpoints }),
+    };
+    expect(
+      [rollback, { ...rollback, restoreFiles: false }].map((command) => {
+        const result = toV1Commands(command, read);
+        return result.kind === "send" ? result.commands.map((entry) => decodeV1Command(entry)) : [];
+      }),
+    ).toMatchObject([
+      [{ type: "thread.checkpoint.revert", turnCount: checkpoint.checkpointTurnCount }],
+      [{ type: "thread.conversation.revert", turnCount: checkpoint.checkpointTurnCount }],
+    ]);
+    // Until the thread itself was read, its checkpoints are unknown.
+    expect(toV1Commands(rollback, context)).toMatchObject({ kind: "unsupported" });
+  });
+
   it("refuses what a V1 machine cannot do and skips what it does not keep", () => {
     expect(
       toV1Commands(
         { ...dispatch, dispatchMode: { type: "steer_active", targetRunId: RunId.make("run") } },
         context,
       ),
-    ).toEqual({ kind: "unsupported", type: "message.dispatch:steer_active" });
+    ).toMatchObject({ kind: "send", commands: [{ type: "thread.turn.start" }] });
+    expect(toV1Commands({ ...dispatch, deliveryIntent: "restart" }, context)).toEqual({
+      kind: "unsupported",
+      type: "message.dispatch:restart",
+    });
     expect(
       toV1Commands({ type: "thread.visit", commandId, threadId, visitedAt: context.now }, context),
     ).toEqual({ kind: "skip" });

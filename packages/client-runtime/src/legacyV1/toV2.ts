@@ -146,7 +146,7 @@ export function mapThreadShell(thread: V1ThreadShell): OrchestrationV2ThreadShel
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
     itemCount: 0,
     visibleItemCount: 0,
-    lastVisitedAt: null,
+    // No `lastVisitedAt`: V1 keeps no read state, so the client keeps its own watermark.
     ...(status === "running" ? liveWork(thread) : {}),
     deletedAt: null,
   };

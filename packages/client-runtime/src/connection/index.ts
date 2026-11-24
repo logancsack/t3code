@@ -21,6 +21,7 @@ export * as Wakeups from "./wakeups.ts";
 
 export {
   LegacyOrchestrationSupport,
+  isLegacyOrchestrationDescriptor,
   orchestrationProtocolCompatibilityError,
 } from "./compatibility.ts";
 // Flat so consumers' inferred command types can name it.

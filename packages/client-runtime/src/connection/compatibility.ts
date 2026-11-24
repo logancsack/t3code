@@ -26,7 +26,7 @@ export class LegacyOrchestrationSupport extends Context.Reference<boolean>(
  * lack what only the current one has: queued and steering messages, read state, tags, forks,
  * subagents and workflows, decline feedback, force stop and earlier-history paging.
  */
-const isLegacyOrchestrationDescriptor = (
+export const isLegacyOrchestrationDescriptor = (
   descriptor: Pick<ExecutionEnvironmentDescriptor, "orchestrationProtocolVersion">,
 ) => (descriptor.orchestrationProtocolVersion ?? 1) === 1;
 

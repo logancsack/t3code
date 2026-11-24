@@ -420,5 +420,10 @@ export const V1ClientCommand = Schema.Union([
     ...stamped,
     requestId: ApprovalRequestId,
   }),
+  Schema.Struct({
+    type: Schema.Literals(["thread.checkpoint.revert", "thread.conversation.revert"]),
+    ...stamped,
+    turnCount: NonNegativeInt,
+  }),
 ]);
 export type V1ClientCommand = typeof V1ClientCommand.Type;

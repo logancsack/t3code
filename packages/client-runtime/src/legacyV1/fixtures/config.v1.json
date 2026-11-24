@@ -1,0 +1,201 @@
+{
+  "environment": {
+    "environmentId": "legacy-machine",
+    "label": "Legacy machine",
+    "platform": {
+      "os": "linux",
+      "arch": "x64"
+    },
+    "serverVersion": "0.0.44",
+    "orchestrationProtocolVersion": 1,
+    "capabilities": {
+      "repositoryIdentity": true,
+      "connectionProbe": true,
+      "attachmentUploads": true,
+      "questionAttachments": true,
+      "fileAttachments": {
+        "maxUploadBytes": 52428800
+      },
+      "pullRequests": true,
+      "inlineMessageContext": true,
+      "requiredWorktreeBootstrap": true,
+      "threadSettlement": true,
+      "threadAutoSettlement": true,
+      "storageCleanup": true,
+      "projectWorktreeCleanup": true,
+      "threadRestartContinuation": true,
+      "projectSettingsOverrides": true,
+      "threadSnooze": true,
+      "environmentThemes": true,
+      "usageLimitSources": true,
+      "usagePriceOverrides": true,
+      "threadPinning": true,
+      "threadPinReorder": true,
+      "threadActiveReorder": true,
+      "threadAutoSettleOptOut": true,
+      "threadTitleRegeneration": true,
+      "threadPullRequestLinking": true,
+      "threadPullRequests": true,
+      "pullRequestStackActions": true,
+      "agentActivityPublishing": false,
+      "projectCloneTracking": true,
+      "environmentIcon": true
+    }
+  },
+  "auth": {
+    "policy": "remote-reachable",
+    "bootstrapMethods": ["one-time-token"],
+    "sessionMethods": ["browser-session-cookie", "bearer-access-token", "dpop-access-token"],
+    "sessionCookieName": "t3_session"
+  },
+  "cwd": "/vercel/work",
+  "keybindingsConfigPath": "/vercel/.t3/userdata/keybindings.json",
+  "keybindings": [],
+  "issues": [],
+  "providers": [],
+  "availableEditors": [],
+  "observability": {
+    "logsDirectoryPath": "/vercel/.t3/userdata/logs",
+    "localTracingEnabled": true,
+    "otlpTracesEnabled": false,
+    "otlpMetricsEnabled": false,
+    "otlpLogsEnabled": false
+  },
+  "settings": {
+    "worktreeCleanup": null,
+    "storageCleanup": {
+      "worktreeAfterDays": null,
+      "worktreeOnMerge": false,
+      "worktreeOnDelete": false,
+      "worktreeUnchanged": false,
+      "browserArtifactsAfterDays": null,
+      "logsAfterDays": null
+    },
+    "responseStreamingMode": "paragraph",
+    "enableProviderUpdateChecks": true,
+    "continueThreadsAfterServerUpdate": true,
+    "enableAgentBrowserAccess": false,
+    "projectAgentBrowserAccessOverrides": {},
+    "defaultAutoPull": false,
+    "defaultProjectScripts": [],
+    "projectScriptOverrides": {},
+    "projectAutoPullOverrides": {},
+    "defaultModelSelection": null,
+    "defaultRuntimeMode": "full-access",
+    "projectSettingsOverrides": {},
+    "projectSettingsFolded": true,
+    "enableAgentDeviceAccess": false,
+    "enableDeviceSupport": false,
+    "deviceOnboardingCompleted": false,
+    "deviceHosts": [],
+    "sidebarAutoSettleAfterDays": null,
+    "sidebarAutoSettleOnMerge": false,
+    "backgroundActivity": {
+      "schemaVersion": 1,
+      "profile": "balanced",
+      "overrides": {}
+    },
+    "automaticGitFetchInterval": 30000,
+    "providerHealthRefreshInterval": 300000,
+    "backgroundActivityProfile": "balanced",
+    "defaultTheme": "",
+    "defaultThemeSetAt": "",
+    "environmentIcon": null,
+    "newWorktreesStartFromOrigin": true,
+    "worktreeSubmodules": null,
+    "addProjectBaseDirectory": "",
+    "textGenerationModelSelection": {
+      "instanceId": "codex",
+      "model": "gpt-6-luna",
+      "options": [
+        {
+          "id": "reasoningEffort",
+          "value": "low"
+        }
+      ]
+    },
+    "sourceControlWritingStyle": {
+      "mode": "repo_conventions",
+      "customInstructions": "",
+      "followChangeRequestTemplates": true
+    },
+    "sourceControlWriterModelSelection": null,
+    "pullRequestMergeMethod": null,
+    "providers": {
+      "codex": {
+        "enabled": true,
+        "binaryPath": "codex",
+        "homePath": "",
+        "shadowHomePath": "",
+        "launchArgs": "",
+        "customModels": []
+      },
+      "claudeAgent": {
+        "enabled": true,
+        "binaryPath": "claude",
+        "homePath": "",
+        "customModels": [],
+        "launchArgs": "",
+        "autoCompactWindow": ""
+      },
+      "cursor": {
+        "enabled": false,
+        "binaryPath": "cursor-agent",
+        "apiEndpoint": "",
+        "customModels": []
+      },
+      "grok": {
+        "enabled": true,
+        "binaryPath": "grok",
+        "customModels": []
+      },
+      "muse": {
+        "enabled": true,
+        "binaryPath": "muse",
+        "launchArgs": "",
+        "customModels": []
+      },
+      "primeAgent": {
+        "enabled": false,
+        "binaryPath": "prime-agent",
+        "launchArgs": "",
+        "customModels": []
+      },
+      "opencode": {
+        "enabled": true,
+        "binaryPath": "opencode",
+        "serverUrl": "",
+        "serverPassword": "",
+        "customModels": []
+      },
+      "antigravity": {
+        "enabled": false,
+        "authMethod": "oauth-personal",
+        "apiKey": "",
+        "gcpProject": "",
+        "gcpLocation": "",
+        "binaryPath": "",
+        "customModels": []
+      }
+    },
+    "providerInstances": {},
+    "observability": {
+      "otlpTracesUrl": "",
+      "otlpMetricsUrl": "",
+      "otlpLogsUrl": ""
+    },
+    "bitbucket": {
+      "email": "",
+      "accessToken": "",
+      "apiToken": ""
+    },
+    "usageLimitSources": {},
+    "cursorKeychainUsageEnabled": false,
+    "usagePriceOverrides": {}
+  },
+  "shellResumeCompletionMarker": true,
+  "threadResumeCompletionMarker": true,
+  "threadProviderContinuation": true,
+  "threadSnapshotPagination": true,
+  "reasoningMessages": true
+}
