@@ -22,6 +22,7 @@ import { AldoHandoffActions } from "./AldoHandoffCard";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { seedAldoComposer } from "./assistantSession";
 import { AldoApiError } from "./api";
+import { plainCardText } from "./plainCardText";
 import {
   answerAldoThread,
   approveAldoPlan,
@@ -146,7 +147,9 @@ export function NeedsYouCard(props: {
           </div>
           {/* The form asks the question itself; a thread that only waits is asked in plain words, not with its notes. */}
           {c.summary && kind !== "approval" && kind !== "question" && kind !== "waiting" ? (
-            <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm">{c.summary}</p>
+            <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm">
+              {plainCardText(c.summary ?? "")}
+            </p>
           ) : null}
           <div className="mt-3">
             <PendingForm conversation={c} onActed={props.onActed} />
@@ -285,6 +288,11 @@ async function sendAnswer<T>(
       try {
         return await send();
       } catch (cause) {
+        if (
+          cause instanceof AldoApiError &&
+          (cause.body as { decisionChanged?: boolean })?.decisionChanged
+        )
+          throw cause;
         returned.set(key, { ...kept, error: messageOf(cause) });
         toastManager.add({
           type: "error",
@@ -334,7 +342,13 @@ function QuestionForm(props: {
                 props.conversation.thread,
                 props.reply!(String(given[questions[0]!.id])),
               ).then(() => "sent")
-          : () => answerAldoThread(props.conversation.thread, { requestId, answers: given }),
+          : () =>
+              answerAldoThread(props.conversation.thread, {
+                requestId,
+                answers: given,
+                decisionKey: props.conversation.decisionKey,
+                questionIds: props.pending.questions.map((q) => q.id),
+              }),
       );
       toastManager.add({
         type: "success",
@@ -342,7 +356,12 @@ function QuestionForm(props: {
       });
       props.onActed();
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(
+        cause instanceof AldoApiError &&
+          (cause.body as { decisionChanged?: boolean })?.decisionChanged
+          ? null
+          : messageOf(cause),
+      );
       if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(false);
@@ -374,7 +393,7 @@ function QuestionForm(props: {
           <fieldset key={q.id} className="flex flex-col gap-1.5" disabled={busy}>
             <legend className="text-sm">
               {q.header ? <span className="font-medium">{q.header}: </span> : null}
-              {q.question}
+              {plainCardText(q.question)}
             </legend>
             <div className="flex flex-wrap gap-1.5">
               {q.options.map((o) => {
@@ -465,7 +484,11 @@ function ApprovalForm(props: {
     props.onSending?.();
     try {
       const status = await sendAnswer(props.conversation, requestId, {}, () =>
-        answerAldoThread(props.conversation.thread, { requestId, decision }),
+        answerAldoThread(props.conversation.thread, {
+          requestId,
+          decision,
+          decisionKey: props.conversation.decisionKey,
+        }),
       );
       toastManager.add({
         type: "success",
@@ -475,7 +498,12 @@ function ApprovalForm(props: {
       });
       props.onActed();
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(
+        cause instanceof AldoApiError &&
+          (cause.body as { decisionChanged?: boolean })?.decisionChanged
+          ? null
+          : messageOf(cause),
+      );
       if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(null);
@@ -483,7 +511,7 @@ function ApprovalForm(props: {
   };
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-sm">{props.pending.summary}</p>
+      <p className="text-sm">{plainCardText(props.pending.summary)}</p>
       {props.pending.detail ? (
         <div>
           <button
@@ -542,7 +570,13 @@ function PlanForm(props: {
         props.conversation,
         props.plan.id,
         withChanges !== undefined ? { changes: withChanges } : {},
-        () => approveAldoPlan(props.conversation.thread, props.plan.id, withChanges),
+        () =>
+          approveAldoPlan(
+            props.conversation.thread,
+            props.plan.id,
+            withChanges,
+            props.conversation.decisionKey,
+          ),
       );
       toastManager.add({
         type: "success",
@@ -550,7 +584,12 @@ function PlanForm(props: {
       });
       props.onActed();
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(
+        cause instanceof AldoApiError &&
+          (cause.body as { decisionChanged?: boolean })?.decisionChanged
+          ? null
+          : messageOf(cause),
+      );
       if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(false);

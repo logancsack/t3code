@@ -70,6 +70,7 @@ const shown = new Map<
     readonly threadId: string;
     /** The computer it's about. */
     readonly kind: string;
+    readonly decisionKey: string | undefined;
   }
 >();
 
@@ -78,14 +79,23 @@ async function answer(
   kind: string,
   approve: boolean,
   conversation?: string | null,
+  decisionKey?: string,
 ): Promise<void> {
-  const entry = key(environmentId, kind, conversation);
+  const entry = `${key(environmentId, kind, conversation)}:${decisionKey ?? ""}`;
   // Once per ask: a second click before the toast goes doesn't answer again.
   if (answers.has(entry)) return;
   set(answers, entry, approve);
   try {
-    await answerAldoComputer(environmentId, approve, kind, conversation);
+    await answerAldoComputer(environmentId, approve, kind, conversation, decisionKey);
   } catch (cause) {
+    if (
+      cause instanceof AldoApiError &&
+      (cause.body as { decisionChanged?: boolean })?.decisionChanged
+    ) {
+      set(answers, entry, undefined);
+      requestAldoDirectoryRefresh();
+      return;
+    }
     // Asked again, unless it isn't asking anymore (answered elsewhere): the directory settles that.
     const gone = cause instanceof AldoApiError && cause.status === 404;
     set(answers, entry, gone ? false : undefined);
@@ -179,9 +189,10 @@ export function useAldoComputer(
   const entry = computer
     ? key(environmentId, computer.kind, computer.disposable ? computer.t3ThreadId : undefined)
     : "";
+  const answerEntry = `${entry}:${computer?.decisionKey ?? ""}`;
   const answered = useSyncExternalStore(
     subscribe,
-    () => (entry ? answers.get(entry) : undefined),
+    () => (entry ? answers.get(answerEntry) : undefined),
     () => undefined,
   );
   const isStopping = useSyncExternalStore(
@@ -196,7 +207,9 @@ export function useAldoComputer(
     for (const [stored, value] of answers) {
       if (!stored.startsWith(prefix)) continue;
       const asking = computers.find(
-        (c) => key(environmentId, c.kind, c.disposable ? c.t3ThreadId : undefined) === stored,
+        (c) =>
+          `${key(environmentId, c.kind, c.disposable ? c.t3ThreadId : undefined)}:${c.decisionKey ?? ""}` ===
+          stored,
       );
       set(answers, stored, aldoComputerKeptAnswer(asking, value));
     }
@@ -301,11 +314,14 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
     });
     const toastThreadId = aldoComputerToastThread(computer, threadId) as ThreadId;
     const current = shown.get(environmentId);
+    const decisionKey = notice === "ask" ? computer?.decisionKey : undefined;
     // The same notice, for another thread (another thread asks, or the user opened the one that did)
     // or another computer: shown again, there or for it.
     if (
       current?.notice === notice &&
-      (current.threadId !== toastThreadId || current.kind !== kind)
+      (current.threadId !== toastThreadId ||
+        current.kind !== kind ||
+        current.decisionKey !== decisionKey)
     ) {
       shown.delete(environmentId);
       if (current.id !== null) toastManager.close(current.id);
@@ -382,6 +398,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
           stoppable,
           threadId: toastThreadId,
           kind,
+          decisionKey,
         });
       }
     };
@@ -400,6 +417,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
                   kind,
                   true,
                   computer?.disposable ? computer.t3ThreadId : undefined,
+                  computer?.decisionKey,
                 ),
             },
             data: {
@@ -413,6 +431,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
                     kind,
                     false,
                     computer?.disposable ? computer.t3ThreadId : undefined,
+                    computer?.decisionKey,
                   ),
               },
             },
@@ -438,6 +457,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       stoppable,
       threadId: toastThreadId,
       kind,
+      decisionKey,
     });
   }, [answered, computer, environmentId, threadId]);
 }

@@ -1,3 +1,5 @@
+import { useDecisionUpdates } from "./decisionUpdates";
+import { plainCardText } from "./plainCardText";
 // What waits on the user, in Aldo's conversation (AldoConversationPage.tsx):
 // each decision (decisions.logic.ts) as a card that's decided right there,
 // at its creation time among messages and activity. The pending count
@@ -459,6 +461,9 @@ export function DecisionCard(props: {
 }) {
   const d = props.decision;
   const [busy, setBusy] = useState<string | null>(null);
+  const refreshed = useDecisionUpdates(
+    (s) => "conversation" in d && s.refs.includes(d.conversation.ref),
+  );
   const [error, setError] = useState<string | null>(() => decisionErrors.get(d.key) ?? null);
   const sending = useRef(false);
   const card = useRef<HTMLElement>(null);
@@ -478,6 +483,7 @@ export function DecisionCard(props: {
     const { outcome, said } = await decideAldoOutcome(d, choice, { quiet: true });
     sending.current = false;
     setBusy(null);
+    if (outcome === "refreshed") return;
     if (outcome === "failed") {
       const why = said ?? "Couldn't do that. Try again.";
       decisionErrors.set(d.key, why);
@@ -784,11 +790,12 @@ export function DecisionCard(props: {
       body = (
         <div className={cn(INSET, "flex flex-col gap-2")}>
           <p className="text-sm text-muted-foreground leading-6 dark:text-foreground/70">
-            {stripDisplayedPlanMarkdown(d.plan.text)
-              .replace(/^#+ .*\n?/, "")
-              .trim()
-              .split("\n\n")[0]
-              ?.slice(0, 240)}
+            {plainCardText(
+              stripDisplayedPlanMarkdown(d.plan.text)
+                .replace(/^#+ .*\n?/, "")
+                .trim()
+                .split("\n\n")[0] ?? "",
+            ).slice(0, 240)}
           </p>
           <details>
             <summary className={cn(FOCUS, "cursor-pointer rounded-sm py-2 text-sm font-medium")}>
@@ -915,7 +922,12 @@ export function DecisionCard(props: {
   }
 
   return (
-    <CardFrame {...frame} headline={headline}>
+    <CardFrame {...frame} headline={plainCardText(headline)}>
+      {refreshed ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          This request changed. Review it before choosing.
+        </p>
+      ) : null}
       {body}
       {error ? (
         <p role="alert" className="break-words text-sm text-destructive-foreground">

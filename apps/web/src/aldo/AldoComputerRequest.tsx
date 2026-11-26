@@ -1,3 +1,5 @@
+import { AldoApiError } from "./api";
+import { plainCardText } from "./plainCardText";
 // Home offers the same computer request as its thread, at the time it arrived.
 import { useRef, useState } from "react";
 import { cn } from "~/lib/utils";
@@ -24,6 +26,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
         approve,
         request.computer.computer,
         request.conversation.thread.threadId,
+        request.computer.decisionKey,
       );
       addAldoReceipt({
         key: request.key,
@@ -34,6 +37,15 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
       requestAldoDirectoryRefresh();
       void refreshAldoHome();
     } catch (cause) {
+      if (
+        cause instanceof AldoApiError &&
+        (cause.body as { decisionChanged?: boolean })?.decisionChanged
+      ) {
+        await refreshAldoHome();
+        sending.current = false;
+        setBusy(false);
+        return;
+      }
       setError(cause instanceof Error ? cause.message : "Couldn't answer your agent. Try again.");
       sending.current = false;
       setBusy(false);
@@ -53,7 +65,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
       <h3 className="text-sm font-medium">{request.title}</h3>
       <p className="break-words text-sm text-muted-foreground">
         {aldoComputerAskDescription({
-          why: request.computer.why ?? null,
+          why: request.computer.why ? plainCardText(request.computer.why) : null,
           creditsPerHour: request.computer.creditsPerHour,
           disposable: request.computer.disposable,
           concurrentLimit: request.computer.concurrentLimit,

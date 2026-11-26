@@ -639,11 +639,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
       }),
   );
 
-  // The runtime's own abort is a real process; Windows has no POSIX sh.
-  // On CircleCI the abort lands before `initialize` and reads as a cancel, so it is skipped there.
-  it.effect.skipIf(
-    HostProcess.Platform.defaultValue() === "win32" || process.env.CIRCLECI === "true",
-  )(
+  // Wait for initialize before aborting so validation owns the process; an
+  // immediate abort can precede startup and read as cancellation. Windows has no sh.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "explains that the linux-arm64 runtime needs 4 KiB pages when it aborts on a 16 KiB kernel",
     () =>
       Effect.gen(function* () {
@@ -657,7 +655,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
                   "sh",
                   [
                     "-c",
-                    "echo 'F1111 11:50:12.383176 page-size.cc:19] Check failed: sysconf(_SC_PAGE_SIZE) == kPageSize (16384 vs. 4096) Compile-time page size does not match runtime page size' >&2; kill -ABRT $$",
+                    "IFS= read -r initialize; echo 'F1111 11:50:12.383176 page-size.cc:19] Check failed: sysconf(_SC_PAGE_SIZE) == kPageSize (16384 vs. 4096) Compile-time page size does not match runtime page size' >&2; kill -ABRT $$",
                   ],
                   { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
                 ),

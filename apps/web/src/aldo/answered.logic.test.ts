@@ -26,6 +26,19 @@ const homeOf = (...conversations: AldoHomeConversation[]) =>
   ({ conversations }) as unknown as AldoHome;
 const hold = { ask: "r1", at: "2026-10-16T00:00:10Z" };
 
+it("shows a new identical permission after an earlier occurrence was answered", () => {
+  const original = conversation({ decisionKey: "same-content" });
+  const repeated = conversation({
+    decisionKey: "same-content",
+    pending: { ...original.pending!, requestId: "r2" },
+  });
+  expect(
+    withHolds(homeOf(repeated), { t: { ...hold, ask: askOf(original)! } }, Date.parse(hold.at))
+      .holds,
+  ).toEqual({});
+  expect(needsYouKind(repeated)).toBe("approval");
+});
+
 it("names what a conversation waits on to be answered", () => {
   expect(askOf(conversation())).toBe("r1");
   const { pending: _asking, ...planning } = conversation();

@@ -7,6 +7,7 @@
 // if Aldo refuses the answer; the rest
 // leave with the home read refreshed after.
 
+import { useDecisionUpdates } from "./decisionUpdates";
 import { toastManager } from "../components/ui/toast";
 import { toastAldoRule } from "./AldoApprovals";
 import { AldoApiError } from "./api";
@@ -79,7 +80,7 @@ export function choiceWords(decision: AldoDecision, choice: AldoChoice): string 
 }
 
 /** How a decision went: done as chosen, already settled some other way (nothing was done), or not done. */
-export type AldoDecided = "done" | "moved-on" | "failed";
+export type AldoDecided = "done" | "moved-on" | "refreshed" | "failed";
 
 export interface AldoDecidedResult {
   readonly outcome: AldoDecided;
@@ -117,6 +118,7 @@ export async function decideAldoOutcome(
     return { outcome: "moved-on", said };
   };
   try {
+    if ("conversation" in decision) useDecisionUpdates.getState().clear(decision.conversation.ref);
     if (choice.kind === "reply" && decision.kind === "waiting") {
       await replyAldoThread(decision.conversation.thread, choice.text);
       return done(
@@ -160,7 +162,13 @@ export async function decideAldoOutcome(
     if (choice.kind === "plan" && decision.kind === "plan") {
       await sendAldoAnswer(
         decision.conversation,
-        () => approveAldoPlan(decision.conversation.thread, decision.plan.id, choice.changes),
+        () =>
+          approveAldoPlan(
+            decision.conversation.thread,
+            decision.plan.id,
+            choice.changes,
+            decision.conversation.decisionKey,
+          ),
         { afterAccepted: true },
       );
       return done(
@@ -173,6 +181,8 @@ export async function decideAldoOutcome(
         () =>
           answerAldoThread(decision.conversation.thread, {
             requestId: decision.pending.requestId,
+            decisionKey: decision.conversation.decisionKey,
+            questionIds: decision.pending.questions.map((q) => q.id),
             ...(choice.answers ? { answers: choice.answers } : {}),
             ...(choice.text ? { text: choice.text } : {}),
           }),
@@ -186,6 +196,8 @@ export async function decideAldoOutcome(
         () =>
           answerAldoThread(decision.conversation.thread, {
             requestId: decision.pending.requestId,
+            decisionKey: decision.conversation.decisionKey,
+
             decision: choice.decision,
           }),
         { afterAccepted: true },
@@ -194,6 +206,14 @@ export async function decideAldoOutcome(
     }
     return { outcome: "failed", said: null };
   } catch (cause) {
+    if (
+      cause instanceof AldoApiError &&
+      (cause.body as { decisionChanged?: boolean } | undefined)?.decisionChanged
+    ) {
+      if ("conversation" in decision) useDecisionUpdates.getState().note(decision.conversation.ref);
+      await refreshAldoHome();
+      return { outcome: "refreshed", said: null };
+    }
     // What a thread asked, answered elsewhere or replaced by what it asks now (the
     // thread's actions say 409), but a 409 is also "not now" (a plan while the
     // thread works), so it's moved on only once the home read no longer has it.

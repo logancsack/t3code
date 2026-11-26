@@ -24,6 +24,8 @@ import { pullAldoConversation, seedAldoComposer } from "./assistantSession";
 import { refreshAldoHome } from "./homeFeed";
 import { backWhen } from "./notNow.logic";
 import { tapAldoPlan } from "./planApi";
+import { AldoApiError } from "./api";
+import { plainCardText } from "./plainCardText";
 import {
   changedFromRecommended,
   chosenAnswers,
@@ -166,7 +168,13 @@ export function AldoPlanCard(props: {
       await refreshAldoHome();
       void pullAldoConversation();
     } catch (error) {
-      setFailure(failureOf(error));
+      if (
+        !(
+          error instanceof AldoApiError &&
+          (error.body as { decisionChanged?: boolean })?.decisionChanged
+        )
+      )
+        setFailure(failureOf(error));
       void refreshAldoHome();
     } finally {
       setBusy(false);
@@ -239,7 +247,7 @@ export function AldoPlanCard(props: {
           Here’s the plan
         </p>
         <h4 className="text-balance font-semibold text-[16px] leading-[22px] tracking-[-0.01em]">
-          {plan.goal}
+          {plainCardText(plan.goal)}
         </h4>
       </header>
       {plan.steps.length > 0 ? (
@@ -253,7 +261,7 @@ export function AldoPlanCard(props: {
               >
                 {index + 1}
               </span>
-              <span className="min-w-0 break-words">{step}</span>
+              <span className="min-w-0 break-words">{plainCardText(step)}</span>
             </li>
           ))}
         </ol>

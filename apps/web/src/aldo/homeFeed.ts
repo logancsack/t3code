@@ -516,7 +516,7 @@ export async function sendAldoAnswer<T>(
  * the card returns, as Aldo's read has it, only if Aldo refuses.
  */
 export async function sendAldoApproval(
-  approval: Pick<AldoApproval, "id" | "kind">,
+  approval: Pick<AldoApproval, "id" | "kind" | "decisionKey" | "revisedAt">,
   decision: "approve" | "discard" | "always",
   reason?: string,
   spendLimit?: number,
@@ -531,7 +531,14 @@ export async function sendAldoApproval(
     publish();
   }
   try {
-    const sent = await decideAldoApproval(approval.id, decision, reason, spendLimit);
+    const sent = await decideAldoApproval(
+      approval.id,
+      decision,
+      reason,
+      spendLimit,
+      approval.decisionKey,
+      approval.revisedAt,
+    );
     // As Aldo says it stands (decided elsewhere first, say), until a read has it too.
     approvalHolds = {
       ...approvalHolds,

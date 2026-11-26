@@ -673,7 +673,13 @@ it.each(
     expect(card.textContent).toContain(`${rate} credits an hour`);
     expect(container.querySelector('[data-aldo-decision^="waiting:"]')).toBeNull();
     await click([...card.querySelectorAll("button")].find((b) => b.textContent === label)!);
-    expect(backend.computer).toHaveBeenCalledWith("aldo-render", approve, kind, "render");
+    expect(backend.computer).toHaveBeenCalledWith(
+      "aldo-render",
+      approve,
+      kind,
+      "render",
+      undefined,
+    );
     expect(pill()).toBeNull();
     expect(container.querySelector("[data-aldo-computer-request]")).toBeNull();
   },

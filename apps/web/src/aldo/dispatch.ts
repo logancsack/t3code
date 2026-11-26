@@ -420,6 +420,17 @@ export function installAldoCommandDispatch(): void {
         return viaMachine();
       }
     }
+    if (
+      v1.type === "thread.user-input.respond" ||
+      v1.type === "thread.approval.respond" ||
+      (v1.type === "thread.turn.start" && v1.sourceProposedPlan?.threadId === v1.threadId)
+    ) {
+      const { actOnThreadDecision } = await import("./threadDecisionAction");
+      const handled = await actOnThreadDecision(environmentId, v1, command, () =>
+        ensureAldoConnected(environmentId),
+      );
+      if (handled) return SENT;
+    }
     if (v1.type !== "thread.turn.start") {
       // Settling, archiving, renaming... a sleeping machine's thread: at once, without waking it.
       // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
