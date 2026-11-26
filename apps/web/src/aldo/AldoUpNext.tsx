@@ -181,7 +181,7 @@ export function AldoUpNext(props: {
   // What the user hid is under Aldo's name at the top (AldoHiddenFromChat), not here.
   if (decisions.length === 0 && paused.length === 0)
     // Each under what was said when it came up: the way through them all stays at the end.
-    return end && needsNow.length > 1 && waiting.length > 0 ? (
+    return end && waiting.length > 1 ? (
       <div className="flex justify-center">
         <button
           type="button"
@@ -191,7 +191,10 @@ export function AldoUpNext(props: {
           )}
           onClick={() => startAldoWalkthrough(waiting, suggestions)}
         >
-          Go through the {inWords(needsNow.length)} that need you with Aldo
+          {/* Only said as "the N that need you" when it walks every one of them: plans, paused threads and computer requests are answered on their cards. */}
+          {waiting.length === needsNow.length
+            ? `Go through the ${inWords(waiting.length)} that need you with Aldo`
+            : `Go through ${waiting.length} ${waiting.length === 1 ? "decision" : "decisions"} with Aldo`}
         </button>
       </div>
     ) : null;
@@ -202,7 +205,7 @@ export function AldoUpNext(props: {
       {end ? (
         <div className="flex items-center justify-between px-1 pb-0.5 text-[12px] leading-[18px]">
           <h3 className="font-medium text-muted-foreground">Needs you</h3>
-          {needsNow.length > 1 && waiting.length > 0 ? (
+          {waiting.length > 1 ? (
             <button
               type="button"
               className={cn(

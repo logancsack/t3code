@@ -15,6 +15,7 @@ import type {
 } from "./homeApi";
 import { aldoWaitingCount, hiddenNeedsYou, needsYouNow } from "./needsYou.logic";
 import { presenceBoard, presenceLine } from "./presence.logic";
+import { simpleNeedsYou } from "./simpleMode.logic";
 
 const NOW = Date.parse("2026-11-26T05:25:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
@@ -253,5 +254,27 @@ describe("every count on Home agrees", () => {
         .map((i) => i.title)
         .sort(),
     ).toEqual(["1,000-secret limit", "Check MiniMax exposure"]);
+  });
+
+  it("lists on the simple Needs you page exactly what its count says", () => {
+    const read = home({
+      conversations: [
+        thread({ pending: question }),
+        thread({ state: "failed", chatDecision: hidden("failed") }),
+        thread({ pending: question, chatDecision: putOff("later") }),
+      ],
+      approvals: [approval("email"), approval("hid", { chatDecision: hidden("a") } as never)],
+      plans: [plan("goal")],
+    });
+    const list = simpleNeedsYou(read, NOW);
+    const shown =
+      list.payments.length +
+      list.conversations.length +
+      list.merges.length +
+      list.plans.length +
+      list.approvals.filter((a) => a.status === "pending").length;
+    expect(shown).toBe(aldoWaitingCount(read, NOW));
+    expect(list.plans.map((p) => p.id)).toEqual(["goal"]);
+    expect(list.approvals.map((a) => a.id)).toEqual(["email"]);
   });
 });
