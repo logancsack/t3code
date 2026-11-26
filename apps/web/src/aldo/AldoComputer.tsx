@@ -78,13 +78,14 @@ async function answer(
   kind: string,
   approve: boolean,
   conversation?: string | null,
+  decisionKey?: string,
 ): Promise<void> {
   const entry = key(environmentId, kind, conversation);
   // Once per ask: a second click before the toast goes doesn't answer again.
   if (answers.has(entry)) return;
   set(answers, entry, approve);
   try {
-    await answerAldoComputer(environmentId, approve, kind, conversation);
+    await answerAldoComputer(environmentId, approve, kind, conversation, decisionKey);
   } catch (cause) {
     // Asked again, unless it isn't asking anymore (answered elsewhere): the directory settles that.
     const gone = cause instanceof AldoApiError && cause.status === 404;
@@ -400,6 +401,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
                   kind,
                   true,
                   computer?.disposable ? computer.t3ThreadId : undefined,
+                  computer?.decisionKey,
                 ),
             },
             data: {
@@ -413,6 +415,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
                     kind,
                     false,
                     computer?.disposable ? computer.t3ThreadId : undefined,
+                    computer?.decisionKey,
                   ),
               },
             },

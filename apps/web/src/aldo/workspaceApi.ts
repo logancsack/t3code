@@ -250,10 +250,11 @@ export async function answerAldoComputer(
   approve: boolean,
   kind: string,
   t3ThreadId?: string | null,
+  decisionKey?: string,
 ): Promise<void> {
   await api(`/api/environments/${threadIdForEnvironment(environmentId)}/computer`, {
     method: "POST",
-    body: JSON.stringify({ approve, kind, ...(t3ThreadId ? { t3ThreadId } : {}) }),
+    body: JSON.stringify({ approve, kind, decisionKey, ...(t3ThreadId ? { t3ThreadId } : {}) }),
   });
   requestAldoDirectoryRefresh();
 }

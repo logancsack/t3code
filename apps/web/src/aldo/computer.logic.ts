@@ -22,6 +22,7 @@ export type AldoComputerStatus =
 export type AldoComputerKind = "windows" | "gpu";
 
 export interface AldoComputer {
+  readonly decisionKey?: string;
   readonly id?: string;
   readonly disposable?: boolean | undefined;
   readonly concurrentLimit?: number | undefined;

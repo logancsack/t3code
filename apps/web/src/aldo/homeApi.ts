@@ -104,6 +104,7 @@ export interface AldoHomeConversation {
   }>;
   readonly pending?: AldoHomePending;
   readonly plan?: { readonly id: string; readonly text: string };
+  readonly decisionKey?: string | undefined;
   /** Computers requested by this conversation (older Aldo reads may omit the request time). */
   readonly computers?: ReadonlyArray<{
     readonly id?: string;
@@ -115,6 +116,7 @@ export interface AldoHomeConversation {
     readonly status: string;
     readonly why?: string;
     readonly askedAt?: string;
+    readonly decisionKey?: string | undefined;
     /** A yes is for the account, so later threads start it without asking (a newer Aldo). */
     readonly forAccount?: boolean;
     readonly creditsPerHour: number;
@@ -391,6 +393,7 @@ export type AldoApprovalStatus =
   | "withdrawn";
 
 export interface AldoApproval {
+  readonly decisionKey?: string | undefined;
   readonly chatDecision?: AldoChatDecision;
   readonly id: string;
   readonly kind: "email" | "event" | "start" | "confirm";
@@ -456,6 +459,8 @@ export async function decideAldoApproval(
   decision: "approve" | "discard" | "always",
   reason?: string,
   spendLimit?: number,
+  decisionKey?: string,
+  seen?: string,
 ): Promise<{
   readonly approval: Omit<AldoApproval, "threadTitle">;
   readonly message: string;
@@ -465,6 +470,7 @@ export async function decideAldoApproval(
     method: "POST",
     body: JSON.stringify({
       decision,
+      ...(decisionKey ? { decisionKey } : { seen: seen ?? "" }),
       ...(reason ? { reason } : {}),
       ...(spendLimit !== undefined ? { spendLimit } : {}),
     }),
@@ -684,6 +690,8 @@ export async function answerAldoThread(
   target: AldoHomeTarget,
   answer: {
     readonly requestId: string;
+    readonly decisionKey?: string | undefined;
+    readonly questionIds?: ReadonlyArray<string>;
     readonly answers?: Record<string, string | ReadonlyArray<string>>;
     readonly text?: string;
     readonly decision?: string;
@@ -706,10 +714,17 @@ export async function approveAldoPlan(
   target: AldoHomeTarget,
   planId: string,
   changes?: string,
+  decisionKey?: string,
 ): Promise<string> {
   const { status } = await api<{ status: string }>(
     `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
-    postedKept({ action: "approve_plan", t3ThreadId: target.threadId, planId, changes }),
+    postedKept({
+      action: "approve_plan",
+      t3ThreadId: target.threadId,
+      planId,
+      changes,
+      decisionKey,
+    }),
   );
   return status;
 }

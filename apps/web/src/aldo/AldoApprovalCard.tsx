@@ -1,3 +1,4 @@
+import { plainCardText } from "./plainCardText";
 // Full approval controls load when a card is shown, keeping first-run spending choices off the initial Home bundle.
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -112,7 +113,10 @@ export function ApprovalCard(props: ApprovalCardProps) {
       }
     } catch (cause) {
       // A draft that changed since it was shown comes back as it is now, to look at again.
-      setError(messageOf(cause));
+      const refresh =
+        cause instanceof AldoApiError &&
+        (cause.body as { decisionChanged?: boolean })?.decisionChanged;
+      setError(refresh ? null : messageOf(cause));
       const changed = cause instanceof AldoApiError && cause.status === 409;
       toastManager.add({
         type: changed ? "warning" : "error",
@@ -170,7 +174,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
               ))}
             </dl>
           ) : (
-            <p className="mt-0.5 text-muted-foreground text-xs">{a.summary}</p>
+            <p className="mt-0.5 text-muted-foreground text-xs">{plainCardText(a.summary)}</p>
           )}
           {a.body ? (
             <div className="mt-2 flex flex-col gap-1 rounded-lg border border-border/50 bg-background/40 px-2.5 py-2">

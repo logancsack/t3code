@@ -60,26 +60,31 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
   if (kind === "question" && c.pending?.kind === "question")
     return {
       kind,
-      key: `question:${c.ref}:${c.pending.requestId}`,
+      key: `question:${c.ref}:${c.decisionKey ?? c.pending.requestId}`,
       conversation: c,
       pending: c.pending,
     };
   if (kind === "approval" && c.pending?.kind === "approval")
     return {
       kind,
-      key: `approval:${c.ref}:${c.pending.requestId}`,
+      key: `approval:${c.ref}:${c.decisionKey ?? c.pending.requestId}`,
       conversation: c,
       pending: c.pending,
     };
   if (kind === "handoff" && c.pending?.kind === "handoff")
     return {
       kind,
-      key: `handoff:${c.ref}:${c.pending.requestId}`,
+      key: `handoff:${c.ref}:${c.decisionKey ?? c.pending.requestId}`,
       conversation: c,
       pending: c.pending,
     };
   if (kind === "plan" && c.plan)
-    return { kind, key: `plan:${c.ref}:${c.plan.id}`, conversation: c, plan: c.plan };
+    return {
+      kind,
+      key: `plan:${c.ref}:${c.decisionKey ?? c.plan.id}`,
+      conversation: c,
+      plan: c.plan,
+    };
   // By when it got there (a rename or a pin moves `at`, not this), as Aldo's brief keys it.
   if (kind === "failed" || kind === "waiting")
     return { kind, key: `${kind}:${c.ref}:${c.stateAt ?? c.at}`, conversation: c };

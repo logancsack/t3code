@@ -18,8 +18,9 @@ import type { AldoHome, AldoHomeConversation } from "./homeApi";
 export function askOf(c: AldoHomeConversation): string | null {
   if (isPausedMidTurn(c)) return `paused:${c.stateAt ?? c.at}`;
   if (c.state !== "waiting") return null;
-  if (c.pending) return c.pending.kind === "handoff" ? null : c.pending.requestId;
-  return c.plan?.id ?? null;
+  if (c.pending)
+    return c.pending.kind === "handoff" ? null : (c.decisionKey ?? c.pending.requestId);
+  return c.decisionKey ?? c.plan?.id ?? null;
 }
 
 export interface AldoHold {

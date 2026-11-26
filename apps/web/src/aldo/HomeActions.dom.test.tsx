@@ -103,6 +103,7 @@ it("keeps the question visible while sending, prevents repeat taps and records s
     action: "answer",
     t3ThreadId: "c-question",
     requestId: "rollout",
+    questionIds: ["scope"],
     answers: { scope: "Only my account (Recommended)" },
   });
   await act(async () => finish(Response.json({ status: "answered" })));
@@ -205,6 +206,7 @@ it("a turn's own ask is its question, answered with a tap, its notes behind View
     action: "answer",
     t3ThreadId: "c-turn-ask",
     requestId: "ask:turn-9",
+    questionIds: ["ask"],
     answers: { ask: "Aldo's included model usage (Recommended)" },
   });
   expect(useAldoReceipts.getState().receipts[0]?.text).toBe(
@@ -305,13 +307,19 @@ it.each([
     if (kind === "confirm") expect(el.textContent).toContain("Return within 30 days");
     await act(async () => button(label).click());
     expect(backend.fetch.mock.calls[0]![0]).toBe(`/api/approvals/${kind}`);
-    expect(JSON.parse(backend.fetch.mock.calls[0]![1].body)).toEqual({ decision: "approve" });
+    expect(JSON.parse(backend.fetch.mock.calls[0]![1].body)).toEqual({
+      decision: "approve",
+      seen: "",
+    });
   },
 );
 it.each(["email", "event"])("discards a %s through its existing approval route", async (kind) => {
   await mount("aldo-approval", kind);
   await act(async () => button("Discard").click());
-  expect(JSON.parse(backend.fetch.mock.calls[0]![1].body)).toEqual({ decision: "discard" });
+  expect(JSON.parse(backend.fetch.mock.calls[0]![1].body)).toEqual({
+    decision: "discard",
+    seen: "",
+  });
 });
 
 it("submits several selected answers through the same request without a one-choice shortcut", async () => {
@@ -581,4 +589,19 @@ it("repairs an old server's generic synthetic question without changing its resp
   await act(async () => button("I'll provide an existing paid login").click());
   expect(sent().requestId).toBe("ask:old");
   expect(sent().answers.ask).toBe("I'll provide an existing paid login");
+});
+
+it("a changed decision refreshes without an approval receipt or a dead-end error", async () => {
+  await mount("plan");
+  backend.fetch.mockResolvedValueOnce(
+    Response.json(
+      { error: "The request changed. Review what it asks now.", decisionChanged: true },
+      { status: 409 },
+    ),
+  );
+  await act(async () => button("Approve the plan").click());
+  expect(el.querySelector('[role="alert"]')).toBeNull();
+  expect(el.textContent).toContain("This request changed. Review it before choosing.");
+  expect(useAldoReceipts.getState().receipts).toHaveLength(0);
+  expect(backend.toast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "error" }));
 });
