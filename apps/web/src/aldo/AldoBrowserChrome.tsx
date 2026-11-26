@@ -36,6 +36,8 @@ import { aldoOfflineMessage } from "./directory";
 import { aldoTeachClock, type AldoTeach } from "./teach.logic";
 import { fetchAldoPreviews, type AldoPreviews } from "./workspaceApi";
 
+const touchScreen = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+
 export type AldoBrowserTab = { id: string; url: string; title: string };
 
 /** The status line's buttons: the line's own size of text. */
@@ -377,7 +379,7 @@ export function AldoBrowserStatus(props: {
     case "shared":
       indicator = <span className="size-2 rounded-full bg-muted-foreground/35" aria-hidden />;
       title = "Shared with your agent";
-      detail = `Click the ${page} to use it too.`;
+      detail = `${touchScreen ? "Tap" : "Click"} the ${page} to use it too.`;
       actions = take;
       break;
   }
