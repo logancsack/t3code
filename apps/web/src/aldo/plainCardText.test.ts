@@ -10,4 +10,8 @@ it("removes summary formatting while preserving technical paths, names and opera
   expect(plainCardText("# Review\n*Keep it free*, __wait__ and ~~discard~~.")).toBe(
     "Review\nKeep it free, wait and discard.",
   );
+  expect(plainCardText("Rename `__init__` to `__call__`.")).toBe("Rename __init__ to __call__.");
+  expect(plainCardText("Return `Promise<void>` instead of `Promise<string>`.")).toBe(
+    "Return Promise<void> instead of Promise<string>.",
+  );
 });

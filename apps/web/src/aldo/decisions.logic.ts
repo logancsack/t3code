@@ -7,6 +7,7 @@
 // same list, from Aldo's home read. Pure, so it's tested on its own.
 
 import { waitingApprovals } from "./approvals.logic";
+import { askOf } from "./answered.logic";
 import { paymentBrief, paymentWords, waitingPayments } from "./payments.logic";
 import {
   type AldoApproval,
@@ -60,28 +61,28 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
   if (kind === "question" && c.pending?.kind === "question")
     return {
       kind,
-      key: `question:${c.ref}:${c.decisionKey ?? c.pending.requestId}`,
+      key: `question:${c.ref}:${askOf(c)}`,
       conversation: c,
       pending: c.pending,
     };
   if (kind === "approval" && c.pending?.kind === "approval")
     return {
       kind,
-      key: `approval:${c.ref}:${c.decisionKey ?? c.pending.requestId}`,
+      key: `approval:${c.ref}:${askOf(c)}`,
       conversation: c,
       pending: c.pending,
     };
   if (kind === "handoff" && c.pending?.kind === "handoff")
     return {
       kind,
-      key: `handoff:${c.ref}:${c.decisionKey ?? c.pending.requestId}`,
+      key: `handoff:${c.ref}:${c.pending.requestId}`,
       conversation: c,
       pending: c.pending,
     };
   if (kind === "plan" && c.plan)
     return {
       kind,
-      key: `plan:${c.ref}:${c.decisionKey ?? c.plan.id}`,
+      key: `plan:${c.ref}:${askOf(c)}`,
       conversation: c,
       plan: c.plan,
     };

@@ -24,7 +24,7 @@ vi.mock("./workspaceApi", () => ({
 }));
 
 import { ToastProvider } from "../components/ui/toast";
-import { stopAldoComputer } from "./workspaceApi";
+import { answerAldoComputer, stopAldoComputer } from "./workspaceApi";
 import { useAldoComputerAsk } from "./AldoComputer";
 
 let root: Root;
@@ -62,6 +62,35 @@ afterEach(async () => {
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
+
+it.each([true, false])(
+  "answers the updated computer toast with its displayed decision (%s)",
+  async (approve) => {
+    const computer: AldoComputer = {
+      kind: "gpu",
+      status: "asked",
+      why: "Render the draft",
+      error: null,
+      creditsPerHour: 90,
+      decisionKey: "original",
+    };
+    await poll(computer);
+    await poll({ ...computer, why: "Render the revised scene", decisionKey: "revised" });
+    expect(document.body.textContent).toContain("Render the revised scene");
+    const button = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === (approve ? "Start it" : "Not now"),
+    );
+    expect(button).toBeDefined();
+    await act(async () => button!.click());
+    expect(answerAldoComputer).toHaveBeenLastCalledWith(
+      "aldo-notice",
+      approve,
+      "gpu",
+      undefined,
+      "revised",
+    );
+  },
+);
 
 it.each(["windows", "gpu"])("shows %s ready after a queued poll skips starting", async (kind) => {
   const computer: AldoComputer = {
