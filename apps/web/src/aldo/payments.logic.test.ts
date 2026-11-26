@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import { aldoWaitingCount } from "./needsYou.logic";
 
 import { type AldoHome, type AldoPayment } from "./homeApi";
 import {
   aldoDecisions,
-  aldoWaitingCount,
   chatDecisionOf,
   decisionAsk,
   decisionAt,

@@ -2,9 +2,16 @@
 // tested on their own: whether it's on, where its rail shows, which of its
 // places the page is on, and what its Needs-you place lists.
 
-import { type AldoHome, type AldoHomeConversation, type AldoPayment } from "./homeApi";
+import {
+  type AldoApproval,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoPayment,
+} from "./homeApi";
 import { aldoDecisions, putAway, type AldoDecision } from "./decisions.logic";
-import { boardFor } from "./home.logic";
+import { boardFor, sameTarget } from "./home.logic";
+import { needsYouNow } from "./needsYou.logic";
+import { parseAldoPlans, type AldoPlan } from "./plans.logic";
 import { waitingPayments } from "./payments.logic";
 import { aldoSimpleByDefault, type AldoInterest } from "./onboarding.logic";
 
@@ -72,21 +79,35 @@ export interface AldoSimpleNeedsYou {
   readonly conversations: ReadonlyArray<AldoHomeConversation>;
   /** Pull requests ready to merge that no thread above already asks about. */
   readonly merges: ReadonlyArray<Extract<AldoDecision, { kind: "merge" }>>;
+  /** Aldo's approvals: the waiting ones that count, and those just decided or being sent. */
+  readonly approvals: ReadonlyArray<AldoApproval>;
+  /** Plans waiting for the user's Start. */
+  readonly plans: ReadonlyArray<AldoPlan>;
 }
 
 /**
- * What the Needs-you place lists with Aldo's approvals: payments waiting on
- * the user in Link, what the home screen's board lists as needing the user,
- * less what they put away, and the pull requests ready to merge. Together
- * with the waiting approvals that's what aldoWaitingCount counts, so the
- * rail's number matches the list.
+ * What the Needs-you place lists: exactly what aldoWaitingCount counts
+ * (needsYou.logic.ts needsYouNow), so its number matches its list: payments
+ * waiting on the user in Link, Aldo's approvals, the threads that wait, plans
+ * to start and the pull requests ready to merge, but not what they hid, put
+ * off or dismissed.
  */
 export function simpleNeedsYou(home: AldoHome, now: number): AldoSimpleNeedsYou {
+  const counted = needsYouNow(home, now);
+  const keys = new Set(counted.map((item) => item.key));
   return {
-    payments: waitingPayments(home, now),
-    conversations: boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c, now)),
-    merges: aldoDecisions(home, now).filter(
-      (d): d is Extract<AldoDecision, { kind: "merge" }> => d.kind === "merge",
+    payments: waitingPayments(home, now).filter((p) => keys.has(`payment:${p.id}`)),
+    conversations: boardFor(home.conversations, now).needsYou.filter(
+      (c) =>
+        !putAway(c, now) &&
+        counted.some((item) => item.thread && sameTarget(item.thread, c.thread)),
     ),
+    merges: aldoDecisions(home, now).filter(
+      (d): d is Extract<AldoDecision, { kind: "merge" }> => d.kind === "merge" && keys.has(d.key),
+    ),
+    approvals: (home.approvals ?? []).filter(
+      (a) => a.status !== "pending" || keys.has(`aldo:${a.id}`),
+    ),
+    plans: parseAldoPlans(home.plans).filter((p) => keys.has(`home-plan:${p.id}`)),
   };
 }

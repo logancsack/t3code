@@ -14,6 +14,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { ApprovalsSection } from "./AldoApprovals";
+import { AldoPlanCard } from "./AldoPlanCard";
 import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip, Section } from "./AldoHomeBoard";
 import { NeedsYouCard, ThreadLink } from "./AldoHomeInbox";
@@ -24,14 +25,9 @@ import { waitingApprovals } from "./approvals.logic";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome } from "./homeApi";
 import { decideAldo } from "./decide";
-import {
-  aldoDecisions,
-  aldoWaitingCount,
-  decisionAsk,
-  decisionTitle,
-  type AldoDecision,
-} from "./decisions.logic";
+import { aldoDecisions, decisionAsk, decisionTitle, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome } from "./homeFeed";
+import { aldoWaitingCount, needsYouNow } from "./needsYou.logic";
 import { repoChips, type healthIssues } from "./home.logic";
 import { setAldoSimplePlace } from "./simpleMode";
 import { simpleNeedsYou } from "./simpleMode.logic";
@@ -125,7 +121,11 @@ export function AldoSimpleNeedsYou(props: {
 }) {
   const { home, now } = props;
   const list = useMemo(() => (home ? simpleNeedsYou(home, now) : null), [home, now]);
-  const decisions = useMemo(() => (home ? aldoDecisions(home, now) : []), [home, now]);
+  const decisions = useMemo(() => {
+    if (!home) return [];
+    const keys = new Set(needsYouNow(home, now).map((item) => item.key));
+    return aldoDecisions(home, now).filter((d) => keys.has(d.key));
+  }, [home, now]);
   const repos = useMemo(() => (home ? repoChips(home) : []), [home]);
   const refresh = () => void refreshAldoHome();
   const nothing =
@@ -133,7 +133,8 @@ export function AldoSimpleNeedsYou(props: {
     list.payments.length === 0 &&
     list.conversations.length === 0 &&
     list.merges.length === 0 &&
-    waitingApprovals(home?.approvals).length === 0;
+    list.plans.length === 0 &&
+    waitingApprovals(list.approvals).length === 0;
   return (
     <PlacePage
       title="Needs you"
@@ -177,8 +178,19 @@ export function AldoSimpleNeedsYou(props: {
           </ul>
         </Section>
       ) : null}
-      {home?.approvals ? (
-        <ApprovalsSection approvals={home.approvals} now={now} onActed={refresh} />
+      {list && list.approvals.length > 0 ? (
+        <ApprovalsSection approvals={list.approvals} now={now} onActed={refresh} />
+      ) : null}
+      {list && list.plans.length > 0 ? (
+        <Section title="Plans" count={list.plans.length}>
+          <ul className="flex flex-col gap-2">
+            {list.plans.map((plan) => (
+              <li key={plan.id}>
+                <AldoPlanCard plan={plan} />
+              </li>
+            ))}
+          </ul>
+        </Section>
       ) : null}
       {list && list.conversations.length > 0 ? (
         <Section title="Threads" count={list.conversations.length}>

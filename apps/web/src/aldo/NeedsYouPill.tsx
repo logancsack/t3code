@@ -56,7 +56,10 @@ export function NeedsYouPill(props: {
       changes.disconnect();
     };
   }, [scroller, props.items]);
-  const items = props.items.filter((item) => !visible.has(item.key));
+  // The count is the whole list (needsYouNow), wherever it's scrolled to; the pill itself
+  // only shows while something on it is out of view.
+  const items = props.items;
+  const outOfView = items.some((item) => !visible.has(item.key));
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const selected = useRef<NeedsYouItem | null>(null);
@@ -104,9 +107,10 @@ export function NeedsYouPill(props: {
       setBusy(false);
     }
   };
-  const words = items.length
-    ? `Review ${items.length} ${items.length === 1 ? "request" : "requests"}`
-    : null;
+  const words =
+    items.length && outOfView
+      ? `Review ${items.length} ${items.length === 1 ? "request" : "requests"}`
+      : null;
   if (!words) return null;
   return (
     <SheetPrimitive.Root

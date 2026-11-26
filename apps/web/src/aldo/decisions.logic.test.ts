@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { aldoWaitingCount } from "./needsYou.logic";
 
 import {
   type AldoApproval,
@@ -11,7 +12,6 @@ import {
   aldoDecisions,
   aldoChatDecisions,
   aldoHiddenFromChat,
-  aldoWaitingCount,
   decidesInPlace,
   decisionAsk,
   decisionBrief,
@@ -313,8 +313,8 @@ it("keeps a hidden question waiting in overview while removing only its chat car
   const read = home({ conversations: [hidden] });
   expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
   expect(aldoDecisions(read, NOW)).toHaveLength(1);
-  expect(aldoWaitingCount(read, NOW)).toBe(1);
-  // Aldo's conversation lists it under its name, to show again, and doesn't count it.
+  // Aldo's conversation lists it under its name, to show again, and no count has it.
+  expect(aldoWaitingCount(read, NOW)).toBe(0);
   expect(aldoHiddenFromChat(read, NOW)).toEqual([
     { title: hidden.title, chatDecision: hidden.chatDecision },
   ]);

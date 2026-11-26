@@ -42,15 +42,14 @@ import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
-import {
-  aldoChatDecisions,
-  aldoWaitingCount,
-  decisionAt,
-  decisionThread,
-  pausedInChat,
-} from "./decisions.logic";
+import { aldoChatDecisions, decisionAt, decisionThread, pausedInChat } from "./decisions.logic";
 import { AldoComputerRequest } from "./AldoComputerRequest";
-import { computerRequests, dismissedNeedsYou, pendingNeedsYou } from "./needsYou.logic";
+import {
+  aldoWaitingCount,
+  computerRequests,
+  dismissedNeedsYou,
+  needsYouNow,
+} from "./needsYou.logic";
 import { NeedsYouPill } from "./NeedsYouPill";
 import { COMPOSER_ACTION, HomeComposerActions } from "./HomeComposerActions";
 import { feedEvents, withPlans, withReceipts } from "./feed.logic";
@@ -326,7 +325,7 @@ export function AldoConversationPage(props: {
   const pending = useMemo(
     () =>
       home
-        ? pendingNeedsYou(
+        ? needsYouNow(
             home,
             now,
             receipts.map((r) => r.key),
@@ -369,7 +368,17 @@ export function AldoConversationPage(props: {
       ) : null,
     [home, now, computers, told],
   );
-  const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
+  const waiting = useMemo(
+    () =>
+      home
+        ? aldoWaitingCount(
+            home,
+            now,
+            receipts.map((r) => r.key),
+          )
+        : 0,
+    [home, now, receipts],
+  );
   // What finished and hasn't landed stays in view after its lines have left the feed.
   const finished = useMemo(() => (home ? finishedResults(home, now).length : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.

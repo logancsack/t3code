@@ -65,7 +65,7 @@ import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surfac
 import { revealAldoCard, scrollMotion, SHOW_ALDO_DECISION } from "./show";
 import { stalledOf, threadCardOf } from "./threadCard.logic";
 import { startAldoWalkthrough } from "./walkthrough";
-import { inWords } from "./needsYou.logic";
+import { inWords, needsYouNow } from "./needsYou.logic";
 import { paymentWords } from "./payments.logic";
 
 /** Cards shown before the rest unfold. */
@@ -117,9 +117,23 @@ export function AldoUpNext(props: {
     );
     return [...urgent, ...first, ...list.filter((d) => !urgent.includes(d) && !first.includes(d))];
   }, [props.home, props.now, brief, receipts]);
-  const waiting = everything.filter(
-    (d) => d.kind !== "aldo-approval" || d.approval.status === "pending",
+  // The way through them all says the same number as everything else on Home (needsYouNow),
+  // and walks the decisions among them.
+  const needsNow = useMemo(
+    () =>
+      needsYouNow(
+        props.home,
+        props.now,
+        receipts.map((r) => r.key),
+      ),
+    [props.home, props.now, receipts],
   );
+  const waiting = useMemo(() => {
+    const shown = everything.filter(
+      (d) => d.kind !== "aldo-approval" || d.approval.status === "pending",
+    );
+    return shown.filter((d) => needsNow.some((n) => n.key === d.key));
+  }, [everything, needsNow]);
   const { only, placedAt } = props;
   const decisions = useMemo(
     () =>
@@ -177,7 +191,10 @@ export function AldoUpNext(props: {
           )}
           onClick={() => startAldoWalkthrough(waiting, suggestions)}
         >
-          Go through the {inWords(waiting.length)} that need you with Aldo
+          {/* Only said as "the N that need you" when it walks every one of them: plans, paused threads and computer requests are answered on their cards. */}
+          {waiting.length === needsNow.length
+            ? `Go through the ${inWords(waiting.length)} that need you with Aldo`
+            : `Go through ${waiting.length} ${waiting.length === 1 ? "decision" : "decisions"} with Aldo`}
         </button>
       </div>
     ) : null;

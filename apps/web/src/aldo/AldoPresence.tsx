@@ -22,8 +22,8 @@ import { liveLineOf, liveLineText } from "./liveWork.logic";
 import { showAldoThreadCard } from "./show";
 import { useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
-import { AldoHiddenFromChat, DismissChatDecision } from "./DismissChatDecision";
-import { aldoHiddenFromChat } from "./decisions.logic";
+import { AldoHiddenFromChat } from "./DismissChatDecision";
+import { hiddenNeedsYou } from "./needsYou.logic";
 import { AldoFrame } from "./AldoFrame";
 import { dismissNeedsYou, restoreNeedsYou } from "./clearNeedsYou";
 import {
@@ -249,8 +249,12 @@ export function AldoPresence(props: {
     working: board.working,
     coming: board.coming,
   };
-  // Put off (Not now) waits, but isn't counted: it's listed under what needs you, to bring back.
-  const putOff = aldoHiddenFromChat(home, now).filter((item) => item.chatDecision.until);
+  // What they hid or put off (Not now) waits, but isn't counted: it's listed under what needs you, to bring back.
+  const putOff = hiddenNeedsYou(
+    home,
+    now,
+    receipts.map((r) => r.key),
+  ).map((item) => ({ title: item.title, chatDecision: item.hidden }));
   // What each Needs you row can dismiss (an Aldo that can't gives them no way to).
   const dismissable = board.needsYou.rows.filter((row) => row.decision);
   const plans = parseAldoPlans(home.plans);
@@ -282,7 +286,13 @@ export function AldoPresence(props: {
                   tone="attention"
                   title={TITLES.needsYou}
                   section={board.needsYou}
-                  openable={board.needsYou.rows.length + board.putOff + board.dismissed.length > 0}
+                  openable={
+                    board.needsYou.rows.length +
+                      board.putOff +
+                      board.hidden +
+                      board.dismissed.length >
+                    0
+                  }
                   onOpen={() => setView("needsYou")}
                 />
                 <IndexRow
@@ -610,11 +620,6 @@ function ItemRow(props: {
             </button>
           ) : null}
         </div>
-        {row.hidden ? (
-          <div className="pb-1 ps-7">
-            <DismissChatDecision decision={row.hidden} title={row.title} restore />
-          </div>
-        ) : null}
       </div>
     </li>
   );

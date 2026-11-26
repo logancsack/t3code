@@ -1,7 +1,7 @@
 // How many things wait on the user, where they'll see it away from the home
 // screen: "(2) Aldo" in the tab's title, a dot on the favicon, and the
 // installed app's icon badge. All three read the one count the home screen's
-// Threads tab shows (decisions.logic.ts aldoWaitingCount), from Aldo's home
+// Threads tab shows (needsYou.logic.ts aldoWaitingCount), from Aldo's home
 // read, which stays fresh on every page while AldoAttentionSync is mounted.
 // The optional sound (chime.ts) listens to the same read from here.
 
@@ -9,8 +9,9 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 import { useAldoChime } from "./chime";
-import { aldoWaitingCount } from "./decisions.logic";
+import { aldoWaitingCount } from "./needsYou.logic";
 import { useAldoHomeRead } from "./homeFeed";
+import { useAldoReceipts } from "./receipts";
 
 /** The favicon with an amber dot, from Aldo's own mark. */
 const DOTTED_ICON = `data:image/svg+xml,${encodeURIComponent(
@@ -57,7 +58,15 @@ export function subscribeAldoAttentionCount(listener: () => void): () => void {
 export function AldoAttentionSync(): null {
   const { home } = useAldoHomeRead();
   useAldoChime();
-  const count = home ? aldoWaitingCount(home, Date.now()) : 0;
+  // What was just decided here is out of the count before the read catches up, as on the page.
+  const receipts = useAldoReceipts((s) => s.receipts);
+  const count = home
+    ? aldoWaitingCount(
+        home,
+        Date.now(),
+        receipts.map((r) => r.key),
+      )
+    : 0;
   useEffect(() => {
     useCount.setState({ count });
     setFavicon(count > 0);
