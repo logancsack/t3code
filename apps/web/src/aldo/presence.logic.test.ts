@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { aldoWaitingCount } from "./decisions.logic";
+import { aldoWaitingCount } from "./needsYou.logic";
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./homeApi";
 import {
   presenceBoard,
@@ -129,7 +129,7 @@ const board = (read: AldoHome, seenAt: number | null = null) =>
 describe("presenceBoard needs you", () => {
   const hidden = { id: "h", dismissed: true };
   const putOff = { id: "p", dismissed: true, until: ahead(60) };
-  it("counts what's hidden from chat, tagged, as the app badge does", () => {
+  it("leaves what's hidden from chat out of the count, and reports it to show again", () => {
     const b = board(
       home({
         conversations: [
@@ -138,15 +138,22 @@ describe("presenceBoard needs you", () => {
         ],
       }),
     );
-    expect(b.needsYou.rows.map((r) => r.title)).toEqual(
-      expect.arrayContaining(["Shown", "Hidden"]),
-    );
-    expect(b.needsYou.rows).toHaveLength(2);
-    const row = b.needsYou.rows.find((r) => r.title === "Hidden")!;
-    expect(row.detail).toContain("hidden from chat");
-    expect(row.hidden).toEqual(hidden);
-    expect(row.target).toEqual({ environmentId: "aldo-t1", threadId: "th1" });
+    expect(b.needsYou.rows.map((r) => r.title)).toEqual(["Shown"]);
+    expect(b.needsYou.rows[0]!.target).toEqual({ environmentId: "aldo-t1", threadId: "th1" });
+    expect(b.hidden).toBe(1);
     expect(b.needsYou.preview).toContain("1 hidden from chat");
+    // The badge says the same number as the list.
+    expect(
+      aldoWaitingCount(
+        home({
+          conversations: [
+            conversation({ ref: "a", state: "waiting" }),
+            conversation({ ref: "b", state: "waiting", chatDecision: hidden }),
+          ],
+        }),
+        NOW,
+      ),
+    ).toBe(1);
   });
   it("leaves what they put off out of the count, and reports it", () => {
     const b = board(

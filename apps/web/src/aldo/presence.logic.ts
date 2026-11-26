@@ -22,7 +22,7 @@ import type {
   AldoHomePullRequest,
   AldoHomeTarget,
 } from "./homeApi";
-import { dismissedNeedsYou, pendingNeedsYou } from "./needsYou.logic";
+import { dismissedNeedsYou, hiddenNeedsYou, needsYouNow } from "./needsYou.logic";
 import { parseAldoPlans, planPutOff } from "./plans.logic";
 
 export type AldoPresenceState =
@@ -66,8 +66,6 @@ export interface PresenceRow {
   readonly detail: string;
   readonly tone: PresenceTone;
   readonly target: AldoHomeTarget | null;
-  /** Hidden from Aldo's conversation, still waiting: the dismissal that shows it again. */
-  readonly hidden?: AldoChatDecision;
   /** What dismissing it from Needs you names; none from an Aldo that can't dismiss. */
   readonly decision?: AldoChatDecision;
 }
@@ -84,6 +82,8 @@ export interface AldoPresenceBoard {
   readonly dismissed: ReadonlyArray<PresenceRow>;
   /** What they put off ("Not now", decisions and plans): still waiting, but not counted until it's back. */
   readonly putOff: number;
+  /** What they hid from Aldo's conversation with no time to come back: still waiting, never counted, listed to show again. */
+  readonly hidden: number;
   readonly moved: PresenceSection;
   readonly unfinished: PresenceSection;
   readonly working: PresenceSection;
@@ -169,19 +169,16 @@ export function presenceBoard(
 ): AldoPresenceBoard {
   const { now } = options;
 
-  const waiting = pendingNeedsYou(home, now, options.answered, true);
-  const isPutOff = (item: (typeof waiting)[number]) => Boolean(item.hidden?.until);
-  const needs: PresenceRow[] = waiting
-    .filter((item) => !isPutOff(item))
-    .map((item) => ({
-      key: item.key,
-      title: item.title,
-      detail: `${item.kind} · ${elapsed(item.at, now)}${item.hidden ? " · hidden from chat" : ""}`,
-      tone: "attention",
-      target: item.thread ?? null,
-      ...(item.hidden ? { hidden: item.hidden } : {}),
-      ...(item.decision ? { decision: item.decision } : {}),
-    }));
+  // The one list behind every number on Home (needsYou.logic.ts needsYouNow).
+  const waiting = needsYouNow(home, now, options.answered);
+  const needs: PresenceRow[] = waiting.map((item) => ({
+    key: item.key,
+    title: item.title,
+    detail: `${item.kind} · ${elapsed(item.at, now)}`,
+    tone: "attention",
+    target: item.thread ?? null,
+    ...(item.decision ? { decision: item.decision } : {}),
+  }));
   const dismissed: PresenceRow[] = dismissedNeedsYou(home, now, options.answered)
     .filter((item) => !item.decision || !options.clearing?.has(item.decision.id))
     .map((item) => ({
@@ -192,8 +189,10 @@ export function presenceBoard(
       target: item.thread ?? null,
       ...(item.decision ? { decision: item.decision } : {}),
     }));
-  const kinds = [...new Set(waiting.filter((i) => !isPutOff(i)).map((i) => i.kind))].slice(0, 2);
-  const hiddenCount = needs.filter((r) => r.hidden).length;
+  const kinds = [...new Set(waiting.map((i) => i.kind))].slice(0, 2);
+  const hiddenCount = hiddenNeedsYou(home, now, options.answered).filter(
+    (item) => !item.hidden.until,
+  ).length;
   // What the drop-down lists to bring back: put-off decisions and deferred plans.
   const putOff =
     aldoHiddenFromChat(home, now).filter((item) => item.chatDecision.until).length +
@@ -311,10 +310,11 @@ export function presenceBoard(
           ? [kinds.join(" · "), hiddenCount > 0 ? `${hiddenCount} hidden from chat` : ""]
               .filter(Boolean)
               .join(" · ")
-          : putOff + dismissed.length > 0
+          : putOff + hiddenCount + dismissed.length > 0
             ? [
                 "Nothing now",
                 putOff > 0 ? `${putOff} put off` : "",
+                hiddenCount > 0 ? `${hiddenCount} hidden from chat` : "",
                 dismissed.length > 0 ? `${dismissed.length} dismissed` : "",
               ]
                 .filter(Boolean)
@@ -323,6 +323,7 @@ export function presenceBoard(
     },
     dismissed,
     putOff,
+    hidden: hiddenCount,
     moved: {
       rows: moved,
       preview: movedWords.length > 0 ? movedWords.join(" · ") : "Nothing new since you looked",

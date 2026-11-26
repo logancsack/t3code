@@ -24,14 +24,9 @@ import { waitingApprovals } from "./approvals.logic";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome } from "./homeApi";
 import { decideAldo } from "./decide";
-import {
-  aldoDecisions,
-  aldoWaitingCount,
-  decisionAsk,
-  decisionTitle,
-  type AldoDecision,
-} from "./decisions.logic";
+import { aldoDecisions, decisionAsk, decisionTitle, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome } from "./homeFeed";
+import { aldoWaitingCount } from "./needsYou.logic";
 import { repoChips, type healthIssues } from "./home.logic";
 import { setAldoSimplePlace } from "./simpleMode";
 import { simpleNeedsYou } from "./simpleMode.logic";

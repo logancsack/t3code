@@ -753,6 +753,36 @@ it("offers the request shortcut only while the actionable card is outside the co
   expect(pill().textContent).toBe("Review 1 request");
 });
 
+it("says the whole count on the request shortcut even while one request is in view", async () => {
+  let report: IntersectionObserverCallback | undefined;
+  const observed: Element[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        report = callback;
+      }
+      observe(node: Element) {
+        observed.push(node);
+      }
+      disconnect() {}
+    },
+  );
+  message("A later message", 15);
+  await act(async () =>
+    root.render(<Page home={home({ plans: [plan, { ...plan, id: "plan-2" }] })} />),
+  );
+  expect(pill().textContent).toBe("Review 2 requests");
+  await act(async () =>
+    report!(
+      [{ target: observed[0]!, intersectionRatio: 1 } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
+  // One is on screen, the other isn't: the shortcut stays, and counts both, as the header does.
+  expect(pill().textContent).toBe("Review 2 requests");
+});
+
 it("keeps an automated ask from duplicating its action card or reviving it after an answer", async () => {
   const read = home();
   backend.home = {

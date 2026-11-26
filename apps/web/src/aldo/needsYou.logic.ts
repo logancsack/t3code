@@ -80,8 +80,9 @@ export function computerRequests(home: AldoHome): ReadonlyArray<ComputerRequest>
  * conversation's history, `answered` keys the read hasn't caught up with, and
  * plans that start on their own, have started or couldn't start don't wait.
  * `withHidden`: also what they hid from Aldo's conversation or put off, each
- * with its `hidden` dismissal: it all still waits in its thread. What they
- * dismissed from Needs you (`decision.cleared`) is in neither.
+ * with its `hidden` dismissal: it all still waits in its thread, but it isn't
+ * counted (needsYouNow). What they dismissed from Needs you
+ * (`decision.cleared`) is in neither.
  */
 export function pendingNeedsYou(
   home: AldoHome,
@@ -100,6 +101,57 @@ export function dismissedNeedsYou(
 ): ReadonlyArray<NeedsYouItem> {
   return needsYouItems(home, now, answered, true).filter(
     (item) => item.decision?.cleared && !item.decision.removed,
+  );
+}
+
+/**
+ * THE definition of what needs the user now. Every number on Home comes from
+ * here (the status line and its Needs you list, the pill above the composer
+ * and its list, "Go through the N that need you", the Threads tab, the tab
+ * title, the favicon dot and the app badge), so they always agree, and the
+ * cards in the conversation are the same list.
+ *
+ * Counts: a decision or approval of Aldo's, a question, a plan to start or
+ * review, a stopped (failed) thread, a request for a browser or a computer,
+ * a payment, a pull request to merge, and a thread paused mid-turn.
+ * Doesn't count: what the user set aside, which still waits in its thread and
+ * is listed under "Hidden from chat" to show again (`hiddenNeedsYou`): hidden
+ * from Aldo's conversation, or put off until a time ("Not now", snoozed) until
+ * it's back; what they dismissed from Needs you (`cleared`); a thread they put
+ * away; what's already been decided here (`answered`); approvals and plans
+ * that are decided, started, withdrawn or can't start.
+ * Where it's drawn on the screen has no say in it.
+ */
+export function needsYouNow(
+  home: AldoHome,
+  now: number,
+  answered: ReadonlyArray<string> = [],
+): ReadonlyArray<NeedsYouItem> {
+  return pendingNeedsYou(home, now, answered);
+}
+
+/** How many things need the user now: the length of `needsYouNow`. */
+export function aldoWaitingCount(
+  home: AldoHome,
+  now: number,
+  answered: ReadonlyArray<string> = [],
+): number {
+  return needsYouNow(home, now, answered).length;
+}
+
+/**
+ * What still waits but the user set aside, each with its `hidden` dismissal:
+ * hidden from Aldo's conversation (no `until`) or put off until a time. It's
+ * in no count; it's listed to show again. Dismissed from Needs you (cleared)
+ * is in neither.
+ */
+export function hiddenNeedsYou(
+  home: AldoHome,
+  now: number,
+  answered: ReadonlyArray<string> = [],
+): ReadonlyArray<NeedsYouItem & { readonly hidden: AldoChatDecision }> {
+  return pendingNeedsYou(home, now, answered, true).filter(
+    (item): item is NeedsYouItem & { readonly hidden: AldoChatDecision } => Boolean(item.hidden),
   );
 }
 
@@ -150,7 +202,8 @@ function needsYouItems(
       at: p.proposedAt,
       selector: `[data-aldo-plan=${JSON.stringify(p.id)}]`,
       thread: p.thread,
-      ...hiddenBy(p.chatDecision),
+      // A plan stays in the conversation until it's dismissed from Needs you or put off: never hidden there.
+      ...(p.chatDecision ? { decision: p.chatDecision } : {}),
     }));
   const paused = (
     withHidden

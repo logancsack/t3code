@@ -78,8 +78,7 @@ export interface AldoSimpleNeedsYou {
  * What the Needs-you place lists with Aldo's approvals: payments waiting on
  * the user in Link, what the home screen's board lists as needing the user,
  * less what they put away, and the pull requests ready to merge. Together
- * with the waiting approvals that's what aldoWaitingCount counts, so the
- * rail's number matches the list.
+ * with the waiting approvals that's most of what aldoWaitingCount counts.
  */
 export function simpleNeedsYou(home: AldoHome, now: number): AldoSimpleNeedsYou {
   return {

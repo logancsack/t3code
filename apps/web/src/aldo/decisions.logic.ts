@@ -162,24 +162,6 @@ export function aldoDecisions(
   return withCleared ? all : all.filter((d) => !chatDecisionOf(d)?.cleared);
 }
 
-/**
- * How many things wait on the user, for the phone's badge and summary: the
- * decisions, and the threads paused mid-turn (not put away), which opening
- * them carries on rather than a decision. `answered`: decisions' keys the user
- * has just decided, which the home read hasn't caught up with.
- */
-export function aldoWaitingCount(
-  home: AldoHome,
-  now: number,
-  answered: ReadonlyArray<string> = [],
-): number {
-  const paused = home.conversations.filter(
-    (c) => isPausedMidTurn(c) && !putAway(c, now) && !c.chatDecision?.cleared,
-  );
-  const decisions = aldoDecisions(home, now).filter((d) => !answered.includes(d.key));
-  return decisions.length + paused.length;
-}
-
 /** Whether a decision can be made without opening its thread: a tap, or a few words (a payment's, in Link). */
 export function decidesInPlace(decision: AldoDecision): boolean {
   return decision.kind !== "failed" && decision.kind !== "waiting";
@@ -324,7 +306,7 @@ export function aldoChatDecisions(home: AldoHome, now: number): ReadonlyArray<Al
 
 /**
  * What waits on the user that they hid from Aldo's conversation (it still
- * waits in its thread, and counts in aldoWaitingCount): a line each, to show
+ * waits in its thread, and counts in needsYou.logic.ts aldoWaitingCount): a line each, to show
  * again.
  */
 export function aldoHiddenFromChat(

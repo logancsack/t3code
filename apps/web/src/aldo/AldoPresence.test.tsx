@@ -103,7 +103,7 @@ it("says all caught up after a recent read, and checking before one", () => {
   expect(text()).toContain("Checking…");
 });
 
-it("counts a thread hidden from chat in the header and the list, tagged", () => {
+it("leaves a thread hidden from chat out of the header, and lists it to show again", () => {
   show(
     home([
       conversation("a", { state: "waiting" }),
@@ -111,10 +111,10 @@ it("counts a thread hidden from chat in the header and the list, tagged", () => 
       conversation("c", { state: "working", stateAt: ago(3) }),
     ]),
   );
-  expect(text()).toContain("2 need you · 1 working");
+  expect(text()).toContain("1 needs you · 1 working");
   press("Aldo:");
   expect(text()).toContain("Needs you");
-  expect(text()).toContain("hidden from chat");
+  expect(text()).toContain("1 hidden from chat");
   expect(text()).toContain("Moved since you looked");
   expect(text()).toContain("Working");
   expect(text()).toContain("Coming up");
