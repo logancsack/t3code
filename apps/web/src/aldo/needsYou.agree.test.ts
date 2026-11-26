@@ -256,6 +256,28 @@ describe("every count on Home agrees", () => {
     ).toEqual(["1,000-secret limit", "Check MiniMax exposure"]);
   });
 
+  it("is what 'four waiting, a tap approval, a pile set aside' looked like at 12:06 AM: one number, one list", () => {
+    // A question, a report that isn't a question, a payment question and a tap approval wait;
+    // failures, a put-off prompt and a snoozed thread don't count anywhere.
+    const read = home({
+      conversations: [
+        thread({ title: "Invoice", pending: question }),
+        thread({ title: "Merged and live", summary: "Merged and live." }),
+        thread({ title: "Grok payment", pending: permission }),
+        thread({ title: "Failure 1", state: "failed", chatDecision: hidden("f1") }),
+        thread({ title: "Failure 2", state: "failed", chatDecision: hidden("f2") }),
+        thread({ title: "Put off", pending: question, chatDecision: putOff("off") }),
+        thread({ title: "Snoozed", snoozedUntil: ahead(600) }),
+      ],
+      approvals: [approval("server", { kind: "confirm", title: "Rent the Seattle server" })],
+    });
+    const c = everyCount(read);
+    expect(c.items).toHaveLength(4);
+    expect([c.pill, c.badge, c.list.length, c.walkthrough]).toEqual([4, 4, 4, 4]);
+    expect(c.statusLine).toBe("4 things need you");
+    expect(c.items.map((i) => i.title)).toContain("Rent the Seattle server");
+  });
+
   it("lists on the simple Needs you page exactly what its count says", () => {
     const read = home({
       conversations: [
