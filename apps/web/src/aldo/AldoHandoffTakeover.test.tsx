@@ -47,7 +47,16 @@ vi.mock("./morph", () => ({
   aldoMorph: (update: () => void) => update(),
   aldoMorphSource: () => null,
 }));
-vi.mock("./AldoBrowserPanel", () => ({ AldoBrowserPanel: () => <div>Agent browser</div> }));
+/** The panel's word that the phone's keyboard is up, as the takeover hears it. */
+const panel = vi.hoisted(() => ({
+  onTyping: undefined as ((typing: boolean) => void) | undefined,
+}));
+vi.mock("./AldoBrowserPanel", () => ({
+  AldoBrowserPanel: (props: { onTyping?: (typing: boolean) => void }) => {
+    panel.onTyping = props.onTyping;
+    return <div>Agent browser</div>;
+  },
+}));
 
 import { AldoHandoffTakeoverHost } from "./AldoHandoffTakeover";
 import { closeAldoHandoffTakeover } from "./AldoHandoffCard";
@@ -198,4 +207,27 @@ it("on a computer, the takeover is the agent's browser alone, without the site's
   const container = await openAt("/?handoff=h_test");
   expect(container.querySelector('[role="dialog"]')).not.toBeNull();
   expect(container.querySelector('[role="dialog"] a')).toBeNull();
+});
+
+it("gives the page the room while the phone's keyboard is up: what to do and I'm done in one line at the top", async () => {
+  screen(true);
+  read.handoff = signIn;
+  const container = await openAt("/aldo-machine/thread?handoff=h_test");
+  // The panel loads lazily: its word comes once it's there.
+  await vi.waitFor(() => expect(panel.onTyping).toBeDefined());
+  const dialog = container.querySelector('[role="dialog"]')!;
+  const done = () =>
+    [...dialog.querySelectorAll("button")].filter((b) => b.textContent?.includes("I'm done"));
+  expect(dialog.querySelector("footer")).not.toBeNull();
+  expect(done()).toHaveLength(1);
+
+  await act(() => panel.onTyping!(true));
+  expect(dialog.querySelector("footer")).toBeNull();
+  expect(dialog.querySelector("header")?.textContent).toContain("GitHub wants you to sign in");
+  expect(done()).toHaveLength(1);
+  expect(done()[0]?.closest("header")).not.toBeNull();
+
+  await act(() => panel.onTyping!(false));
+  expect(dialog.querySelector("footer")?.textContent).toContain("GitHub wants you to sign in");
+  expect(done()[0]?.closest("footer")).not.toBeNull();
 });

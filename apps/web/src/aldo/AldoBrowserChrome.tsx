@@ -1,8 +1,10 @@
 // The shared browser's chrome (AldoBrowserPanel.tsx), laid out as a browser's
 // own: tabs on top, then the address, then one line that says who's using it
 // (the agent, the user, a recording, an agent waiting on the user) with the
-// one thing to do about it. That line is always there and always one line
-// high, so the page under it never moves.
+// one thing to do about it. That line is always one line high, so the page
+// under it never moves. On a touch screen it's a phone's browser instead: one
+// row (Back, the address with Reload in it, the tabs as a count, More), and
+// the line under it, which makes way for the keyboard.
 
 import {
   AppWindowIcon,
@@ -21,6 +23,15 @@ import {
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "../components/ui/button";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "../components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import { cn } from "../lib/utils";
@@ -39,7 +50,8 @@ import { fetchAldoPreviews, type AldoPreviews } from "./workspaceApi";
 export type AldoBrowserTab = { id: string; url: string; title: string };
 
 /** The status line's buttons: the line's own size of text. */
-const LINE_BUTTON = "gap-1.5 px-2.5 sm:text-[13px]";
+const LINE_BUTTON =
+  "gap-1.5 px-2.5 sm:text-[13px] pointer-coarse:h-9 pointer-coarse:px-3.5 pointer-coarse:text-sm";
 
 /** How often a blank tab reads the thread's previews again. */
 const PREVIEWS_EVERY_MS = 15_000;
@@ -158,6 +170,65 @@ export function AldoBrowserTabs(props: {
   );
 }
 
+/** The tabs where there's no room for a row of them: how many, and a menu of them. */
+export function AldoBrowserTabsMenu(props: {
+  tabs: ReadonlyArray<AldoBrowserTab>;
+  active: string | null;
+  loading: boolean;
+  onActivate: (id: string) => void;
+  onClose: (id: string) => void;
+  onNew: () => void;
+  connected: boolean;
+}) {
+  const active = props.active;
+  return (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-lg"
+            aria-label={`Tabs: ${props.tabs.length} open`}
+          />
+        }
+      >
+        <span
+          aria-hidden
+          className="flex size-[22px] items-center justify-center rounded-[6px] border-[1.5px] border-current font-semibold text-[11px] leading-none tabular-nums"
+        >
+          {Math.min(99, props.tabs.length)}
+        </span>
+      </MenuTrigger>
+      <MenuPopup align="end" className="w-72 max-w-[calc(100vw-1rem)]">
+        <MenuRadioGroup value={active ?? ""} onValueChange={(id) => props.onActivate(String(id))}>
+          {props.tabs.map((tab) => (
+            <MenuRadioItem key={tab.id} value={tab.id} className="min-h-11">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <TabIcon url={tab.url} loading={tab.id === active && props.loading} />
+                <span className="min-w-0 truncate">{aldoTabTitle(tab)}</span>
+              </span>
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+        <MenuSeparator />
+        <MenuItem className="min-h-11" disabled={!props.connected} onClick={props.onNew}>
+          <PlusIcon className="size-3.5" />
+          New tab
+        </MenuItem>
+        <MenuItem
+          className="min-h-11"
+          disabled={!active}
+          onClick={() => active && props.onClose(active)}
+        >
+          <XIcon className="size-3.5" />
+          Close this tab
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 /** Browser or Desktop: the page alone, or the agent's whole screen. */
 export function AldoBrowserViewSwitch(props: {
   view: "browser" | "desktop";
@@ -184,7 +255,7 @@ export function AldoBrowserViewSwitch(props: {
                 aria-label={label}
                 onClick={() => props.onChange(value)}
                 className={cn(
-                  "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9 pointer-coarse:px-3",
                   props.view === value
                     ? "bg-background text-foreground shadow-xs dark:bg-white/[0.1]"
                     : "text-muted-foreground hover:text-foreground",
@@ -229,6 +300,8 @@ export function AldoBrowserStatus(props: {
   teaching: boolean;
   /** Whether the machine's browser is reachable: what's sent waits for it. */
   connected: boolean;
+  /** A touch screen: the page is tapped, not clicked. */
+  touch?: boolean;
   onTake: () => void;
   onHandBack: () => void;
   onStopRecording: () => void;
@@ -377,7 +450,7 @@ export function AldoBrowserStatus(props: {
     case "shared":
       indicator = <span className="size-2 rounded-full bg-muted-foreground/35" aria-hidden />;
       title = "Shared with your agent";
-      detail = `Click the ${page} to use it too.`;
+      detail = `${props.touch ? "Tap" : "Click"} the ${page} to use it too.`;
       actions = take;
       break;
   }
@@ -385,7 +458,8 @@ export function AldoBrowserStatus(props: {
   return (
     <div
       className={cn(
-        "flex h-10 shrink-0 items-center gap-2.5 border-b border-border/60 ps-3 pe-1.5 text-[13px] pointer-coarse:h-12",
+        // Under the address with a mouse; at the panel's foot on a touch screen, its rule above it.
+        "flex h-10 shrink-0 items-center gap-2.5 border-b border-border/60 ps-3 pe-1.5 text-[13px] pointer-coarse:h-12 pointer-coarse:border-t pointer-coarse:border-b-0 pointer-coarse:pe-2",
         tone,
       )}
     >
@@ -421,9 +495,18 @@ export function AldoBrowserStatus(props: {
 /**
  * The address, as a browser's: at rest it reads as text (the site in full,
  * the rest quieter); clicked, it's the whole address, selected, to type over.
- * Escape puts it back.
+ * Escape puts it back. On a touch screen it's taller, holds what's given it
+ * at its end (Reload), and has the whole row while it's typed in, with Cancel.
  */
-export function AldoAddressBar(props: { url: string; onSubmit: (address: string) => void }) {
+export function AldoAddressBar(props: {
+  url: string;
+  onSubmit: (address: string) => void;
+  touch?: boolean;
+  /** It's being typed in, or isn't anymore: the row's other buttons make way. */
+  onEditing?: (editing: boolean) => void;
+  /** At its end while it isn't typed in. */
+  children?: ReactNode;
+}) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [focused, setFocused] = useState(false);
   const [draft, setDraft] = useState("");
@@ -436,49 +519,76 @@ export function AldoAddressBar(props: { url: string; onSubmit: (address: string)
     props.onSubmit(next);
     inputRef.current?.blur();
   };
-  const text = "text-base sm:text-[13px]";
+  const edit = (editing: boolean) => {
+    setFocused(editing);
+    props.onEditing?.(editing);
+  };
+  const text = "text-base sm:text-[13px] pointer-coarse:text-[15px]";
+  const ends = cn(
+    "px-2.5 pointer-coarse:px-3",
+    props.children && !focused && "pe-10 pointer-coarse:pe-11",
+  );
   return (
-    <form onSubmit={submit} className="relative min-w-0 flex-1">
-      <input
-        ref={inputRef}
-        aria-label="Address"
-        placeholder="Search or enter an address"
-        autoCapitalize="off"
-        autoCorrect="off"
-        autoComplete="off"
-        spellCheck={false}
-        enterKeyHint="go"
-        value={focused ? draft : shown}
-        onFocus={() => {
-          setDraft(shown);
-          setFocused(true);
-          queueMicrotask(() => inputRef.current?.select());
-        }}
-        onBlur={() => setFocused(false)}
-        onChange={(event) => setDraft(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          setDraft(shown);
-          inputRef.current?.blur();
-        }}
-        className={cn(
-          "h-7 w-full rounded-md bg-foreground/[0.045] px-2.5 text-foreground outline-none transition-[background-color,box-shadow] placeholder:text-muted-foreground hover:bg-foreground/[0.07] focus:bg-background focus:ring-2 focus:ring-ring dark:bg-white/[0.06] dark:hover:bg-white/[0.08] pointer-coarse:h-9",
-          text,
-          !focused && parts && "text-transparent",
-        )}
-      />
-      {!focused && parts ? (
-        <span
-          aria-hidden
+    <form onSubmit={submit} className="flex min-w-0 flex-1 items-center gap-1">
+      <div className="relative min-w-0 flex-1">
+        <input
+          ref={inputRef}
+          aria-label="Address"
+          placeholder="Search or enter an address"
+          autoCapitalize="off"
+          autoCorrect="off"
+          autoComplete="off"
+          spellCheck={false}
+          inputMode="url"
+          enterKeyHint="go"
+          value={focused ? draft : shown}
+          onFocus={() => {
+            setDraft(shown);
+            edit(true);
+            queueMicrotask(() => inputRef.current?.select());
+          }}
+          onBlur={() => edit(false)}
+          onChange={(event) => setDraft(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            setDraft(shown);
+            inputRef.current?.blur();
+          }}
           className={cn(
-            "pointer-events-none absolute inset-y-0 start-0 end-0 flex items-center overflow-hidden whitespace-nowrap px-2.5",
+            // 16px while it's typed in on a phone, or iOS zooms the whole page to it.
+            "h-7 w-full rounded-md bg-foreground/[0.045] text-foreground outline-none transition-[background-color,box-shadow] placeholder:text-muted-foreground hover:bg-foreground/[0.07] focus:bg-background focus:ring-2 focus:ring-ring dark:bg-white/[0.06] dark:hover:bg-white/[0.08] pointer-coarse:h-10 pointer-coarse:rounded-[10px] pointer-coarse:focus:text-base",
             text,
+            ends,
+            !focused && parts && "text-transparent",
           )}
+        />
+        {!focused && parts ? (
+          <span
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-y-0 start-0 end-0 flex items-center overflow-hidden whitespace-nowrap",
+              text,
+              ends,
+            )}
+          >
+            <span className="shrink-0 text-foreground">{parts.host}</span>
+            <span className="min-w-0 truncate text-muted-foreground">{parts.rest}</span>
+          </span>
+        ) : null}
+        {focused ? null : props.children}
+      </div>
+      {props.touch && focused ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          // Focus stays in the address until the tap is done, or the button is gone before it lands.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => inputRef.current?.blur()}
         >
-          <span className="shrink-0 text-foreground">{parts.host}</span>
-          <span className="min-w-0 truncate text-muted-foreground">{parts.rest}</span>
-        </span>
+          Cancel
+        </Button>
       ) : null}
     </form>
   );
