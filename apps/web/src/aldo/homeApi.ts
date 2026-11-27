@@ -437,6 +437,14 @@ export interface AldoApproval {
   readonly reasons?: ReadonlyArray<string>;
   /** The first paid step can set an account-wide spending limit in US dollars. */
   readonly spendingLimit?: true;
+  /** Why the agent needs the step, and what it does without it (a step's, from an Aldo that asks for it). */
+  readonly why?: string;
+  /**
+   * The per-purchase limit in US dollars "Always allow up to" would save while
+   * a paid step waits (from an Aldo that offers one): approving with it as the
+   * spending limit approves the step and saves the limit.
+   */
+  readonly allowUpTo?: number;
   /** Why the user declined it, when they said. */
   readonly reason?: string;
 }

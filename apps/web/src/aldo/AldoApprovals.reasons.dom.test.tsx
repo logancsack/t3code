@@ -43,10 +43,17 @@ const booking = (over: Partial<AldoApproval> = {}): AldoApproval => ({
   ...over,
 });
 
-const labels = () => [...container.querySelectorAll("button")].map((b) => b.textContent);
+// A choice row reads as its label; its line under the label says what it does.
+const labelOf = (b: HTMLButtonElement) =>
+  (b.querySelector("[data-aldo-choice-label]") ?? b).textContent;
+const labels = () => [...container.querySelectorAll("button")].map(labelOf);
+const detailOf = (label: string) =>
+  [...container.querySelectorAll("button")]
+    .find((b) => labelOf(b) === label)!
+    .querySelector(":scope > span:last-child")!.textContent;
 const tap = (label: string) =>
   act(async () =>
-    [...container.querySelectorAll("button")].find((b) => b.textContent === label)!.click(),
+    [...container.querySelectorAll("button")].find((b) => labelOf(b) === label)!.click(),
   );
 const show = (approval: AldoApproval) =>
   act(async () =>
@@ -91,9 +98,9 @@ afterEach(() => {
 it("declines with a reason in a tap, from the reasons Aldo offers", async () => {
   const approval = booking();
   await show(approval);
-  expect(labels()).toEqual(["Book", "Don't", "Don't, because…"]);
-  await tap("Don't, because…");
-  // The reasons take the buttons' place, and the keyboard goes with them.
+  expect(labels()).toEqual(["Allow", "Don't allow", "Don't allow, and say why…"]);
+  await tap("Don't allow, and say why…");
+  // The reasons take the rows' place, and the keyboard goes with them.
   expect(labels()).toEqual([
     "Too expensive",
     "Bad timing",
@@ -101,7 +108,7 @@ it("declines with a reason in a tap, from the reasons Aldo offers", async () => 
     "I'll do it myself",
     "Back",
   ]);
-  expect(container.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe("Why not?");
+  expect(container.querySelector('[aria-label="Why not?"]')).not.toBeNull();
   expect(document.activeElement?.textContent).toBe("Too expensive");
   await tap("Bad timing");
   expect(backend.send).toHaveBeenCalledExactlyOnceWith(
@@ -113,139 +120,87 @@ it("declines with a reason in a tap, from the reasons Aldo offers", async () => 
   );
 });
 
-it("requires an explicit first spending limit and can choose to ask every time", async () => {
-  const approval = booking({ spendingLimit: true });
-  await show(approval);
-  const approve = [...container.querySelectorAll("button")].find(
-    (b) => b.textContent === "Book and save limit",
-  )!;
-  expect(approve.disabled).toBe(false);
-  await tap("Book and save limit");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Choose a spending limit",
+it("asks the question with why, and says what each choice does", async () => {
+  await show(
+    booking({
+      title: "Let the agent pay $12 for the full ADP price sheet.",
+      why: "It can finish without it, using ADP's public pages, which give no price.",
+      fields: [
+        { label: "Where", value: "https://www.adp.com/pricing" },
+        { label: "Total", value: "$12.00" },
+        { label: "Terms", value: "No refunds" },
+      ],
+      allowUpTo: 15,
+    }),
   );
-  expect(backend.send).not.toHaveBeenCalled();
-  const select = container.querySelector("select")!;
-  expect(document.querySelector(`label[for="${select.id}"]`)?.textContent).toContain(
-    "For future spending",
+  expect(container.textContent).toContain("Let the agent pay $12 for the full ADP price sheet?");
+  expect(container.textContent).toContain("It can finish without it, using ADP's public pages");
+  expect(labels()).toEqual([
+    "Allow once",
+    "Always allow up to $15",
+    "Don't allow",
+    "Don't allow, and say why…",
+  ]);
+  expect(detailOf("Allow once")).toBe("$12.00 to adp.com, this task only");
+  expect(detailOf("Always allow up to $15")).toBe(
+    "Saves a rule. You can change it in Settings → Permissions",
   );
-  await act(async () => {
-    select.value = "0";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(approve.disabled).toBe(false);
-  expect(backend.send).not.toHaveBeenCalled();
-  await tap("Book and save limit");
-  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "approve", undefined, 0, {
-    afterAccepted: true,
-  });
+  expect(detailOf("Don't allow")).toBe("The agent carries on without it");
+  // The total and the place are said in the first choice; the terms stay above it.
+  const terms = [...container.querySelectorAll("dt")].map((dt) => dt.textContent);
+  expect(terms).toEqual(["Terms"]);
 });
 
-it("keeps custom limits invalid until fixed and can decline without saving one", async () => {
-  const approval = booking({ spendingLimit: true });
+it("always allows up to Aldo's amount in one tap, which approves and saves that limit", async () => {
+  const approval = booking({ allowUpTo: 50 });
   await show(approval);
-  const select = container.querySelector("select")!;
-  await act(async () => {
-    select.value = "custom";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  const input = container.querySelector("input")!;
-  const set = async (value: string) =>
-    act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  await set("-1");
-  await tap("Book and save limit");
-  expect(backend.send).not.toHaveBeenCalled();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "zero or a positive amount",
-  );
-  await set("19.99");
-  expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(
-    [...container.querySelectorAll("button")].find((b) => b.textContent === "Book and save limit")
-      ?.disabled,
-  ).toBe(false);
-  await tap("Don't");
-  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", undefined, undefined, {
-    afterAccepted: true,
-  });
-});
-
-it("keeps the custom amount when an optimistic removal is followed by a failed save", async () => {
-  const approval = booking({ id: "ap_failed_limit", spendingLimit: true });
-  await show(approval);
-  await act(async () => {
-    const select = container.querySelector("select")!;
-    select.value = "custom";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  await act(async () => {
-    const input = container.querySelector("input")!;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "19.99");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  backend.send.mockImplementationOnce(async () => {
-    root.render(<ul />);
-    throw new Error("Couldn't save the approval");
-  });
-  await tap("Book and save limit");
   expect(container.querySelector("select")).toBeNull();
-  await show(approval);
-  expect(container.querySelector("select")!.value).toBe("custom");
-  expect(container.querySelector("input")!.value).toBe("19.99");
+  await tap("Always allow up to $50");
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "approve", undefined, 50, {
+    afterAccepted: true,
+  });
 });
 
-it("switching a peek to another approval restores only that approval's own limit draft", async () => {
-  const { ApprovalCard: PeekCard } = await import("./AldoApprovals");
-  const first = booking({ id: "ap_peek_first", spendingLimit: true });
-  const second = booking({ id: "ap_peek_second", spendingLimit: true });
-  const peek = (approval: AldoApproval) =>
-    act(async () =>
-      root.render(
-        <ul>
-          <PeekCard approval={approval} now={Date.now()} onActed={() => {}} />
-        </ul>,
-      ),
-    );
-  await peek(first);
-  await act(async () => {
-    const select = container.querySelector("select")!;
-    select.value = "20";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+it("allows once without saving a limit", async () => {
+  const approval = booking({ allowUpTo: 50 });
+  await show(approval);
+  await tap("Allow once");
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "approve", undefined, undefined, {
+    afterAccepted: true,
   });
-  await peek(second);
-  expect(container.querySelector("select")!.value).toBe("");
-  await tap("Book and save limit");
-  expect(backend.send).not.toHaveBeenCalled();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Choose a spending limit",
-  );
-  await peek(first);
-  expect(container.querySelector("select")!.value).toBe("20");
+});
+
+it("an older Aldo's first paid step is allowed once, with no limit to choose on the card", async () => {
+  const approval = booking({ spendingLimit: true });
+  await show(approval);
+  expect(container.querySelector("select")).toBeNull();
+  expect(labels()).toEqual(["Allow", "Don't allow", "Don't allow, and say why…"]);
+  await tap("Allow");
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "approve", undefined, undefined, {
+    afterAccepted: true,
+  });
 });
 
 it("goes back without deciding, by its button or Escape, and gives the keyboard back", async () => {
   await show(booking());
-  await tap("Don't, because…");
+  await tap("Don't allow, and say why…");
   await tap("Back");
-  expect(labels()).toEqual(["Book", "Don't", "Don't, because…"]);
-  expect(document.activeElement?.textContent).toBe("Don't, because…");
-  await tap("Don't, because…");
+  expect(labels()).toEqual(["Allow", "Don't allow", "Don't allow, and say why…"]);
+  expect(document.activeElement?.textContent).toBe("Don't allow, and say why…");
+  await tap("Don't allow, and say why…");
   await act(async () => {
     document.activeElement!.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     );
   });
-  expect(labels()).toEqual(["Book", "Don't", "Don't, because…"]);
+  expect(labels()).toEqual(["Allow", "Don't allow", "Don't allow, and say why…"]);
   expect(backend.send).not.toHaveBeenCalled();
 });
 
 it("still declines in one tap, with no reason", async () => {
   const approval = booking();
   await show(approval);
-  await tap("Don't");
+  await tap("Don't allow");
   expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", undefined, undefined, {
     afterAccepted: true,
   });
@@ -254,7 +209,29 @@ it("still declines in one tap, with no reason", async () => {
 it("offers no reasons where Aldo gives none", async () => {
   const { reasons: _none, ...plain } = booking();
   await show(plain);
-  expect(labels()).toEqual(["Book", "Don't"]);
+  expect(labels()).toEqual(["Allow", "Don't allow"]);
+});
+
+it("an email's rule is saved in one tap from its row, which names it", async () => {
+  const { reasons: _none, ...email } = booking({
+    kind: "email",
+    title: "Re: Thursday",
+    summary: "To dana@example.com",
+    fields: [{ label: "To", value: "dana@example.com" }],
+    approveLabel: "Send",
+    discardLabel: "Discard",
+    always: "Agents can send email to dana@example.com without asking",
+  });
+  const approval: AldoApproval = email;
+  await show(approval);
+  expect(labels()).toEqual(["Send", "Always allow", "Discard"]);
+  expect(detailOf("Always allow")).toBe(
+    "Agents can send email to dana@example.com without asking. You can change it in Settings → Permissions",
+  );
+  await tap("Always allow");
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "always", undefined, undefined, {
+    afterAccepted: true,
+  });
 });
 
 it("says what the user said on one they declined", () => {

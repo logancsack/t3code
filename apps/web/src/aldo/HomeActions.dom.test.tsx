@@ -34,8 +34,11 @@ let root: Root;
 let el: HTMLDivElement;
 const home = homeActionsFixture();
 const decisions = aldoDecisions(home, Date.now());
+// A choice row is named by its label; the line under it says what it does.
 const button = (name: string) =>
-  Array.from(el.querySelectorAll("button")).find((b) => b.textContent?.trim() === name)!;
+  Array.from(el.querySelectorAll("button")).find(
+    (b) => (b.querySelector("[data-aldo-choice-label]") ?? b).textContent?.trim() === name,
+  )!;
 const mount = async (kind: string, approvalKind?: string, ref?: string) => {
   const d = decisions.find(
     (d) =>
@@ -295,7 +298,7 @@ it("a refused command approval stays actionable with the actual reason", async (
 });
 
 it.each([
-  ["confirm", "Approve $24.00"],
+  ["confirm", "Allow"],
   ["start", "Start"],
 ] as const)(
   "%s approval submits through the full card without losing its terms",

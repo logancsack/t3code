@@ -32,6 +32,8 @@ import { AldoUpdateDetails } from "./AldoUpdateCard";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
 import { DismissChatDecision } from "./DismissChatDecision";
 import { ApprovalCard, ApprovalText, DecidedApproval, RewriteNote } from "./AldoApprovals";
+import { ApprovalChoices } from "./AldoApprovalChoices";
+import { approvalChoices, approvalQuestion } from "./approvals.logic";
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
@@ -472,7 +474,7 @@ export function DecisionCard(props: {
   const decide = async (key: string, choice: AldoChoice) => {
     if (sending.current) return;
     sending.current = true;
-    if (!(await confirmQuickChoice(d, choice, { seen: true }))) {
+    if (!(await confirmQuickChoice(d, choice, { seen: true, ruleShown: true }))) {
       sending.current = false;
       return;
     }
@@ -565,7 +567,7 @@ export function DecisionCard(props: {
       if (a.kind === "confirm" || a.kind === "start") {
         // A step with a total and terms, or a thread to start, is said yes to in its own card, in full.
         return (
-          <CardFrame {...frame} headline={a.title}>
+          <CardFrame {...frame} headline={approvalQuestion(a)}>
             <ApprovalCard inline approval={a} now={props.now} onActed={acted} />
             <button
               type="button"
@@ -601,38 +603,17 @@ export function DecisionCard(props: {
           <RewriteNote approval={a} />
         </div>
       );
+      // Each answer says what it does; the rule "Always allow" saves is on its row.
+      const choices = approvalChoices(a);
       actions = (
-        <div className="grid grid-cols-2 gap-2">
-          <Choice
-            busy={busy === "discard"}
-            disabled={busy !== null}
-            onClick={() => void decide("discard", { kind: "aldo", decision: "discard" })}
-          >
-            {a.discardLabel}
-          </Choice>
-          <Choice
-            primary
-            busy={busy === "approve"}
-            disabled={busy !== null}
-            onClick={() => void decide("approve", { kind: "aldo", decision: "approve" })}
-          >
-            {a.approveLabel}
-          </Choice>
-          {a.always ? (
-            <button
-              type="button"
-              className={cn(
-                FOCUS,
-                "col-span-2 mx-auto rounded-full px-3 py-1 text-[13px] text-muted-foreground hover:text-foreground",
-              )}
-              disabled={busy !== null}
-              aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
-              onClick={() => void decide("always", { kind: "aldo", decision: "always" })}
-            >
-              {busy === "always" ? "Working…" : "Always allow…"}
-            </button>
-          ) : null}
-        </div>
+        <ApprovalChoices
+          choices={choices}
+          busy={busy === null ? null : choices.findIndex((c) => c.decision === busy)}
+          disabled={busy !== null}
+          onChoose={(choice) =>
+            void decide(choice.decision, { kind: "aldo", decision: choice.decision })
+          }
+        />
       );
       break;
     }
