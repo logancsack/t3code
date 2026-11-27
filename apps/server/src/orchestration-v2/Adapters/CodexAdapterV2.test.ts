@@ -1805,6 +1805,164 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
+  // Codex 0.172 asks before a forced `rm` under full access's granular policy, with no reason and
+  // no session-wide answer: a temporary folder's cleanup stopped every such turn for the user.
+  it.effect.each([
+    { name: "full-access", runtimeMode: "full-access", sandboxPolicy: undefined },
+    { name: "auto-accept-edits", runtimeMode: "auto-accept-edits", sandboxPolicy: undefined },
+    {
+      name: "full-access with a workspace sandbox",
+      runtimeMode: "full-access",
+      sandboxPolicy: { type: "workspaceWrite" },
+    },
+  ] as const)(
+    "answers Codex's command and edit prompts itself only in full access ($name)",
+    ({ name, runtimeMode, sandboxPolicy }) =>
+      Effect.gen(function* () {
+        const nativeThreadId = "dangerous-command-thread";
+        const nativeTurnId = "dangerous-command-turn";
+        const prompt = "Check the key round trip in a scratch folder.";
+        const command = `/bin/bash -lc 'd=$(mktemp -d); trap '"'"'rm -rf "$d"'"'"' EXIT; echo ok > "$d/x"'`;
+        const fullAccess = runtimeMode === "full-access" && sandboxPolicy === undefined;
+        const scenario = name.replaceAll(" ", "-");
+        const pending = yield* Queue.unbounded<OrchestrationV2RuntimeRequest>();
+        const answer = (id: number) => ({
+          type: "expect_outbound" as const,
+          frame: { id, result: { decision: "accept" } },
+        });
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: `dangerous-command-${scenario}`,
+            entries: [
+              ...codexReplayPreamble({
+                nativeThreadId,
+                nativeTurnId,
+                prompt,
+                ...(fullAccess
+                  ? {}
+                  : runtimeMode === "full-access"
+                    ? { turnPolicy: { sandboxPolicy: { type: "workspaceWrite" } } }
+                    : {
+                        turnPolicy: {
+                          approvalPolicy: "on-request",
+                          sandboxPolicy: { type: "workspaceWrite" },
+                        },
+                      }),
+              }),
+              {
+                type: "emit_inbound",
+                frame: {
+                  id: 0,
+                  method: "item/commandExecution/requestApproval",
+                  params: {
+                    kind: "command",
+                    threadId: nativeThreadId,
+                    turnId: nativeTurnId,
+                    itemId: "exec-dangerous",
+                    startedAtMs: 1_790_000_000_000,
+                    command,
+                    cwd: "/workspace",
+                    availableDecisions: ["accept", "cancel"],
+                  },
+                },
+              },
+              ...(fullAccess
+                ? [
+                    answer(0),
+                    {
+                      type: "emit_inbound" as const,
+                      frame: {
+                        id: 1,
+                        method: "item/fileChange/requestApproval",
+                        params: {
+                          threadId: nativeThreadId,
+                          turnId: nativeTurnId,
+                          itemId: "patch-outside",
+                          startedAtMs: 1_790_000_000_001,
+                          grantRoot: "/etc",
+                        },
+                      },
+                    },
+                    answer(1),
+                  ]
+                : [answer(0)]),
+              {
+                type: "emit_inbound",
+                frame: {
+                  method: "turn/completed",
+                  params: {
+                    threadId: nativeThreadId,
+                    turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+                  },
+                },
+              },
+            ],
+          }),
+          (event) =>
+            event.type === "runtime_request.updated" && event.runtimeRequest.status === "pending"
+              ? Queue.offer(pending, event.runtimeRequest)
+              : Effect.void,
+        );
+        const turnInput = makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`dangerous-command-${scenario}-attempt`),
+          text: prompt,
+        });
+        yield* harness.runtime.startTurn({
+          ...turnInput,
+          runtimePolicy: {
+            ...turnInput.runtimePolicy,
+            runtimeMode,
+            ...(sandboxPolicy === undefined ? {} : { sandboxPolicy }),
+          },
+        });
+        if (fullAccess) {
+          const request = yield* Effect.raceFirst(
+            harness.firstTerminal.pipe(Effect.as(undefined)),
+            Queue.take(pending),
+          );
+          assert.isUndefined(request, "Full access must not wait for a command or edit approval");
+        } else {
+          const request = yield* Effect.raceFirst(
+            Queue.take(pending),
+            harness.firstTerminal.pipe(
+              Effect.andThen(Effect.die("The command approval was not presented")),
+            ),
+          );
+          assert.equal(request.kind, "command");
+          const shown = harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "approval_request" &&
+            event.turnItem.requestId === request.id
+              ? [event.turnItem.prompt]
+              : [],
+          );
+          assert.deepEqual(shown, [command]);
+          yield* harness.runtime.respondToRuntimeRequest({
+            requestId: request.id,
+            decision: "accept",
+          });
+          yield* harness.firstTerminal;
+        }
+        assert.deepEqual(
+          harness.terminalEvents().map((event) => event.status),
+          ["completed"],
+        );
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
   it.effect.each(["native", "ordinary"] as const)(
     "resumes Codex without a prompt only for an existing conversation (%s)",
     (mode) =>
@@ -9484,6 +9642,74 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  // A native child may run under its own Codex profile, which T3 can't see, so its prompts ask.
+  it.effect("still presents a native child's command approval under full access", () =>
+    Effect.gen(function* () {
+      const pending = yield* Queue.unbounded<OrchestrationV2RuntimeRequest>();
+      const { spawned, rootFinished } = lateChildPrefix();
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: "child-command-approval",
+          entries: [
+            ...spawned,
+            {
+              type: "emit_inbound",
+              frame: {
+                id: 0,
+                method: "item/commandExecution/requestApproval",
+                params: {
+                  kind: "command",
+                  threadId: RESUME_CHILD_THREAD,
+                  turnId: RESUME_CHILD_TURN_1,
+                  itemId: "child-exec",
+                  startedAtMs: 1782622441000,
+                  command: "rm -rf build",
+                  cwd: "/workspace",
+                  availableDecisions: ["accept", "cancel"],
+                },
+              },
+            },
+            { type: "expect_outbound", frame: { id: 0, result: { decision: "accept" } } },
+            childTurnCompleted(RESUME_CHILD_TURN_1),
+            ...rootFinished,
+          ],
+        }),
+        (event) =>
+          event.type === "runtime_request.updated" && event.runtimeRequest.status === "pending"
+            ? Queue.offer(pending, event.runtimeRequest)
+            : Effect.void,
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-codex-child-approval"),
+          text: RESUME_PROMPT,
+        }),
+      );
+      const request = yield* Effect.raceFirst(
+        Queue.take(pending),
+        harness.firstTerminal.pipe(
+          Effect.andThen(Effect.die("The child's command approval was not presented")),
+        ),
+      );
+      assert.equal(request.kind, "command");
+      yield* harness.runtime.respondToRuntimeRequest({ requestId: request.id, decision: "accept" });
+      yield* harness.awaitTerminal(1);
+      assert.equal(harness.terminalEvents()[0]?.status, "completed");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   const lateChildPrefix = () => {
     const entries = resumeSubagentTranscript.entries;
     const labelIndex = (label: string) =>
@@ -12319,25 +12545,39 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ) =>
       Effect.gen(function* () {
         const pending = yield* Queue.unbounded<OrchestrationV2RuntimeRequest>();
+        // Full access answers edit prompts itself, so these are asked in a mode that shows them.
         const harness = yield* makeCodexReplayHarness(
           makeCodexReplayTranscript({
             scenario,
-            entries: [...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt }), ...entries],
+            entries: [
+              ...codexReplayPreamble({
+                nativeThreadId,
+                nativeTurnId,
+                prompt,
+                turnPolicy: {
+                  approvalPolicy: "on-request",
+                  sandboxPolicy: { type: "workspaceWrite" },
+                },
+              }),
+              ...entries,
+            ],
           }),
           (event) =>
             event.type === "runtime_request.updated" && event.runtimeRequest.status === "pending"
               ? Queue.offer(pending, event.runtimeRequest)
               : Effect.void,
         );
-        yield* harness.runtime.startTurn(
-          makeCodexTestTurnInput({
-            threadId: harness.threadId,
-            providerThread: harness.providerThread,
-            now: yield* DateTime.now,
-            attemptId: RunAttemptId.make(`${scenario}-attempt`),
-            text: prompt,
-          }),
-        );
+        const turnInput = makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`${scenario}-attempt`),
+          text: prompt,
+        });
+        yield* harness.runtime.startTurn({
+          ...turnInput,
+          runtimePolicy: { ...turnInput.runtimePolicy, runtimeMode: "auto-accept-edits" },
+        });
         return {
           harness,
           answerNext: Queue.take(pending).pipe(
