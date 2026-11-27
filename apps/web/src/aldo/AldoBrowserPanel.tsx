@@ -1,9 +1,11 @@
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  ClipboardPasteIcon,
   EllipsisIcon,
   ExternalLinkIcon,
   GraduationCapIcon,
+  MonitorIcon,
   RotateCwIcon,
   XIcon,
 } from "lucide-react";
@@ -13,11 +15,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ClipboardEvent as ReactClipboardEvent,
-  type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -36,6 +35,7 @@ import {
 } from "../components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { toastManager } from "../components/ui/toast";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
 import { stopAldoThreadComputer, useAldoComputer } from "./AldoComputer";
@@ -45,14 +45,21 @@ import {
   AldoBrowserStart,
   AldoBrowserStatus,
   AldoBrowserTabs,
+  AldoBrowserTabsMenu,
   AldoBrowserViewSwitch,
   AldoScreenState,
 } from "./AldoBrowserChrome";
+import {
+  AldoBrowserPage,
+  useAldoKeyboardUp,
+  type AldoBrowserPageHandle,
+  type AldoFrameMeta,
+} from "./AldoBrowserPage";
 import { useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
-import { AldoScreenKeyboard } from "./AldoScreenKeyboard";
 import { AldoTeachForm } from "./AldoTeach";
 import { aldoBlankPage, aldoBrowserState, aldoDialogFrom } from "./browserChrome.logic";
+import { aldoFitFor, parseAldoPageFields, type AldoPageFields } from "./browserInput.logic";
 import { aldoHandoffOn } from "./handoffs.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import { AldoApiError } from "./api";
@@ -92,21 +99,51 @@ type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
 type Control = { human: boolean; explicit: boolean; agentActiveAt: number };
 type Dialog = { message: string; type: string; defaultPrompt?: string };
-type FrameMeta = { deviceWidth: number; deviceHeight: number };
+type FrameMeta = AldoFrameMeta;
 type Status = "connecting" | "live" | "asleep" | "error";
+/** What the machine's browser takes beyond the first version's messages. An older machine says nothing. */
+type Features = { fit: boolean; touch: boolean; fields: boolean };
 
-const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 // How long the agent counts as browsing after its last step: long enough to
 // span the pause while it thinks, so the line under the address holds still.
 const AGENT_ACTIVE_MS = 15_000;
 // How long agents wait after the user's last click or key (the machine's INPUT_HOLD_MS).
 const USE_HOLD_MS = 10_000;
+const NO_FIELDS: AldoPageFields = { focus: null, fields: [] };
+// Whether the page is laid out for the panel, once the user has said: for every thread's browser,
+// until the app is loaded again. Unsaid, it is on a touch screen and isn't with a mouse.
+let fitChosen: boolean | null = null;
 
-function modifiers(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
-  let bits = (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
-  // The remote Chrome runs on Linux: ⌘ shortcuts become Ctrl ones there.
-  if (isMac && e.metaKey) bits = (bits & ~4) | 2;
-  return bits;
+/**
+ * How much of the panel the phone's keyboard covers. Android makes the app
+ * shorter for its keyboard, and this is nothing; iOS draws its keyboard over
+ * the app, and the panel makes room at its foot by this much.
+ */
+function useKeyboardOverlap(ref: RefObject<HTMLElement | null>, enabled: boolean): number {
+  const [overlap, setOverlap] = useState(0);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const element = ref.current;
+    if (!enabled || !viewport || !element) return;
+    const measure = () => {
+      const covered =
+        element.getBoundingClientRect().bottom - (viewport.offsetTop + viewport.height);
+      // Zoomed in on the app itself, less of it shows for that, not for a keyboard.
+      setOverlap(Math.abs(viewport.scale - 1) < 0.01 && covered > 60 ? Math.round(covered) : 0);
+    };
+    measure();
+    viewport.addEventListener("resize", measure);
+    viewport.addEventListener("scroll", measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      viewport.removeEventListener("resize", measure);
+      viewport.removeEventListener("scroll", measure);
+      observer.disconnect();
+      setOverlap(0);
+    };
+  }, [ref, enabled]);
+  return overlap;
 }
 
 function localPort(url: string): number | null {
@@ -123,12 +160,19 @@ function localPort(url: string): number | null {
  * The thread's shared browser: a live view of Chrome in the sandbox. The user
  * can browse and type in it; agents drive the same browser, and "Take control"
  * holds them off (for sign-ins, 2FA or anything the user wants to do alone).
+ *
+ * On a touch screen it's a phone's browser: the page is laid out at the
+ * panel's own width (so it reads without zooming), a finger scrolls and taps
+ * it, and the phone's keyboard comes up for its fields (AldoBrowserPage.tsx).
+ * A newer machine says it can do that (`features`); an older one's page comes
+ * at a computer's size, as before.
  */
 export function AldoBrowserPanel({
   environmentId,
   threadId,
   inTakeover = false,
   onTeaching,
+  onTyping,
 }: {
   environmentId: string;
   /** The conversation "Teach this" teaches; else the one on screen, when it's this machine's. */
@@ -137,7 +181,11 @@ export function AldoBrowserPanel({
   inTakeover?: boolean;
   /** Whether a recording is under way or waiting to be taught: the takeover holds its "I'm done" meanwhile. */
   onTeaching?: (teaching: boolean) => void;
+  /** Whether the phone's keyboard is up for the page: the takeover gives the page its room meanwhile. */
+  onTyping?: (typing: boolean) => void;
 }) {
+  // A touch screen: the phone's layout, fingers and keyboard.
+  const coarse = useMediaQuery("(pointer: coarse)");
   const [status, setStatus] = useState<Status>("connecting");
   // Whether what's sent reaches the machine: status stays "live" from a dropped connection until the next try.
   const [connected, setConnected] = useState(false);
@@ -149,6 +197,15 @@ export function AldoBrowserPanel({
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
   const [phone, setPhone] = useState(false);
+  const [features, setFeatures] = useState<Features | null>(null);
+  const [fields, setFields] = useState<AldoPageFields | null>(null);
+  const [fitChoice, setFitChoice] = useState(fitChosen);
+  // The phone's keyboard is up for the page; the address is being typed in.
+  const [editing, setEditing] = useState(false);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  /** Asks the machine for the page at the stage's size now, where it's fitted (the effect below). */
+  const refit = useRef<(() => void) | null>(null);
   const [view, setView] = useState<"browser" | "desktop">("browser");
   const [chosenScreen, setChosenScreen] = useState<AldoDesktopScreen>("machine");
   const [nav, setNav] = useState<Nav>({
@@ -184,7 +241,6 @@ export function AldoBrowserPanel({
   const usedAtRef = useRef(0);
   // Connects again now, rather than when the backoff says.
   const retryNow = useRef<() => void>(() => {});
-  const [focused, setFocused] = useState(false);
   // Nothing streams while nobody can see it: the Desktop view is up, or the page is hidden.
   const pageVisible = useAldoPageVisible();
   // Nor while a handoff's takeover covers it: that one streams.
@@ -195,12 +251,15 @@ export function AldoBrowserPanel({
 
   const socketRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const keyboardRef = useRef<HTMLTextAreaElement | null>(null);
+  const pageRef = useRef<AldoBrowserPageHandle | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const metaRef = useRef<FrameMeta | null>(null);
   const frameSeq = useRef(0);
-  const touchRef = useRef<{ x: number; y: number; lastY: number; scrolled: boolean } | null>(null);
-  const moveQueued = useRef<{ x: number; y: number; buttons: number; mods: number } | null>(null);
+  // Where the Desktop view puts its own controls: the row over it.
+  const [desktopBar, setDesktopBar] = useState<HTMLElement | null>(null);
+  const keyboardOverlap = useKeyboardOverlap(rootRef, coarse);
+  const keyboardUp = useAldoKeyboardUp(coarse);
 
   const send = useCallback((message: Record<string, unknown>) => {
     const socket = socketRef.current;
@@ -407,6 +466,16 @@ export function AldoBrowserPanel({
           case "device":
             setPhone(message.mode === "phone");
             break;
+          case "features":
+            setFeatures({
+              fit: message.fit === true,
+              touch: message.touch === true,
+              fields: message.fields === true,
+            });
+            break;
+          case "fields":
+            setFields(parseAldoPageFields(message));
+            break;
           case "video": {
             // The page as video from here on, or (codec null) as JPEG frames again.
             const page = player?.configure(message) ? player.config?.page : null;
@@ -426,6 +495,9 @@ export function AldoBrowserPanel({
         if (socketRef.current === socket) socketRef.current = null;
         if (disposed) return;
         setConnected(false);
+        // The next connection may be to another build of the machine's browser.
+        setFeatures(null);
+        setFields(null);
         schedule(Math.min(15_000, 1000 * 2 ** attempt++));
       };
     };
@@ -481,13 +553,68 @@ export function AldoBrowserPanel({
     return () => clearInterval(timer);
   }, [control.agentActiveAt, usedAt]);
 
+  // The page laid out for this panel, where the machine can: on a touch screen unless the user
+  // asks for the desktop's, with a mouse when they ask. It's the one page everyone has, the agent
+  // too, so it goes back to a computer's size when no fitted panel watches.
+  const wantFit = Boolean(features?.fit) && (fitChoice ?? coarse);
+  const chooseFit = (fit: boolean) => {
+    fitChosen = fit;
+    setFitChoice(fit);
+  };
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!features?.fit || !stage) return;
+    if (!wantFit) return send({ type: "fit" });
+    let last = "";
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const sync = () => {
+      // Hidden (the Desktop view is up): the page keeps the size it had. So it does while the
+      // keyboard is up for the address: nobody is using the page, its top shows above the keyboard
+      // as in a phone's browser, and the page the address leads to arrives at the panel's full
+      // size, not at what the keyboard left of it.
+      if (stage.clientWidth === 0 || stage.clientHeight === 0 || editingRef.current) return;
+      const { width, height, scale } = aldoFitFor(
+        stage.clientWidth,
+        stage.clientHeight,
+        window.devicePixelRatio || 1,
+      );
+      const size = `${width}x${height}@${scale}`;
+      if (size === last) return;
+      last = size;
+      send({ type: "fit", width, height, scale });
+    };
+    sync();
+    refit.current = sync;
+    // The stage gets shorter as the phone's keyboard comes up, and the page with it: its focused
+    // field stays in sight, as on a phone.
+    const observer = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(sync, 100);
+    });
+    observer.observe(stage);
+    return () => {
+      refit.current = null;
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+    };
+  }, [features, wantFit, send]);
+  // The address is done with the keyboard, which is on its way down, or stays for a field of the
+  // page: the size the stage has once that's settled is the page's.
+  useEffect(() => {
+    if (editing) return;
+    const timer = setTimeout(() => refit.current?.(), 1000);
+    return () => clearTimeout(timer);
+  }, [editing]);
+
+  useEffect(() => onTyping?.(keyboardUp), [onTyping, keyboardUp]);
+
   /** The user used the page: agents wait a moment, and the line under the address says so. */
-  const noteUse = () => {
+  const noteUse = useCallback(() => {
     const at = Date.now();
     if (at - usedAtRef.current < 1000) return;
     usedAtRef.current = at;
     setUsedAt(at);
-  };
+  }, []);
 
   // Open requests from the Previews menu.
   const request = useAldoBrowserRequests((state) => state.request);
@@ -499,181 +626,26 @@ export function AldoBrowserPanel({
 
   const shownUrl = tabs.find((tab) => tab.id === activeTab)?.url ?? nav.url;
 
-  /** Where a pointer event lands on the page, in CSS pixels. */
-  const pagePoint = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current;
-    const meta = metaRef.current;
-    if (!canvas || !meta || canvas.width === 0) return null;
-    const rect = canvas.getBoundingClientRect();
-    const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
-    const drawnWidth = canvas.width * scale;
-    const drawnHeight = canvas.height * scale;
-    const offsetX = (rect.width - drawnWidth) / 2;
-    const offsetY = (rect.height - drawnHeight) / 2;
-    const x = ((clientX - rect.left - offsetX) / drawnWidth) * meta.deviceWidth;
-    const y = ((clientY - rect.top - offsetY) / drawnHeight) * meta.deviceHeight;
-    if (x < 0 || y < 0 || x > meta.deviceWidth || y > meta.deviceHeight) return null;
-    return { x, y };
-  };
-
-  const flushMove = () => {
-    const move = moveQueued.current;
-    moveQueued.current = null;
-    if (!move) return;
-    send({
-      type: "mouse",
-      event: "mouseMoved",
-      x: move.x,
-      y: move.y,
-      button: move.buttons & 1 ? "left" : "none",
-      buttons: move.buttons,
-      modifiers: move.mods,
-    });
-  };
-
-  const onPointerDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    focusKeyboard();
-    const point = pagePoint(e.clientX, e.clientY);
-    if (!point) return;
-    e.preventDefault();
-    noteUse();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    if (e.pointerType === "touch" && !phone) {
-      touchRef.current = { x: point.x, y: point.y, lastY: e.clientY, scrolled: false };
-      return;
-    }
-    send({
-      type: "mouse",
-      event: "mousePressed",
-      ...point,
-      button: (["left", "middle", "right"] as const)[e.button] ?? "none",
-      buttons: e.buttons,
-      clickCount: e.detail || 1,
-      modifiers: modifiers(e),
-    });
-  };
-
-  const onPointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    const touch = touchRef.current;
-    if (e.pointerType === "touch" && touch && !phone) {
-      const dy = touch.lastY - e.clientY;
-      if (Math.abs(e.clientY - touch.lastY) > 2) {
-        touch.scrolled = true;
-        touch.lastY = e.clientY;
-        send({ type: "wheel", x: touch.x, y: touch.y, deltaX: 0, deltaY: dy * 2 });
-      }
-      return;
-    }
-    const point = pagePoint(e.clientX, e.clientY);
-    if (!point) return;
-    const pending = moveQueued.current;
-    moveQueued.current = { ...point, buttons: e.buttons, mods: modifiers(e) };
-    if (!pending) requestAnimationFrame(flushMove);
-  };
-
-  const onPointerUp = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    const touch = touchRef.current;
-    if (e.pointerType === "touch" && !phone) {
-      touchRef.current = null;
-      if (touch && !touch.scrolled) {
-        const tap = { x: touch.x, y: touch.y, button: "left", clickCount: 1, modifiers: 0 };
-        send({ type: "mouse", event: "mousePressed", buttons: 1, ...tap });
-        send({ type: "mouse", event: "mouseReleased", buttons: 0, ...tap });
-      }
-      return;
-    }
-    const point = pagePoint(e.clientX, e.clientY);
-    if (!point) return;
-    send({
-      type: "mouse",
-      event: "mouseReleased",
-      ...point,
-      button: (["left", "middle", "right"] as const)[e.button] ?? "none",
-      buttons: e.buttons,
-      clickCount: e.detail || 1,
-      modifiers: modifiers(e),
-    });
-  };
-
-  // Wheel needs a non-passive listener to stop the panel scrolling instead.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const onWheel = (e: WheelEvent) => {
-      const point = pagePoint(e.clientX, e.clientY);
-      if (!point) return;
-      e.preventDefault();
-      noteUse();
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
-      send({
-        type: "wheel",
-        ...point,
-        deltaX: e.deltaX * unit,
-        deltaY: e.deltaY * unit,
-        modifiers: modifiers(e),
-      });
-    };
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-    return () => canvas.removeEventListener("wheel", onWheel);
-    // pagePoint and noteUse read refs only.
-  }, [send]);
-
-  // Keyboard input goes through a hidden textarea: real keys are sent as key
-  // events (pages see keydown/keyup), while text that arrives without them
-  // (phone keyboards, IME composition, paste, dictation) is inserted as text.
-  const onKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>, event: "down" | "up") => {
-    if (e.nativeEvent.isComposing || e.key === "Process" || e.key === "Unidentified") return;
-    if (event === "down") noteUse();
-    // Let the browser fire `paste` so the user's own clipboard is what's pasted.
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") return;
-    e.preventDefault();
-    const text = e.key === "Enter" ? "\r" : e.key.length === 1 ? e.key : "";
-    send({
-      type: "key",
-      event,
-      key: e.key,
-      code: e.code,
-      keyCode: e.keyCode,
-      text,
-      modifiers: modifiers(e),
-    });
-  };
-
-  const onPaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
-    const text = e.clipboardData.getData("text/plain");
-    if (!text) return;
-    e.preventDefault();
-    send({ type: "text", text });
-  };
-
-  const onInput = (e: FormEvent<HTMLTextAreaElement>) => {
-    const native = e.nativeEvent as InputEvent;
-    const target = e.currentTarget;
-    if (native.isComposing) return;
-    if (native.inputType === "deleteContentBackward") {
-      for (const event of ["down", "up"]) {
-        send({
-          type: "key",
-          event,
-          key: "Backspace",
-          code: "Backspace",
-          keyCode: 8,
-          text: "",
-          modifiers: 0,
-        });
-      }
-    } else if (target.value) {
-      send({ type: "text", text: target.value });
-    }
-    target.value = "";
-  };
-
-  const focusKeyboard = () => keyboardRef.current?.focus({ preventScroll: true });
-
   const navigate = (address: string) => {
     send({ type: "navigate", url: address });
-    focusKeyboard();
+    pageRef.current?.focus();
   };
+
+  /** Types what the user copied into the page: a long press offers it, and so does the menu. */
+  const paste = useCallback(() => {
+    const failed = () =>
+      toastManager.add({
+        type: "error",
+        title: "Couldn't read what you copied",
+        description: "Allow this site to paste in your browser, or type it instead.",
+      });
+    if (!navigator.clipboard?.readText) return failed();
+    navigator.clipboard.readText().then((text) => {
+      if (!text) return;
+      noteUse();
+      send({ type: "text", text });
+    }, failed);
+  }, [send, noteUse]);
 
   const environments = useSyncExternalStore(
     subscribeAldoEnvironments,
@@ -808,30 +780,153 @@ export function AldoBrowserPanel({
   const onWindows = view === "desktop" && screen === "windows";
   // What the user has to act on (Stop, I'm done, Hand back) shows wherever they are, picture
   // or not. Who's browsing, once there's a page to share or the desktop; agents don't use the
-  // Windows computer. Full screen, the takeover says the rest itself.
+  // Windows computer. Full screen, the takeover says the rest itself. While the phone's keyboard
+  // is up the page has the room, and only a recording still says it's one.
   const actionable = state === "recording" || state === "handoff" || state === "yours";
-  const showStatus = inTakeover
-    ? state === "recording" || state === "yours"
-    : actionable || ((pictured || view === "desktop") && !onWindows);
+  const showStatus =
+    (inTakeover
+      ? state === "recording" || state === "yours"
+      : actionable || ((pictured || view === "desktop") && !onWindows)) &&
+    (!keyboardUp || state === "recording");
   const blank =
     view === "browser" && status === "live" && pictured && !dialog && aldoBlankPage(shownUrl);
 
-  return (
-    <div className="@container flex min-h-0 flex-1 flex-col bg-background">
-      {view === "browser" ? (
-        <AldoBrowserTabs
-          tabs={tabs}
-          active={activeTab}
-          loading={nav.loading}
-          onActivate={(tabId) => send({ type: "activate", tabId })}
-          onClose={(tabId) => send({ type: "closeTab", tabId })}
-          onNew={() => send({ type: "newTab" })}
-          connected={connected}
+  const tabsProps = {
+    tabs,
+    active: activeTab,
+    loading: nav.loading,
+    onActivate: (tabId: string) => send({ type: "activate", tabId }),
+    onClose: (tabId: string) => send({ type: "closeTab", tabId }),
+    onNew: () => send({ type: "newTab" }),
+    connected,
+  };
+  const reload = () => send({ type: nav.loading ? "stop" : "reload" });
+  const statusLine = showStatus ? (
+    <AldoBrowserStatus
+      state={state}
+      surface={view}
+      teach={teach}
+      handoff={handoff}
+      teaching={teaching}
+      connected={connected}
+      touch={coarse}
+      onTake={() => send({ type: "control", take: true })}
+      onHandBack={() => send({ type: "control", take: false })}
+      onStopRecording={() => send({ type: "teach", action: "stop" })}
+    />
+  ) : null;
+  const more = (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size={coarse ? "icon-lg" : "icon-xs"}
+            aria-label="More"
+          />
+        }
+      >
+        <EllipsisIcon />
+      </MenuTrigger>
+      <MenuPopup align="end" className="min-w-64">
+        {coarse ? (
+          <MenuItem
+            className="min-h-11"
+            disabled={!nav.canGoForward}
+            onClick={() => send({ type: "forward" })}
+          >
+            <ArrowRightIcon className="size-3.5" />
+            Forward
+          </MenuItem>
+        ) : null}
+        <MenuItem
+          className="pointer-coarse:min-h-11"
+          onClick={openExternally}
+          disabled={!shownUrl || aldoBlankPage(shownUrl) || shownUrl.startsWith("chrome://")}
         >
-          <AldoBrowserViewSwitch view={view} onChange={setView} />
-        </AldoBrowserTabs>
-      ) : (
-        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 bg-muted/60 px-1.5 dark:bg-white/[0.03]">
+          <ExternalLinkIcon className="size-3.5" />
+          {port ? "Open this preview in a new tab" : "Open in a new tab"}
+        </MenuItem>
+        {coarse ? (
+          <MenuItem disabled={!connected} onClick={paste}>
+            <ClipboardPasteIcon className="size-3.5" />
+            <MenuLines label="Paste" hint="Types what you copied into the page" />
+          </MenuItem>
+        ) : null}
+        <MenuSeparator />
+        {!features?.fit ? null : coarse ? (
+          // These change the page behind the menu, which closes to show it.
+          <MenuCheckboxItem
+            closeOnClick
+            checked={!wantFit}
+            onCheckedChange={(checked) => chooseFit(!checked)}
+          >
+            <MenuLines label="Desktop site" hint="The page at a computer's size" />
+          </MenuCheckboxItem>
+        ) : (
+          <MenuCheckboxItem closeOnClick checked={wantFit} onCheckedChange={chooseFit}>
+            <MenuLines label="Fit to panel" hint="The page laid out at this panel's width" />
+          </MenuCheckboxItem>
+        )}
+        {/* A touch screen has the page at its own size already; an older machine's has only this. */}
+        {!coarse || !features?.fit || phone ? (
+          <MenuCheckboxItem
+            closeOnClick
+            checked={phone}
+            onCheckedChange={(checked) =>
+              send({ type: "device", mode: checked ? "phone" : "desktop" })
+            }
+          >
+            <MenuLines label="Phone view" hint="The page as a phone gets it, with touch" />
+          </MenuCheckboxItem>
+        ) : null}
+        <MenuCheckboxItem
+          checked={follow}
+          onCheckedChange={(checked) => send({ type: "follow", enabled: checked })}
+        >
+          <MenuLines label="Follow the agent's tab" hint="Show whichever tab it's using" />
+        </MenuCheckboxItem>
+        {coarse ? (
+          <>
+            <MenuSeparator />
+            <MenuItem onClick={() => setView("desktop")}>
+              <MonitorIcon className="size-3.5" />
+              <MenuLines label="Show the desktop" hint="Its whole screen, with desktop apps" />
+            </MenuItem>
+          </>
+        ) : null}
+        {canTeach && (coarse || !inTakeover) ? (
+          <>
+            {coarse ? null : <MenuSeparator />}
+            <MenuItem onClick={startTeaching}>
+              <GraduationCapIcon className="size-3.5" />
+              <MenuLines
+                label="Teach this"
+                hint="Do a task while it records, for your agent to learn"
+              />
+            </MenuItem>
+          </>
+        ) : null}
+      </MenuPopup>
+    </Menu>
+  );
+  const loadingLine = (
+    <div
+      aria-hidden
+      data-loading={nav.loading}
+      className="preview-loading-progress pointer-events-none absolute bottom-0 left-0 z-10 h-0.5 w-full origin-left rounded-r-full bg-primary"
+    />
+  );
+
+  return (
+    <div
+      ref={rootRef}
+      className="@container flex min-h-0 flex-1 flex-col bg-background"
+      style={keyboardOverlap ? { paddingBottom: keyboardOverlap } : undefined}
+    >
+      {view === "desktop" ? (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 bg-muted/60 px-1.5 dark:bg-white/[0.03] pointer-coarse:h-12">
           {windowsRunning ? (
             <AldoDesktopScreenSwitch
               screen={screen}
@@ -856,104 +951,85 @@ export function AldoBrowserPanel({
                 : "Your Windows computer, with desktop Office. Sign in to Office here once."
               : "The agent's whole desktop: Chrome, desktop apps and the taskbar."}
           </span>
+          <div ref={setDesktopBar} className="flex shrink-0 items-center" />
           <AldoBrowserViewSwitch view={view} onChange={setView} />
         </div>
-      )}
-
-      {view === "browser" ? (
-        <div className="relative flex h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-1.5 pointer-coarse:h-12">
-          <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Navigation">
-            <NavButton
-              label="Back"
+      ) : coarse ? (
+        // A phone's browser: one row, and the tabs behind their count.
+        <div className="relative flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 bg-background px-1.5">
+          {editing ? null : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-lg"
+              aria-label="Back"
               disabled={!nav.canGoBack}
               onClick={() => send({ type: "back" })}
             >
               <ArrowLeftIcon />
-            </NavButton>
-            <NavButton
-              label="Forward"
-              disabled={!nav.canGoForward}
-              onClick={() => send({ type: "forward" })}
-            >
-              <ArrowRightIcon />
-            </NavButton>
-            <NavButton
-              label={nav.loading ? "Stop loading" : "Reload"}
-              onClick={() => send({ type: nav.loading ? "stop" : "reload" })}
-            >
-              {nav.loading ? <XIcon /> : <RotateCwIcon />}
-            </NavButton>
-          </div>
-          <AldoAddressBar url={shownUrl} onSubmit={navigate} />
-          {inTakeover && canTeach ? (
-            <Button type="button" size="compact" variant="outline" onClick={startTeaching}>
-              <GraduationCapIcon /> Teach this
             </Button>
-          ) : null}
-          <Menu>
-            <MenuTrigger
-              render={<Button type="button" variant="ghost" size="icon-xs" aria-label="More" />}
+          )}
+          <AldoAddressBar url={shownUrl} onSubmit={navigate} touch onEditing={setEditing}>
+            <button
+              type="button"
+              aria-label={nav.loading ? "Stop loading" : "Reload"}
+              onClick={reload}
+              className="absolute inset-y-0 end-0 flex w-11 items-center justify-center rounded-e-[10px] text-muted-foreground outline-none after:absolute after:-inset-y-1 after:inset-x-0 active:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             >
-              <EllipsisIcon />
-            </MenuTrigger>
-            <MenuPopup align="end" className="min-w-64">
-              <MenuItem
-                onClick={openExternally}
-                disabled={!shownUrl || aldoBlankPage(shownUrl) || shownUrl.startsWith("chrome://")}
-              >
-                <ExternalLinkIcon className="size-3.5" />
-                {port ? "Open this preview in a new tab" : "Open in a new tab"}
-              </MenuItem>
-              <MenuSeparator />
-              <MenuCheckboxItem
-                checked={phone}
-                onCheckedChange={(checked) =>
-                  send({ type: "device", mode: checked ? "phone" : "desktop" })
-                }
-              >
-                <MenuLines label="Phone view" hint="The page at a phone's size, with touch" />
-              </MenuCheckboxItem>
-              <MenuCheckboxItem
-                checked={follow}
-                onCheckedChange={(checked) => send({ type: "follow", enabled: checked })}
-              >
-                <MenuLines label="Follow the agent's tab" hint="Show whichever tab it's using" />
-              </MenuCheckboxItem>
-              {canTeach && !inTakeover ? (
-                <>
-                  <MenuSeparator />
-                  <MenuItem onClick={startTeaching}>
-                    <GraduationCapIcon className="size-3.5" />
-                    <MenuLines
-                      label="Teach this"
-                      hint="Do a task while it records, for your agent to learn"
-                    />
-                  </MenuItem>
-                </>
-              ) : null}
-            </MenuPopup>
-          </Menu>
-          <div
-            aria-hidden
-            data-loading={nav.loading}
-            className="preview-loading-progress pointer-events-none absolute bottom-0 left-0 z-10 h-0.5 w-full origin-left rounded-r-full bg-primary"
-          />
+              {nav.loading ? <XIcon className="size-4" /> : <RotateCwIcon className="size-4" />}
+            </button>
+          </AldoAddressBar>
+          {editing ? null : (
+            <>
+              <AldoBrowserTabsMenu {...tabsProps} />
+              {more}
+            </>
+          )}
+          {loadingLine}
         </div>
-      ) : null}
+      ) : (
+        <>
+          <AldoBrowserTabs {...tabsProps}>
+            <AldoBrowserViewSwitch view={view} onChange={setView} />
+          </AldoBrowserTabs>
+          <div className="relative flex h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-1.5">
+            <div
+              className="flex shrink-0 items-center gap-0.5"
+              role="group"
+              aria-label="Navigation"
+            >
+              <NavButton
+                label="Back"
+                disabled={!nav.canGoBack}
+                onClick={() => send({ type: "back" })}
+              >
+                <ArrowLeftIcon />
+              </NavButton>
+              <NavButton
+                label="Forward"
+                disabled={!nav.canGoForward}
+                onClick={() => send({ type: "forward" })}
+              >
+                <ArrowRightIcon />
+              </NavButton>
+              <NavButton label={nav.loading ? "Stop loading" : "Reload"} onClick={reload}>
+                {nav.loading ? <XIcon /> : <RotateCwIcon />}
+              </NavButton>
+            </div>
+            <AldoAddressBar url={shownUrl} onSubmit={navigate} />
+            {inTakeover && canTeach ? (
+              <Button type="button" size="compact" variant="outline" onClick={startTeaching}>
+                <GraduationCapIcon /> Teach this
+              </Button>
+            ) : null}
+            {more}
+            {loadingLine}
+          </div>
+        </>
+      )}
 
-      {showStatus ? (
-        <AldoBrowserStatus
-          state={state}
-          surface={view}
-          teach={teach}
-          handoff={handoff}
-          teaching={teaching}
-          connected={connected}
-          onTake={() => send({ type: "control", take: true })}
-          onHandBack={() => send({ type: "control", take: false })}
-          onStopRecording={() => send({ type: "teach", action: "stop" })}
-        />
-      ) : null}
+      {/* Under the address with a mouse; on a touch screen at the foot, where a thumb is. */}
+      {coarse ? null : statusLine}
 
       {teach?.state === "recorded" ? (
         // Over the top of the page, until it's taught or discarded (on any device).
@@ -992,6 +1068,7 @@ export function AldoBrowserPanel({
           environmentId={environmentId}
           screen={screen}
           onUse={screen === "machine" ? noteUse : undefined}
+          bar={desktopBar}
         />
       ) : null}
       <div
@@ -1001,40 +1078,20 @@ export function AldoBrowserPanel({
           view === "desktop" && "hidden",
         )}
       >
-        <canvas
-          ref={canvasRef}
-          aria-label="Shared browser. Click to interact."
-          className={cn(
-            // The page at the top, as a browser shows one, as big as fits (never past its own
-            // size, which is the panel's: aldoLiveViewSize), centered across when it's narrower.
-            "absolute inset-x-0 top-0 mx-auto block max-h-full max-w-full touch-none bg-background shadow-[0_1px_0_0_var(--color-border),0_8px_24px_-12px_rgb(0_0_0/0.18)] outline-none transition-opacity",
-            status !== "live" && "opacity-40",
-            !pictured && "invisible",
-            focused && "outline-2 -outline-offset-2 outline-ring/50",
-          )}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onContextMenu={(e) => e.preventDefault()}
-        />
-        <textarea
-          ref={keyboardRef}
-          aria-label="Type into the shared browser"
-          autoCapitalize="off"
-          autoCorrect="off"
-          autoComplete="off"
-          spellCheck={false}
-          className="pointer-events-none absolute bottom-0 left-0 size-px resize-none opacity-0"
-          onKeyDown={(e) => onKey(e, "down")}
-          onKeyUp={(e) => onKey(e, "up")}
-          onPaste={onPaste}
-          onInput={onInput}
-          onCompositionEnd={(e) => {
-            if (e.data) send({ type: "text", text: e.data });
-            e.currentTarget.value = "";
-          }}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+        <AldoBrowserPage
+          ref={pageRef}
+          canvasRef={canvasRef}
+          metaRef={metaRef}
+          send={send}
+          onUse={noteUse}
+          coarse={coarse}
+          fit={wantFit && !phone}
+          touch={Boolean(features?.touch)}
+          mouseTouch={phone}
+          fields={features?.fields ? (fields ?? NO_FIELDS) : null}
+          dimmed={status !== "live"}
+          hidden={!pictured}
+          onPaste={coarse ? paste : undefined}
         />
         {blank ? <AldoBrowserStart environmentId={environmentId} onOpen={navigate} /> : null}
         {status !== "live" || !pictured ? (
@@ -1061,36 +1118,7 @@ export function AldoBrowserPanel({
           />
         ) : null}
       </div>
-      {view === "browser" && connected && pictured ? (
-        <AldoScreenKeyboard
-          key={environmentId}
-          onText={(text) => {
-            noteUse();
-            // Key events reach both normal forms and canvas-based remote desktops.
-            for (const key of text) {
-              for (const event of ["down", "up"]) {
-                send({ type: "key", event, key, text: key, modifiers: 0 });
-                // Older aldod inserts printable key text only for one UTF-16 unit.
-                if (event === "down" && key.length > 1) send({ type: "text", text: key });
-              }
-            }
-          }}
-          onKey={(key) => {
-            noteUse();
-            for (const event of ["down", "up"]) {
-              send({
-                type: "key",
-                event,
-                key,
-                code: key,
-                keyCode: { Enter: 13, Tab: 9, Backspace: 8 }[key],
-                text: key === "Enter" ? "\r" : "",
-                modifiers: 0,
-              });
-            }
-          }}
-        />
-      ) : null}
+      {coarse ? statusLine : null}
     </div>
   );
 }

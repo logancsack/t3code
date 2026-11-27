@@ -7,7 +7,8 @@
 // phone leads with the site's own page, where the phone's camera works.
 // Touch works as in the Browser panel, and so does "Teach this", which
 // teaches the conversation that asked: it's handed back only once a
-// recording is taught or discarded.
+// recording is taught or discarded. While the phone's keyboard is up the page
+// has the room: what to do goes in a line at the top, with "I'm done" beside it.
 
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import { ExternalLinkIcon, LoaderIcon, XIcon } from "lucide-react";
@@ -85,6 +86,7 @@ function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => 
   const handoff = home?.handoffs?.find((h) => h.id === id) ?? null;
   const [busy, setBusy] = useState<"done" | "skip" | null>(null);
   const [teaching, setTeaching] = useState(false);
+  const [typing, setTyping] = useState(false);
   const answered = useRef(false);
   // On a phone, a camera step's own page (the site's link) is where its camera works.
   const onPhone = useAldoOnPhone();
@@ -132,11 +134,27 @@ function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => 
           <p className="truncate font-medium text-sm">
             {handoff?.threadTitle || "Your agent's browser"}
           </p>
-          <p className="flex items-center gap-1.5 truncate text-[12px] text-muted-foreground leading-[18px]">
+          <p className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground leading-[18px]">
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
-            You have the browser · your agent waits
+            <span className="truncate">
+              {typing && handoff ? handoff.reason : "You have the browser · your agent waits"}
+            </span>
           </p>
         </div>
+        {typing && handoff ? (
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0"
+            aria-busy={busy === "done" || undefined}
+            disabled={busy !== null || teaching}
+            // Focus stays in the page until the tap is done, or this is gone before it lands.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => void answer({ decision: "done" })}
+          >
+            I'm done
+          </Button>
+        ) : null}
       </header>
       <div className="flex min-h-0 flex-1 flex-col">
         {handoff ? (
@@ -147,6 +165,7 @@ function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => 
               threadId={handoff.thread.threadId}
               inTakeover
               onTeaching={setTeaching}
+              onTyping={setTyping}
             />
           </Suspense>
         ) : (
@@ -155,7 +174,7 @@ function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => 
           </div>
         )}
       </div>
-      {handoff ? (
+      {handoff && !typing ? (
         <footer className="shrink-0 border-t border-border px-4 py-3">
           <div className="mx-auto flex w-full max-w-md flex-col gap-2">
             <div className="text-center text-[14px] leading-5">

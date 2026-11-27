@@ -1,8 +1,12 @@
 import type RFB from "@novnc/novnc";
-import { useEffect, useRef, useState } from "react";
+import { KeyboardIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "../components/ui/button";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { AldoScreenState } from "./AldoBrowserChrome";
+import { useAldoKeyboardGone } from "./AldoBrowserPage";
 import { cn } from "../lib/utils";
 import { AldoApiError } from "./api";
 import { aldoBrowserConnection } from "./workspaceApi";
@@ -12,9 +16,21 @@ import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";
 import { aldoLiveViewSize, parseAldoLiveFrame } from "./liveView.logic";
 import { useAldoPageVisible } from "./pageVisibility";
-import { AldoScreenKeyboard } from "./AldoScreenKeyboard";
+import { ALDO_TYPING_SEED as SEED, aldoTyped } from "./browserInput.logic";
 
 type Status = "connecting" | "live" | "asleep" | "error";
+
+/** The keys a phone's keyboard sends as keys, as X names them. */
+const KEYSYMS: Record<string, number> = {
+  Backspace: 0xff08,
+  Tab: 0xff09,
+  Enter: 0xff0d,
+  Escape: 0xff1b,
+  ArrowLeft: 0xff51,
+  ArrowUp: 0xff52,
+  ArrowRight: 0xff53,
+  ArrowDown: 0xff54,
+};
 
 /**
  * A desktop over VNC: by default the sandbox's own (Chrome, desktop apps, the
@@ -29,18 +45,25 @@ type Status = "connecting" | "live" | "asleep" | "error";
  * its requests for one on), with a dot for the local pointer while the video
  * shows the screen's own. An older machine answers the video's URL with VNC,
  * and gets VNC alone.
+ *
+ * On a touch screen a key in the row over it brings up the phone's keyboard.
+ * A screen, unlike a page, doesn't say when a tap landed somewhere to type,
+ * so here it's asked for: what's typed goes to whatever has the screen's focus.
  */
 export function AldoDesktopView({
   environmentId,
   screen = "machine",
   conversation,
   onUse,
+  bar,
 }: {
   environmentId: string;
   screen?: AldoDesktopScreen;
   conversation?: string | null | undefined;
   /** The user clicked, typed or scrolled on the screen: agents wait a moment after. */
   onUse?: (() => void) | undefined;
+  /** Where its own controls go: the row over it (AldoBrowserPanel.tsx). */
+  bar?: HTMLElement | null;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -52,6 +75,24 @@ export function AldoDesktopView({
   // VNC streams whatever changes on the screen while connected: let go of it
   // once the page has been hidden for a while (a quick tab switch keeps it).
   const pageVisible = useAldoPageVisible(10_000);
+  // The phone's keyboard, typing into a hidden input: what it holds now against what it held is
+  // what was typed (browserInput.logic.ts), which is how corrected and swiped words arrive whole.
+  const coarse = useMediaQuery("(pointer: coarse)");
+  const typeRef = useRef<HTMLInputElement | null>(null);
+  const heldRef = useRef("");
+  const [typing, setTyping] = useState(false);
+  useAldoKeyboardGone(
+    typing,
+    useCallback(() => typeRef.current?.blur(), []),
+  );
+  // noVNC takes focus when its screen is tapped, which would put the keyboard away.
+  useEffect(() => {
+    if (rfbRef.current) rfbRef.current.focusOnClick = !typing;
+  }, [typing, status]);
+  const press = (keysym: number, code?: string) => {
+    onUse?.();
+    rfbRef.current?.sendKey(keysym, code);
+  };
 
   useEffect(() => {
     if (!pageVisible) return;
@@ -283,22 +324,77 @@ export function AldoDesktopView({
           />
         ) : null}
       </div>
-      {status === "live" ? (
-        <AldoScreenKeyboard
-          key={`${environmentId}:${screen}`}
-          onText={(text) => {
-            onUse?.();
-            for (const char of text) {
-              const point = char.codePointAt(0)!;
-              rfbRef.current?.sendKey(point <= 255 ? point : 0x01000000 | point);
-            }
-          }}
-          onKey={(key) => {
-            onUse?.();
-            rfbRef.current?.sendKey({ Enter: 0xff0d, Backspace: 0xff08, Tab: 0xff09 }[key], key);
-          }}
-        />
-      ) : null}
+      <input
+        ref={typeRef}
+        aria-label="Type on the desktop"
+        tabIndex={-1}
+        autoCapitalize="none"
+        autoCorrect="off"
+        autoComplete="off"
+        spellCheck={false}
+        data-1p-ignore=""
+        data-lpignore="true"
+        // 16px, or iOS zooms the app to it.
+        className="pointer-events-none absolute top-0 left-0 size-px border-0 bg-transparent p-0 text-base opacity-0 outline-none"
+        onInput={(event) => {
+          const input = event.currentTarget;
+          const { inputType, isComposing } = event.nativeEvent as InputEvent;
+          const typed = aldoTyped(
+            heldRef.current,
+            input.value,
+            SEED,
+            inputType ? inputType.startsWith("delete") : input.value === "",
+          );
+          if (typed.value !== input.value && !isComposing) input.value = typed.value;
+          heldRef.current = input.value;
+          for (let i = 0; i < typed.backspaces; i++) press(KEYSYMS.Backspace!, "Backspace");
+          for (const character of typed.text) {
+            const point = character.codePointAt(0)!;
+            press(point <= 255 ? point : 0x01000000 | point);
+          }
+        }}
+        onKeyDown={(event) => {
+          const keysym = KEYSYMS[event.key];
+          if (!keysym || event.nativeEvent.isComposing || event.keyCode === 229) return;
+          // With something here to delete, the input event says what went.
+          if (event.key === "Backspace" && event.currentTarget.value !== "") return;
+          event.preventDefault();
+          press(keysym, event.key);
+          event.currentTarget.value = SEED;
+          heldRef.current = SEED;
+        }}
+        onFocus={(event) => {
+          event.currentTarget.value = SEED;
+          heldRef.current = SEED;
+          setTyping(true);
+        }}
+        onBlur={(event) => {
+          event.currentTarget.value = "";
+          heldRef.current = "";
+          setTyping(false);
+        }}
+      />
+      {coarse && status === "live" && bar
+        ? createPortal(
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-lg"
+              aria-label="Keyboard"
+              aria-pressed={typing}
+              className={cn(typing && "bg-foreground/[0.08] text-foreground")}
+              // Focus stays where it is until the tap is done, or the keyboard goes and comes back.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                if (typing) typeRef.current?.blur();
+                else typeRef.current?.focus({ preventScroll: true });
+              }}
+            >
+              <KeyboardIcon />
+            </Button>,
+            bar,
+          )
+        : null}
     </div>
   );
 }
