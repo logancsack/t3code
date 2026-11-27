@@ -117,7 +117,7 @@ function InstructionsEditor(props: {
       <Textarea
         aria-label={`Instructions for ${scope === EVERY_PROJECT ? "all projects" : title}`}
         placeholder={scope === EVERY_PROJECT ? PLACEHOLDERS.every : PLACEHOLDERS.project}
-        className="text-sm"
+        className="text-base sm:text-sm"
         value={draft}
         onChange={(e) => setDraft(e.currentTarget.value)}
       />

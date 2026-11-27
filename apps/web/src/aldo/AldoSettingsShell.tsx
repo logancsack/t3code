@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { Button } from "../components/ui/button";
 import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
 import { aldoSettingsPage, aldoSettingsParent } from "./settings.logic";
+import "./settingsTouch.css";
 
 declare module "@tanstack/react-router" {
   interface HistoryState {

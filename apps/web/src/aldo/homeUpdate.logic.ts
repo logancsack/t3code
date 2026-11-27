@@ -22,6 +22,12 @@ export interface AldoHomeUpdate {
   readonly notChecked: ReadonlyArray<string>;
   readonly notes?: ReadonlyArray<string>;
   readonly links: ReadonlyArray<{ readonly label: string; readonly url: string }>;
+  /** The agent's own final answer (Markdown), when it says more than the summary. */
+  readonly answer?: string;
+  /** Every link the answer gave, when there are more than `links`. */
+  readonly sources?: ReadonlyArray<{ readonly label: string; readonly url: string }>;
+  /** It failed after making what's linked: that's what it made before, not the result. */
+  readonly partial?: boolean;
   readonly next?: {
     readonly owner: "aldo" | "you" | "none";
     readonly kind: string;
@@ -42,6 +48,10 @@ const strings = (v: unknown): v is string[] =>
   Array.isArray(v) && v.length <= 12 && v.every((s) => typeof s === "string" && s.length <= 800);
 const record = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
+/** The most of an answer and of its sources a Home update carries (src/lib/assistant/results.ts in Aldo). */
+const ANSWER_CHARS = 20_000;
+const MAX_SOURCES = 40;
+
 export function safeUpdateUrl(v: unknown): v is string {
   if (typeof v !== "string" || /[\s\\]/.test(v)) return false;
   if (/^\/(?!\/)/.test(v)) return true;
@@ -96,6 +106,18 @@ export function homeUpdateOf(value: unknown): AldoHomeUpdate | null {
     notChecked: value.notChecked,
     ...(value.notes ? { notes: value.notes as string[] } : {}),
     links: value.links as { label: string; url: string }[],
+    // Optional and newer than the rest: one that doesn't fit is left out, not the whole update.
+    ...(typeof value.answer === "string" &&
+    value.answer.trim() &&
+    value.answer.length <= ANSWER_CHARS
+      ? { answer: value.answer }
+      : {}),
+    ...(Array.isArray(value.sources) &&
+    value.sources.length <= MAX_SOURCES &&
+    value.sources.every((l) => record(l) && typeof l.label === "string" && safeUpdateUrl(l.url))
+      ? { sources: value.sources as { label: string; url: string }[] }
+      : {}),
+    ...(value.partial === true ? { partial: true } : {}),
     ...(next ? { next } : {}),
   };
 }

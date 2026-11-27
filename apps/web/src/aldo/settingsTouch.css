@@ -1,0 +1,40 @@
+/* Settings on a phone: every button, tab, picker and field at least 44 px tall, and each switch
+   reachable through a 44 px area around it. Desktop keeps the fork's sizes. */
+@media (max-width: 767px) {
+  [data-settings-page-scroll]
+    :is(
+      [data-slot="button"]:not([data-variant="link"]),
+      :is(button, a)[data-slot="tooltip-trigger"][data-variant]:not([data-variant="link"]),
+      [data-slot="select-trigger"],
+      [data-slot="menu-trigger"],
+      [data-slot="toggle"],
+      [role="tab"],
+      [role="radio"]:not([data-slot="radio"])
+    ) {
+    min-height: 44px;
+  }
+  [data-settings-page-scroll]
+    :is([data-slot="button"], [data-slot="toggle"], [role="tab"]):not([data-variant="link"]) {
+    font-size: 15px;
+  }
+  [data-settings-page-scroll] :is(button, a)[data-variant]:not([data-variant="link"]) {
+    min-width: 44px;
+  }
+  [data-settings-page-scroll] [data-slot="input-control"] {
+    min-height: 44px;
+  }
+  [data-settings-page-scroll] [data-slot="input"] {
+    min-height: 42px;
+  }
+  [data-settings-page-scroll] [data-slot="switch"] {
+    position: relative;
+  }
+  [data-settings-page-scroll] [data-slot="switch"]::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: max(100%, 48px);
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}

@@ -25,7 +25,7 @@ export function AldoPersonalizationPage(props: { readonly children: ReactNode })
             key={tab.to}
             to={tab.to}
             replace
-            className="inline-flex h-7 items-center rounded-md px-3 text-muted-foreground text-sm transition-colors hover:bg-background/55 hover:text-foreground data-[status=active]:bg-background data-[status=active]:text-foreground data-[status=active]:shadow-xs/10 dark:hover:bg-input/32 dark:data-[status=active]:bg-input/72"
+            className="inline-flex h-11 items-center rounded-md px-4 text-[15px] text-muted-foreground sm:h-7 sm:px-3 sm:text-sm transition-colors hover:bg-background/55 hover:text-foreground data-[status=active]:bg-background data-[status=active]:text-foreground data-[status=active]:shadow-xs/10 dark:hover:bg-input/32 dark:data-[status=active]:bg-input/72"
           >
             {tab.label}
           </Link>
