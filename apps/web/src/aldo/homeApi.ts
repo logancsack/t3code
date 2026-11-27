@@ -217,6 +217,7 @@ export interface AldoPolicy {
   readonly reviews?: "all" | "important";
   readonly onProviderLimit?: "wait" | "switch";
   readonly modelRouting?: { readonly paidFallback?: "never" | "authorized" };
+  readonly paidConnectedModels?: "never" | "authorized";
   readonly contextBudget?: number;
   readonly mediaRouting?: "auto" | "ask";
   /** A kind of media's tool, in the user's words; null clears the user's own for a workspace. */

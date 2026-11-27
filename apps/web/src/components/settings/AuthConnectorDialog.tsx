@@ -108,6 +108,7 @@ export function AuthConnectorDialog(props: {
   readonly environmentId?: EnvironmentId;
   readonly isAuthenticated: boolean;
   readonly triggerLabel?: string;
+  readonly accountScoped?: boolean;
   readonly onConnected: () => void;
 }) {
   const {
@@ -117,6 +118,7 @@ export function AuthConnectorDialog(props: {
     providerInstanceId,
     isAuthenticated,
     triggerLabel,
+    accountScoped,
     onConnected,
   } = props;
   const primaryEnvironment = usePrimaryEnvironment();
@@ -145,11 +147,10 @@ export function AuthConnectorDialog(props: {
   const reportedSuccess = useRef<string | null>(null);
   const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Aldo runs one subscription sign-in per service and keeps it on the account.
-  // Aldo keeps GitHub, Claude, Codex, Grok and Muse Code on the account; anything else
-  // (OpenCode, say) signs in inside the thread's own sandbox as usual.
   const aldoMethod = useAldoAccountMethod(connector, isAldoCloud);
-  const ACCOUNT_SCOPED = aldoMethod !== null;
+  const ACCOUNT_SCOPED = isAldoCloud && (accountScoped === true || aldoMethod !== null);
+  const quickStart =
+    aldoMethod ?? (ACCOUNT_SCOPED && offeredMethods.length === 1 ? offeredMethods[0] : undefined);
   const CREDENTIAL_SCOPE_COPY = ACCOUNT_SCOPED
     ? "Saved to your Aldo account for every thread."
     : isAldoCloud
@@ -290,9 +291,9 @@ export function AuthConnectorDialog(props: {
       autoStarted.current = false;
       return;
     }
-    if (!aldoMethod || session || autoStarted.current) return;
+    if (!quickStart || session || autoStarted.current) return;
     autoStarted.current = true;
-    void start(aldoMethod);
+    void start(quickStart);
   }, [open]);
 
   const submit = async () => {

@@ -1077,6 +1077,7 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
         ...(oauth ? {} : { fields: secretFields(input) }),
       };
     }
+    case "antigravity":
     case "bitbucket":
       return null;
   }
