@@ -188,6 +188,7 @@ export function useAldoKeyboardUp(enabled: boolean): boolean {
 type TypingHandlers = {
   input: (e: FormEvent<HTMLInputElement>) => void;
   keyDown: (e: ReactKeyboardEvent<HTMLInputElement>) => void;
+  paste: (e: ReactClipboardEvent<HTMLInputElement>) => void;
   focus: () => void;
   blur: (e: ReactFocusEvent<HTMLInputElement>) => void;
 };
@@ -214,6 +215,7 @@ const TypingInput = memo(function TypingInput(props: {
       className={HIDDEN_INPUT}
       onInput={(e) => handlers.current?.input(e)}
       onKeyDown={(e) => handlers.current?.keyDown(e)}
+      onPaste={(e) => handlers.current?.paste(e)}
       onFocus={() => handlers.current?.focus()}
       onBlur={(e) => handlers.current?.blur(e)}
     />
@@ -273,6 +275,28 @@ export function AldoBrowserPage(props: {
   const mouseMove = useRef<(Point & { buttons: number; mods: number }) | null>(null);
 
   useEffect(() => setLens(ALDO_NO_LENS), [fit]);
+  // The room under a zoomed picture changed (the keyboard came, the phone turned): the picture stays in it.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const stage = canvas?.parentElement;
+    if (!canvas || !stage || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const box = {
+        width: canvas.offsetWidth,
+        height: canvas.offsetHeight,
+        viewWidth: stage.clientWidth - canvas.offsetLeft,
+        viewHeight: stage.clientHeight - canvas.offsetTop,
+      };
+      setLens((lens) => {
+        if (lens.scale <= 1) return lens;
+        const kept = aldoPanLens(lens, 0, 0, box);
+        return kept.x === lens.x && kept.y === lens.y ? lens : kept;
+      });
+    });
+    observer.observe(stage);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [canvasRef]);
   useImperativeHandle(props.ref, () => ({
     focus: () => {
       if (!coarse) keysRef.current?.focus({ preventScroll: true });
@@ -426,7 +450,7 @@ export function AldoBrowserPage(props: {
     }
     // AltGr is Ctrl and Alt on Windows, and types a character like any other key.
     const shortcut = (e.ctrlKey || e.metaKey) && !e.getModifierState("AltGraph");
-    // The browser's own paste puts the user's clipboard in the input, which types it.
+    // The browser's own paste brings the user's clipboard, which onTypingPaste sends.
     if (shortcut && e.key.toLowerCase() === "v") return;
     if (e.key === "Backspace" && !shortcut) {
       // With nothing here to delete, the page still has something.
@@ -450,6 +474,17 @@ export function AldoBrowserPage(props: {
       { ...key, event: "down" },
       { ...key, event: "up" },
     ]);
+  };
+
+  /**
+   * What's pasted goes to the page as it was copied: an input of one line would take its line
+   * breaks first. A short line (a code) is still typed a key at a time, as typing it is.
+   */
+  const onTypingPaste = (e: ReactClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text/plain");
+    if (!text) return;
+    e.preventDefault();
+    type(aldoTypingMessages({ backspaces: 0, text }));
   };
 
   // A keyboard that sends Enter as a line break, not as a key.
@@ -605,8 +640,9 @@ export function AldoBrowserPage(props: {
 
   const onPointerDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     setPasteAt(null);
+    // A computer's keys go to the page from here on, whether it was a mouse or a finger on its screen.
+    if (!coarse) keysRef.current?.focus({ preventScroll: true });
     if (fingerAsMouse(e)) {
-      if (!coarse) keysRef.current?.focus({ preventScroll: true });
       const point = pagePoint(e.clientX, e.clientY);
       if (!point) return;
       e.preventDefault();
@@ -787,6 +823,7 @@ export function AldoBrowserPage(props: {
   typingHandlers.current = {
     input: onTypingInput,
     keyDown: onTypingKeyDown,
+    paste: onTypingPaste,
     focus: onTypingFocus,
     blur: onTypingBlur,
   };

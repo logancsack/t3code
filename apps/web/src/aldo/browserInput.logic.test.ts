@@ -327,6 +327,19 @@ describe("the lens under two fingers", () => {
     expect(aldoPanLens(zoomed, -5000, -5000, box)).toEqual({ scale: 2, x: -390, y: -600 });
   });
 
+  it("stays in a view that got smaller under it (the keyboard came up)", () => {
+    // At the foot of a 600 tall page; the page and its room are then 250 tall, and all of it would be above them.
+    const atFoot = { scale: 2, x: -390, y: -600 };
+    const short = { width: 390, height: 250, viewWidth: 390, viewHeight: 250 };
+    expect(aldoPanLens(atFoot, 0, 0, short)).toEqual({ scale: 2, x: -390, y: -250 });
+    // One that's inside its view already is left where it is.
+    expect(aldoPanLens({ scale: 2, x: -100, y: -100 }, 0, 0, short)).toEqual({
+      scale: 2,
+      x: -100,
+      y: -100,
+    });
+  });
+
   it("stops at five times, and lets go at its own size", () => {
     expect(
       aldoPinchLens(ALDO_NO_LENS, { x: 0, y: 0, distance: 10 }, { x: 0, y: 0, distance: 1000 }, box)
