@@ -2236,6 +2236,19 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           sessionApprovals.set(nativeThreadId, { runtimeMode, kinds });
           return kinds;
         };
+        // Full access lets Codex ask before any forced `rm`, with no session-wide answer, so T3
+        // answers for the main turn. A subagent's own policy is unknown here, and an explicit
+        // approval or sandbox policy still asks.
+        const answeredByFullAccess = (context: ActiveCodexTurnContext): boolean => {
+          const policy = context.input.runtimePolicy;
+          const sandbox = policy.sandboxPolicy as { readonly type?: unknown } | undefined;
+          return (
+            context.subagent === null &&
+            policy.runtimeMode === "full-access" &&
+            policy.approvalPolicy === undefined &&
+            (sandbox === undefined || sandbox?.type === "dangerFullAccess")
+          );
+        };
         /** Retain settled contexts while background commands run so late item events still project. */
         const settledTurns = yield* Ref.make(new Map<string, ActiveCodexTurnContext>());
         const runningCommandItemsByTurn = yield* Ref.make(
@@ -5925,6 +5938,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 payload,
               );
             }
+            if (answeredByFullAccess(context)) {
+              return {
+                decision: "accept",
+              } satisfies CodexSchema.CommandExecutionRequestApprovalResponse;
+            }
             const allowance = sessionAllowance(payload.threadId, context);
             if (allowance.has("command")) {
               return {
@@ -5995,6 +6013,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 `No active Codex turn context for file change approval turn ${payload.turnId}.`,
                 payload,
               );
+            }
+            if (answeredByFullAccess(context)) {
+              return {
+                decision: "accept",
+              } satisfies CodexSchema.FileChangeRequestApprovalResponse;
             }
             const allowance = sessionAllowance(payload.threadId, context);
             if (allowance.has("file-change")) {
@@ -6213,6 +6236,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 payload,
               );
             }
+            if (answeredByFullAccess(context)) {
+              return {
+                decision: approvalDecisionToLegacyReviewDecision("accept"),
+              } satisfies CodexSchema.ExecCommandApprovalResponse;
+            }
             const allowance = sessionAllowance(payload.conversationId, context);
             if (allowance.has("command")) {
               return {
@@ -6281,6 +6309,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 `No active Codex turn context for apply patch approval thread ${payload.conversationId}.`,
                 payload,
               );
+            }
+            if (answeredByFullAccess(context)) {
+              return {
+                decision: approvalDecisionToLegacyReviewDecision("accept"),
+              } satisfies CodexSchema.ApplyPatchApprovalResponse;
             }
             const allowance = sessionAllowance(payload.conversationId, context);
             if (allowance.has("file-change")) {
