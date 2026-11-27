@@ -7,7 +7,9 @@ import {
   MessageCircleQuestionIcon,
   ChevronDownIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { cn } from "~/lib/utils";
+import { AgentMarkdown } from "./AldoQuoted";
 import { threadLink } from "./AldoWorkstream";
 import { UPDATE_STATE_LABELS, technicalUpdateLink, type AldoHomeUpdate } from "./homeUpdate.logic";
 import { relativeTime } from "./home.logic";
@@ -42,6 +44,8 @@ export function AldoUpdateCard({
 }) {
   const Icon = ICONS[update.state];
   const now = Date.parse(`${useNowMinute()}:00Z`);
+  const [answerShown, setAnswerShown] = useState(true);
+  const answer = update.answer;
   const evidenceLinks = update.links.filter(
     (link) => !update.thread || technicalUpdateLink(link.url),
   );
@@ -80,6 +84,19 @@ export function AldoUpdateCard({
         {title ?? update.title}
       </h3>
       <p className="whitespace-pre-wrap wrap-anywhere text-[16px] leading-6">{update.summary}</p>
+      {update.partial ? (
+        <p className="mt-2 text-[14px] leading-5 text-muted-foreground">
+          What it made before it stopped is below. It isn't the finished result.
+        </p>
+      ) : null}
+      {answer && answerShown ? (
+        <AldoFullAnswer
+          answer={answer}
+          checked={update.checked}
+          notChecked={update.notChecked}
+          sources={update.sources ?? update.links}
+        />
+      ) : null}
       <div className="mt-3 flex flex-wrap items-start gap-x-4">
         {update.thread
           ? threadLink(
@@ -91,15 +108,101 @@ export function AldoUpdateCard({
               ),
             )
           : null}
+        {answer ? (
+          <button
+            type="button"
+            aria-expanded={answerShown}
+            onClick={() => setAnswerShown((shown) => !shown)}
+            className={cn(
+              FOCUS,
+              "inline-flex min-h-11 items-center rounded-sm text-[14px] text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {answerShown ? "Hide full answer" : "Show full answer"}
+          </button>
+        ) : null}
+        {/* With the full answer shown, its checks and sources are in it; the rest stays under Details. */}
         <AldoUpdateDetails
-          checked={update.checked}
-          notChecked={update.notChecked}
+          checked={answer && answerShown ? EMPTY_LINES : update.checked}
+          notChecked={answer && answerShown ? EMPTY_LINES : update.notChecked}
           notes={update.notes}
-          links={evidenceLinks}
+          links={answer && answerShown ? EMPTY_LINKS : evidenceLinks}
           following={following}
         />
       </div>
     </article>
+  );
+}
+
+/** Under the summary: the agent's own answer, what was checked, and every source it gave. */
+function AldoFullAnswer({
+  answer,
+  checked,
+  notChecked,
+  sources,
+}: {
+  readonly answer: string;
+  readonly checked: ReadonlyArray<string>;
+  readonly notChecked: ReadonlyArray<string>;
+  readonly sources: ReadonlyArray<{ readonly url: string; readonly label: string }>;
+}) {
+  const heading =
+    "mt-4 mb-1.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground";
+  const checks = [...new Set(checked)];
+  const missed = [...new Set(notChecked)];
+  return (
+    <section aria-label="Full answer" className="mt-4 border-t border-foreground/10 pt-1">
+      <h4 className={heading}>Full answer</h4>
+      <AgentMarkdown text={answer} className="text-[15px] leading-6" />
+      {checks.length || missed.length ? (
+        <>
+          <h4 className={heading}>
+            Checked · {checks.length} of {checks.length + missed.length}
+          </h4>
+          <ul className="space-y-1.5 text-[15px] leading-[22px]">
+            {checks.map((line) => (
+              <li key={`c:${line}`} className="flex gap-2">
+                <CheckIcon
+                  aria-hidden
+                  className="mt-[3px] size-4 shrink-0 text-success-foreground"
+                />
+                <span className="wrap-anywhere">{line}</span>
+              </li>
+            ))}
+            {missed.map((line) => (
+              <li key={`n:${line}`} className="flex gap-2 text-muted-foreground">
+                <CircleMinusIcon aria-hidden className="mt-[3px] size-4 shrink-0" />
+                <span className="wrap-anywhere">
+                  <span className="sr-only">Not checked: </span>
+                  {line}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {sources.length ? (
+        <>
+          <h4 className={heading}>Sources · {sources.length}</h4>
+          <div className="flex flex-wrap gap-1.5">
+            {sources.map((link) => (
+              <a
+                key={link.url}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  FOCUS,
+                  "inline-flex min-h-9 max-w-full items-center truncate rounded-full border border-foreground/[0.14] px-3 text-[13.5px] text-primary hover:border-foreground/30 pointer-coarse:min-h-11",
+                )}
+              >
+                <span className="truncate">{link.label}</span>
+              </a>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </section>
   );
 }
 

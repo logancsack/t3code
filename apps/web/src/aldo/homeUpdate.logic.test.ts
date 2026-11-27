@@ -22,6 +22,23 @@ describe("Home update compatibility", () => {
     expect(homeUpdateOf({ ...update, checked: "not a list" })).toBeNull();
     expect(homeUpdateOf({ ...update, thread: { environmentId: "aldo-demo" } })).toBeNull();
   });
+  it("reads the full answer, every source and a partial result, leaving out only what doesn't fit", () => {
+    const sources = Array.from({ length: 5 }, (_, i) => ({
+      label: `Source ${i}`,
+      url: `https://example.com/${i}`,
+    }));
+    const full = { ...update, answer: "**Gusto Plus**, at $80 a month.", sources, partial: true };
+    expect(homeUpdateOf(full)).toEqual(full);
+    expect(
+      homeUpdateOf({
+        ...full,
+        answer: 42,
+        sources: [{ label: "x", url: "javascript:alert(1)" }],
+        partial: "yes",
+      }),
+    ).toEqual(update);
+    expect(homeUpdateOf({ ...update, answer: "x".repeat(20_001) })).toEqual(update);
+  });
   it("turns the exact old four-paragraph trigger into one conservative update, retaining original evidence", () => {
     const parsed = legacyHomeUpdate(trigger)!;
     expect(parsed.thread).toEqual(target);
