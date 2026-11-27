@@ -199,9 +199,11 @@ export function AuthConnectorDialog(props: {
     toastManager.add({
       type: "success",
       title: `${serviceName} connected`,
-      description: ACCOUNT_SCOPED
-        ? "Every thread can use it now."
-        : "Your account is ready to use in this workspace.",
+      description: accountScoped
+        ? session.message
+        : ACCOUNT_SCOPED
+          ? "Every thread can use it now."
+          : "Your account is ready to use in this workspace.",
     });
   }, [onConnected, serviceName, session?.id, session?.status]);
 
@@ -748,7 +750,11 @@ export function AuthConnectorDialog(props: {
                 onClick={() => void submit()}
               >
                 {isSubmitting ? <LoaderIcon className="animate-spin" /> : null}
-                {session.stage === "return" ? "Finish connecting" : "Verify & connect"}
+                {session.stage === "return"
+                  ? "Finish connecting"
+                  : accountScoped && connector === "opencode"
+                    ? "Save API key"
+                    : "Verify & connect"}
               </Button>
             </>
           ) : (
