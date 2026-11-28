@@ -125,6 +125,16 @@ const layerAdvertisedTools = McpHttpServer.layerTools.pipe(
   Layer.provide(toolHandlerServices),
 );
 
+it.effect("the thread capability inventory covers the registered MCP tools", () =>
+  Effect.gen(function* () {
+    const mcp = yield* McpServer.McpServer;
+    // tool_search is registered separately for providers with deferred tool loading.
+    expect(McpHttpServer.registeredThreadToolNames()).toEqual(
+      [...mcp.tools.map(({ tool }) => tool.name), "tool_search"].sort(),
+    );
+  }).pipe(Effect.provide(layerAdvertisedTools)),
+);
+
 // Claude Code loads these tools up front instead of behind ToolSearch, outside this budget.
 it.effect("only request_secret and send_to_user ask Claude Code to load them up front", () =>
   Effect.gen(function* () {
