@@ -52,6 +52,30 @@ const record = (v: unknown): v is Record<string, unknown> =>
 const ANSWER_CHARS = 20_000;
 const MAX_SOURCES = 40;
 
+/**
+ * Sources as each is shown: one named only by its site ("nodejs.org") that
+ * shares that name with another says which page it is ("nodejs.org/en/download"),
+ * so five links to one site aren't five identical chips.
+ */
+export function distinctSources<T extends { readonly url: string; readonly label: string }>(
+  sources: ReadonlyArray<T>,
+): ReadonlyArray<T> {
+  const count = new Map<string, number>();
+  for (const s of sources) count.set(s.label, (count.get(s.label) ?? 0) + 1);
+  return sources.map((s) => {
+    if ((count.get(s.label) ?? 0) < 2) return s;
+    try {
+      const url = new URL(s.url);
+      const site = url.hostname.replace(/^www\./, "");
+      if (s.label !== site) return s;
+      const page = `${url.pathname.replace(/\/+$/, "")}${url.search}${url.hash}`;
+      return page ? { ...s, label: `${site}${page}` } : s;
+    } catch {
+      return s;
+    }
+  });
+}
+
 export function safeUpdateUrl(v: unknown): v is string {
   if (typeof v !== "string" || /[\s\\]/.test(v)) return false;
   if (/^\/(?!\/)/.test(v)) return true;
