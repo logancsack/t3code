@@ -97,6 +97,7 @@ import {
   repoName,
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
+import { boardAskingOnce } from "./decisions.logic";
 import { morphIntoThread } from "./morph";
 import { setAldoUnderTheHood, useAldoSimple, useAldoUnderTheHood } from "./simpleMode";
 import { useAldoOnboardingState } from "./onboarding";
@@ -271,7 +272,11 @@ function AldoHomeContent() {
   // A repository whose chip has gone (its last conversation left) no longer narrows anything.
   const activeRepo = repo !== null && repos.includes(repo) ? repo : null;
   const shown = useMemo(() => (home ? filterHome(home, activeRepo) : null), [home, activeRepo]);
-  const board = useMemo(() => (shown ? boardFor(shown.conversations, now) : null), [shown, now]);
+  // A thread that asks on an approval card of Aldo's asks there, once (the approvals above aren't narrowed by repository).
+  const board = useMemo(
+    () => (shown && home ? boardAskingOnce(boardFor(shown.conversations, now), home) : null),
+    [shown, home, now],
+  );
   const issues = useMemo(() => (home ? healthIssues(home) : []), [home]);
   const chips = useMemo(
     () => composerChips(home, { conversationEmpty, lastSeen }),

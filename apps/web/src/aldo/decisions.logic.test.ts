@@ -8,9 +8,13 @@ import {
   type AldoHomePending,
   type AldoHomePullRequest,
 } from "./homeApi";
+import { boardFor } from "./home.logic";
+import { simpleNeedsYou } from "./simpleMode.logic";
+import { summonSections } from "./summon.logic";
 import {
   aldoDecisions,
   aldoChatDecisions,
+  boardAskingOnce,
   aldoHiddenFromChat,
   decidesInPlace,
   decisionAsk,
@@ -187,6 +191,151 @@ describe("aldoDecisions", () => {
       NOW,
     );
     expect(decisions.map((d) => d.key)).toEqual(["question:s:r1", "merge:acme/shop#9"]);
+  });
+
+  it("asks a step on an approval card once: its thread's turn-end ask isn't another decision", () => {
+    const turnAsk = (ref: string) => ({
+      ...question,
+      ref,
+      thread: at(ref),
+      pending: { ...question.pending!, requestId: `ask:turn-${ref}` },
+    });
+    const card = (ref: string, over: Partial<AldoApproval> = {}) =>
+      approval(`ap-${ref}`, { kind: "confirm", thread: at(ref), ...over });
+    const read = home({
+      approvals: [
+        card("asks"),
+        card("waits"),
+        card("stopped"),
+        card("planned"),
+        card("failed"),
+        // Decided, or a card for another thread: the thread's own ask stays.
+        card("decided", { status: "approved" }),
+        card("elsewhere", { thread: at("other") }),
+        // Being carried out: decided, and its thread hasn't caught up yet.
+        card("carried", { status: "sending" }),
+        card("planasks"),
+      ],
+      conversations: [
+        // The paid step's card is the ask; the words its turn ended on repeat it.
+        turnAsk("asks"),
+        conversation({ ref: "waits", thread: at("waits"), state: "waiting" }),
+        // A request it's stopped on, a plan to start and a failure are their own decisions.
+        { ...question, ref: "stopped", thread: at("stopped") },
+        conversation({
+          ref: "planned",
+          thread: at("planned"),
+          state: "waiting",
+          plan: { id: "p1", text: "1. Buy it" },
+        }),
+        conversation({ ref: "failed", thread: at("failed"), state: "failed", at: ago(3) }),
+        turnAsk("decided"),
+        turnAsk("elsewhere"),
+        turnAsk("carried"),
+        // A plan to start is its own decision, as Aldo's brief has it.
+        { ...turnAsk("planasks"), plan: { id: "p2", text: "1. Buy it" } },
+      ],
+      // A payment for the same thread is listed with the payments, not as the thread's form.
+      payments: [
+        {
+          id: "pay-asks",
+          merchant: "Excalidraw",
+          site: "https://excalidraw.com",
+          total: "$7.00",
+          items: [],
+          context: "One month of Plus",
+          status: "pending_approval",
+          approvalUrl: "https://link.example/approve",
+          expiresAt: null,
+          cardLast4: null,
+          test: true,
+          thread: at("asks"),
+          threadTitle: "asks",
+          createdAt: ago(4),
+          updatedAt: ago(4),
+        },
+      ],
+    });
+    const keys = aldoDecisions(read, NOW).map((d) => d.key);
+    expect(keys.filter((k) => !k.startsWith("aldo:")).toSorted()).toEqual([
+      `failed:failed:${ago(3)}`,
+      "payment:pay-asks",
+      "plan:planned:p1",
+      "question:decided:ask:turn-decided",
+      "question:elsewhere:ask:turn-elsewhere",
+      "question:planasks:ask:turn-planasks",
+      "question:stopped:r1",
+    ]);
+    expect(keys.filter((k) => k.startsWith("aldo:"))).toEqual([
+      "aldo:ap-asks",
+      "aldo:ap-waits",
+      "aldo:ap-stopped",
+      "aldo:ap-planned",
+      "aldo:ap-failed",
+      "aldo:ap-elsewhere",
+      "aldo:ap-planasks",
+    ]);
+    // The count says the same: one thing per step (and the payment).
+    expect(aldoWaitingCount(read, NOW)).toBe(keys.length);
+    // And so does every list of what waits: simple mode's Needs you lists the
+    // card, not its thread's form too, and the board has the thread waiting
+    // to continue, not in Needs you.
+    const onCard = ["asks", "waits", "carried"];
+    const simple = simpleNeedsYou(read, NOW);
+    expect(simple.conversations.map((c) => c.ref).toSorted()).toEqual([
+      "decided",
+      "elsewhere",
+      "failed",
+      "planasks",
+      "planned",
+      "stopped",
+    ]);
+    expect(simple.approvals.filter((a) => a.status === "pending")).toHaveLength(7);
+    const board = boardAskingOnce(boardFor(read.conversations, NOW), read);
+    expect(board.needsYou.filter((c) => onCard.includes(c.ref))).toEqual([]);
+    expect(board.waiting.map((c) => c.ref).toSorted()).toEqual(onCard.toSorted());
+    expect(board.needsYou.length + 3).toBe(boardFor(read.conversations, NOW).needsYou.length);
+  });
+
+  it("lists a thread in simple mode by what it asks itself: a pause or a computer request", () => {
+    const read = home({
+      approvals: [approval("ap-p", { kind: "confirm", thread: at("p") })],
+      conversations: [
+        conversation({ ref: "p", thread: at("p"), state: "paused", machine: "asleep" }),
+        conversation({
+          ref: "c",
+          thread: at("c"),
+          state: "waiting",
+          computers: [
+            { computer: "windows", status: "asked", askedAt: ago(5), creditsPerHour: 38.4 },
+          ],
+        }),
+      ],
+    });
+    expect(
+      simpleNeedsYou(read, NOW)
+        .conversations.map((c) => c.ref)
+        .toSorted(),
+    ).toEqual(["c", "p"]);
+  });
+
+  it("lists a step on an approval card once in the summon menu", () => {
+    const read = home({
+      approvals: [approval("ap-asks", { kind: "confirm", thread: at("asks") })],
+      conversations: [
+        {
+          ...question,
+          ref: "asks",
+          thread: at("asks"),
+          pending: { ...question.pending!, requestId: "ask:turn-asks" },
+        },
+        { ...question, ref: "stopped", thread: at("stopped") },
+      ],
+    });
+    const needs = summonSections({ query: "", onScreen: null, home: read, threads: [], now: NOW })
+      .find((s) => s.title === "Needs you")
+      ?.rows.map((r) => r.key);
+    expect(needs).toEqual(["approval:ap-asks", "needs:stopped"]);
   });
 
   it("counts threads paused mid-turn among what waits, though they aren't decisions", () => {
