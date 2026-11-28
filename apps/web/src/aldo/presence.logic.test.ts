@@ -90,6 +90,22 @@ describe("Aldo presence header", () => {
   });
 });
 
+const ASKED = {
+  kind: "question" as const,
+  requestId: "ask:turn",
+  questions: [
+    {
+      id: "q",
+      header: "",
+      question: "Which account should I use?",
+      options: [
+        { label: "Personal", description: "" },
+        { label: "Work", description: "" },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
 const conversation = (over: Partial<AldoHomeConversation> = {}): AldoHomeConversation => ({
   ref: "t1",
   thread: { environmentId: "aldo-t1", threadId: "th1" },
@@ -99,6 +115,9 @@ const conversation = (over: Partial<AldoHomeConversation> = {}): AldoHomeConvers
   state: "done",
   machine: "running",
   at: ago(5),
+  ...(over.state === "waiting" && !("pending" in over) && !("plan" in over)
+    ? { pending: ASKED }
+    : {}),
   ...over,
 });
 const pullRequest = (over: Partial<AldoHomePullRequest> = {}): AldoHomePullRequest =>

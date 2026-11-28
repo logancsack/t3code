@@ -48,6 +48,22 @@ let useAldoHomeReadAt: typeof import("./homeFeed").useAldoHomeReadAt;
 let root: Root;
 let host: HTMLElement;
 
+const ASKED = {
+  kind: "question" as const,
+  requestId: "ask:turn",
+  questions: [
+    {
+      id: "q",
+      header: "",
+      question: "Which account should I use?",
+      options: [
+        { label: "Personal", description: "" },
+        { label: "Work", description: "" },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
 const conversation = (ref: string, over: Record<string, unknown>) => ({
   ref,
   thread: { environmentId: `aldo-${ref}`, threadId: ref },
@@ -56,6 +72,9 @@ const conversation = (ref: string, over: Record<string, unknown>) => ({
   branch: "",
   machine: "running",
   at: ago(5),
+  ...(over.state === "waiting" && !("pending" in over) && !("plan" in over)
+    ? { pending: ASKED }
+    : {}),
   ...over,
 });
 const home = (conversations: unknown[]) =>

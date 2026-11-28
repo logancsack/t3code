@@ -1160,29 +1160,26 @@ it("keeps a legacy failure's original notes and links in its single Retry card",
   );
 });
 
-it.each(["native", "turn-ask", "fallback"] as const)(
+it.each(["native", "turn-ask"] as const)(
   "dedupes %s by conversation, restores snoozed waits and shows the new working turn",
   async (kind) => {
     const target = { environmentId: "aldo-1", threadId: "t1" };
-    const pending =
-      kind === "fallback"
-        ? undefined
-        : {
-            kind: "question" as const,
-            requestId: kind === "turn-ask" ? "ask:turn-1" : "native-question",
-            questions: [
-              {
-                id: "scope",
-                header: "",
-                question: "Which pages?",
-                multiSelect: false,
-                options: [
-                  { label: "Home", description: "" },
-                  { label: "All pages", description: "" },
-                ],
-              },
-            ],
-          };
+    const pending = {
+      kind: "question" as const,
+      requestId: kind === "turn-ask" ? "ask:turn-1" : "native-question",
+      questions: [
+        {
+          id: "scope",
+          header: "",
+          question: "Which pages?",
+          multiSelect: false,
+          options: [
+            { label: "Home", description: "" },
+            { label: "All pages", description: "" },
+          ],
+        },
+      ],
+    };
     const c = {
       ref: "work",
       title: "Prepare the guide",
@@ -1192,7 +1189,7 @@ it.each(["native", "turn-ask", "fallback"] as const)(
       state: "waiting" as const,
       at: at(2),
       thread: target,
-      ...(pending ? { pending } : {}),
+      pending,
     };
     const render = async (conversation: typeof c) => {
       const read = home({ conversations: [conversation] });
@@ -1241,6 +1238,22 @@ it("restores the live card once an answer receipt replaces the decision, before 
     state: "waiting",
     at: at(2),
     thread: target,
+    pending: {
+      kind: "question" as const,
+      requestId: "ask:turn-2",
+      questions: [
+        {
+          id: "ask",
+          header: "",
+          question: "Which pages?",
+          multiSelect: false,
+          options: [
+            { label: "Home", description: "" },
+            { label: "All pages", description: "" },
+          ],
+        },
+      ],
+    },
   };
   const read = home({ conversations: [c] });
   backend.home = read;

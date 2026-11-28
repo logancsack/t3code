@@ -19,6 +19,22 @@ const NOW = Date.parse("2026-10-06T12:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 const at = (id: string) => ({ environmentId: `aldo-${id}`, threadId: id });
 
+const ASKED = {
+  kind: "question" as const,
+  requestId: "ask:turn",
+  questions: [
+    {
+      id: "q",
+      header: "",
+      question: "Which account should I use?",
+      options: [
+        { label: "Personal", description: "" },
+        { label: "Work", description: "" },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
 function conversation(id: string, over: Partial<AldoHomeConversation> = {}): AldoHomeConversation {
   return {
     ref: id,
@@ -29,6 +45,9 @@ function conversation(id: string, over: Partial<AldoHomeConversation> = {}): Ald
     state: "working",
     machine: "running",
     at: ago(5),
+    ...(over.state === "waiting" && !("pending" in over) && !("plan" in over)
+      ? { pending: ASKED }
+      : {}),
     ...over,
   };
 }

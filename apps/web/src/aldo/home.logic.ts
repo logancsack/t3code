@@ -69,124 +69,18 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
 }
 
 /**
- * What a thread that waits on the user without asking anything asks on its
- * card (from an older Aldo, or a release held for them): a plain question and
- * answers to tap, each sent as what it tells the thread, as Aldo words a
- * turn's own ask (sandbox-agent/task-result.ts). Never the agent's notes:
- * those stay in its thread.
+ * What an older Aldo made up for a thread that waited without saying what for:
+ * no question at all, so no card (the thread's agent is asked what it needs).
  */
-const WAITING_CHOICES: ReadonlyArray<{ readonly label: string; readonly reply: string }> = [
-  {
-    label: "Decide for me and carry on (Recommended)",
-    reply:
-      "Go ahead with what you think is best and finish. Anything that costs money or acts in my name still needs my OK first.",
-  },
-  { label: "Skip that part", reply: "Skip the part you needed me for and finish the rest." },
-  { label: "Stop here", reply: "Stop here, and don't carry on with this task." },
-];
-
-export function waitingQuestion(
-  c: Pick<AldoHomeConversation, "stateAt" | "at" | "title" | "summary" | "result">,
-): Extract<AldoHomePending, { kind: "question" }> {
-  const own = c.result?.ask;
-  const evidence =
-    c.result?.doneWhen
-      .filter((line) => !line.met)
-      .map((line) => line.evidence)
-      .join(" ") ?? "";
-  const context = [c.summary, evidence].filter(Boolean).join(" ");
-  const paid =
-    /\bdeclined\b/i.test(context) &&
-    /\b(?:payment|payments|card)\b/i.test(context) &&
-    /\b(?:Premium|subscription|paid (?:access|plan|Bot))\b/i.test(context);
-  const account =
-    /\b(?:account(?: identity)?(?: remains| is)? (?:unspecified|missing|not (?:chosen|specified|selected|provided))|no account (?:has been )?(?:chosen|specified|selected|provided)|which account to use)\b|\b(?:needs?|requires?) (?:an? |your )?(?:(?:dedicated|subscription) )*account(?=[.!?;]|$)/i.test(
-      context,
-    );
-  const subject = (
-    c.title
-      .replace(/^(?:learn from|research|study|compare)\s+/i, "")
-      .split(/\s+(?:to|for)\s+/)[0] ?? c.title
-  ).slice(0, 60);
-  const specificEvidence = evidence
-    .split(/(?<=[.!?])\s+/)
-    .find((line) => line.trim() && !/\b(?:PR|holdout|provenance|unadmitted|coverage)\b/i.test(line))
-    ?.slice(0, 220);
-  const question =
-    own?.question && !/^I need your decision before I can finish/i.test(own.question)
-      ? own.question
-      : paid
-        ? `I need ${/\bPremium\b/i.test(context) ? "Premium" : "paid access"} for ${subject}, but the payment was declined. Can you fix the card or provide existing paid access?`
-        : account
-          ? `I need you to choose an account for “${c.title}”. Which account should I use?`
-          : c.summary &&
-              !/I need your decision|(?:PR|holdout|provenance|unadmitted|coverage)\b/i.test(
-                c.summary,
-              )
-            ? c.summary
-            : specificEvidence
-              ? `I need your help: ${specificEvidence}`
-              : `I haven't recorded what I need from you to finish “${c.title}”.`;
-  const options =
-    own?.question === question && own.options.length >= 2 && own.options.length <= 4
-      ? own.options
-      : paid
-        ? [
-            "I'll fix the card with my bank; wait for me (Recommended)",
-            "I'll provide an existing paid login",
-            "Skip the paid tasks and finish with what you have",
-          ]
-        : account
-          ? [
-              "I'll provide an account to use (Recommended)",
-              "Finish without the work that needs that account",
-            ]
-          : [
-              "Explain exactly what you need from me (Recommended)",
-              "Finish only the parts you can do without me",
-            ];
-  return {
-    kind: "question",
-    requestId: `waiting:${c.stateAt ?? c.at}`,
-    questions: [
-      {
-        id: "ask",
-        header: "",
-        question,
-        options: options.map((label) => ({ label, description: "" })),
-        multiSelect: false,
-      },
-    ],
-  };
+const GENERIC_ASK =
+  /^I need your decision before I can finish|^I haven't recorded what I need from you/i;
+function isGenericAsk(pending: Extract<AldoHomePending, { kind: "question" }>): boolean {
+  return (
+    pending.requestId.startsWith("ask:") &&
+    pending.questions.length > 0 &&
+    pending.questions.every((q) => GENERIC_ASK.test(q.question.trim()))
+  );
 }
-
-/** Old servers already supplied the empty fallback as a synthetic question.
- * Keep its response identity while recovering useful copy from the report. */
-export function concreteWaitingQuestion(
-  c: AldoHomeConversation,
-  pending: Extract<AldoHomePending, { kind: "question" }>,
-) {
-  if (
-    !pending.requestId.startsWith("ask:") ||
-    !pending.questions.some((q) =>
-      /^I need your decision before I can finish[.!]?$/i.test(q.question),
-    )
-  )
-    return pending;
-  const recovered = waitingQuestion(c).questions[0]!;
-  return {
-    ...pending,
-    questions: pending.questions.map((q) => ({
-      ...q,
-      question: recovered.question,
-      options: recovered.options,
-    })),
-  };
-}
-
-/** What a tapped (or typed) answer to a waiting card tells its thread. */
-export const waitingReply = (answer: string) =>
-  WAITING_CHOICES.find((o) => o.label === answer)?.reply ?? answer;
 
 /** A question Aldo worded from how a turn ended (`ask:`), not a request in the thread: the thread only waits. */
 export const isTurnAsk = (pending: AldoHomePending | undefined) =>
@@ -207,11 +101,17 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   if (c.state === "failed") return "failed";
   if (isPausedMidTurn(c)) return "paused";
   if (c.state !== "waiting" && !c.activity?.needsYou) return null;
-  if (c.pending?.kind === "question") return "question";
+  if (c.pending?.kind === "question") return isGenericAsk(c.pending) ? null : "question";
   if (c.pending?.kind === "approval") return "approval";
   if (c.pending?.kind === "handoff") return "handoff";
   if (c.plan) return "plan";
-  return "waiting";
+  // Asking for one of their computers, or a step Aldo recorded as theirs (a held
+  // release), has its own card or its own words. Nothing else is shown as asking:
+  // a thread waiting with no question to answer, no approval and no plan has
+  // nothing to ask, and a stale "asking" flag is no reason to make one up.
+  return c.computers?.some((one) => one.status === "asked") || c.progress?.next.owner === "you"
+    ? "waiting"
+    : null;
 }
 
 const WORKING_STATES = new Set(["working", "starting", "retrying"]);

@@ -36,7 +36,6 @@ export type AldoChoice =
   /** One of Aldo's approvals: an email to send, an event to add, a thread to start; or approved, and always allowed. */
   | { readonly kind: "aldo"; readonly decision: "approve" | "discard" | "always" }
   | { readonly kind: "merge" }
-  | { readonly kind: "reply"; readonly text: string }
   | { readonly kind: "continue" };
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -70,8 +69,6 @@ export function choiceWords(decision: AldoDecision, choice: AldoChoice): string 
       return decision.kind === "aldo-approval"
         ? `chose "${choice.decision === "discard" ? decision.approval.discardLabel : decision.approval.approveLabel}"${choice.decision === "always" ? ", and to always allow it" : ""}`
         : choice.decision;
-    case "reply":
-      return `replied “${choice.text}”`;
     case "continue":
       return "asked it to carry on";
     case "merge":
@@ -119,13 +116,6 @@ export async function decideAldoOutcome(
   };
   try {
     if ("conversation" in decision) useDecisionUpdates.getState().clear(decision.conversation.ref);
-    if (choice.kind === "reply" && decision.kind === "waiting") {
-      await replyAldoThread(decision.conversation.thread, choice.text);
-      return done(
-        "Reply kept for delivery",
-        "Reply kept for delivery. Aldo will read it when the thread can take it.",
-      );
-    }
     if (choice.kind === "continue" && decision.kind === "failed") {
       if (decision.conversation.canRetry) {
         const status = await continueAldoThread(decision.conversation.thread);

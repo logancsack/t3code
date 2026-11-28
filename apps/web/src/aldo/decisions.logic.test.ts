@@ -28,6 +28,22 @@ const NOW = Date.parse("2026-10-01T12:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 const at = (id: string) => ({ environmentId: `aldo-${id}`, threadId: id });
 
+const ASKED = {
+  kind: "question" as const,
+  requestId: "ask:turn",
+  questions: [
+    {
+      id: "q",
+      header: "",
+      question: "Which account should I use?",
+      options: [
+        { label: "Personal", description: "" },
+        { label: "Work", description: "" },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
 function conversation(over: Partial<AldoHomeConversation> = {}): AldoHomeConversation {
   return {
     ref: "t1",
@@ -38,6 +54,9 @@ function conversation(over: Partial<AldoHomeConversation> = {}): AldoHomeConvers
     state: "working",
     machine: "asleep",
     at: ago(5),
+    ...(over.state === "waiting" && !("pending" in over) && !("plan" in over)
+      ? { pending: ASKED }
+      : {}),
     ...over,
   };
 }
@@ -595,6 +614,7 @@ it("takes what the user dismissed out of every list and count, and a different a
 it("keeps the real merge action for a user-owned release, without masking a live question", () => {
   const c = conversation({
     state: "waiting",
+    pending: undefined as never,
     machine: "running",
     progress: {
       execution: "replied",

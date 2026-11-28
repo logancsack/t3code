@@ -43,6 +43,8 @@ import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
 import { AldoMark } from "./AldoMark";
 import { setAldoMergeHold } from "./mergeHold";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
+import { aldoApprovalLabel, approvalHeadline, recommendedOption } from "./approvalWords";
+import { ApprovalWords } from "./AldoApprovalWords";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
 import { type AldoHome, type AldoHomeConversation } from "./homeApi";
@@ -56,13 +58,7 @@ import {
 } from "./decisions.logic";
 import { completeAldo } from "./presenceReactions";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
-import {
-  concreteWaitingQuestion,
-  elapsed,
-  isTurnAsk,
-  waitingQuestion,
-  waitingReply,
-} from "./home.logic";
+import { elapsed, isTurnAsk } from "./home.logic";
 import { addAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
@@ -95,9 +91,7 @@ export function AldoUpNext(props: {
     // One answered here is a line in the conversation now, while the home read catches up.
     const list: ReadonlyArray<AldoDecision> = [
       ...aldoChatDecisions(props.home, props.now).filter(
-        (d) =>
-          !receipts.some((r) => r.key === d.key) &&
-          !(d.kind === "waiting" && d.conversation.computers?.some((c) => c.status === "asked")),
+        (d) => !receipts.some((r) => r.key === d.key),
       ),
       ...(props.home.approvals ?? [])
         .filter(
@@ -539,7 +533,7 @@ export function DecisionCard(props: {
   };
 
   const report = useAldoAssistant((s) =>
-    d.kind === "failed" || d.kind === "question" || d.kind === "waiting"
+    d.kind === "failed" || d.kind === "question"
       ? currentDecisionReport(
           s.entries,
           d.conversation,
@@ -623,18 +617,13 @@ export function DecisionCard(props: {
       body = <PaymentDetails payment={d.payment} />;
       actions = <ApproveInLink payment={d.payment} now={props.now} />;
       break;
-    case "question":
-    case "waiting": {
+    case "question": {
       const c = d.conversation;
-      // A thread that only waits (no request in it) is asked in plain words, its answer sent as a message.
-      const waiting = d.kind !== "question";
-      const pending =
-        d.kind === "question" ? concreteWaitingQuestion(c, d.pending) : waitingQuestion(c);
+      const pending = d.pending;
       const q = pending.questions[0];
       headline = q?.question ?? "It asks you something";
-      // What it last said, less the question the card already asks; where it
-      // only waits, its words are behind "View result" instead.
-      const said = waiting ? null : q ? c.summary?.replace(q.question, "").trim() : c.summary;
+      // What it last said, less the question the card already asks.
+      const said = q ? c.summary?.replace(q.question, "").trim() : c.summary;
       body = (
         <AldoUpdateDetails
           checked={update?.checked ?? c.result?.checked}
@@ -645,16 +634,16 @@ export function DecisionCard(props: {
           links={update?.links.filter((link) => technicalUpdateLink(link.url))}
         />
       );
-      if (waiting || isTurnAsk(pending))
+      if (isTurnAsk(pending))
         more = (
           <ThreadLink target={c.thread} className={QUIET}>
             {c.result ? "View result" : "Open the thread"}
           </ThreadLink>
         );
-      const answer = (label: string): AldoChoice =>
-        waiting
-          ? { kind: "reply", text: waitingReply(label) }
-          : { kind: "answer", answers: { [q!.id]: label } };
+      const answer = (label: string): AldoChoice => ({
+        kind: "answer",
+        answers: { [q!.id]: label },
+      });
       if (pending.questions.length !== 1 || !q || q.multiSelect) {
         actions = (
           <PendingForm
@@ -715,32 +704,43 @@ export function DecisionCard(props: {
           <OwnWords
             draft={d.key}
             disabled={busy !== null}
-            onSend={(text) =>
-              void decide("words", waiting ? { kind: "reply", text } : { kind: "answer", text })
-            }
+            onSend={(text) => void decide("words", { kind: "answer", text })}
           />
         </div>
       );
       break;
     }
     case "approval": {
-      headline = d.pending.summary;
-      body = d.pending.detail ? (
+      const e = d.pending.explain;
+      const options = d.pending.options.map((o) => ({
+        ...o,
+        label: aldoApprovalLabel(o.decision, o.label),
+      }));
+      // The answer Aldo recommends goes first, marked on its button.
+      const suggested = e ? recommendedOption(options, e.recommended) : undefined;
+      const ordered = suggested
+        ? [suggested, ...options.filter((o) => o !== suggested)]
+        : options.length === 2
+          ? [options[1]!, options[0]!]
+          : options;
+      headline = e ? approvalHeadline(e.what) : d.pending.summary;
+      body = e ? (
+        <ApprovalWords explain={e} detail={d.pending.detail} kind={d.pending.requestKind} />
+      ) : d.pending.detail ? (
         <div className={cn(INSET, "flex flex-col gap-2")}>
           <Quoted lines={4} className="whitespace-pre-wrap font-mono text-[12.5px] leading-5">
             {d.pending.detail}
           </Quoted>
         </div>
       ) : null;
-      const options = d.pending.options;
-      // Two side by side, the yes on the right; more, one over another, the first filled.
-      const ordered = options.length === 2 ? [options[1]!, options[0]!] : options;
       actions = (
-        <div className={options.length === 2 ? "grid grid-cols-2 gap-2" : "flex flex-col gap-2"}>
+        <div className="flex flex-col gap-2">
           {ordered.map((o) => (
             <Choice
               key={o.decision}
-              primary={o === options[0]}
+              row={Boolean(suggested)}
+              primary={!suggested && o === options[0]}
+              tag={o === suggested ? "Recommended" : null}
               busy={busy === o.decision}
               disabled={busy !== null}
               onClick={() =>

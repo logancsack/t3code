@@ -7,6 +7,22 @@ const NOW = Date.parse("2026-10-01T12:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 const ahead = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
 
+const ASKED = {
+  kind: "question" as const,
+  requestId: "ask:turn",
+  questions: [
+    {
+      id: "q",
+      header: "",
+      question: "Which account should I use?",
+      options: [
+        { label: "Personal", description: "" },
+        { label: "Work", description: "" },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
 function conversation(over: Partial<AldoHomeConversation> = {}): AldoHomeConversation {
   return {
     ref: "t1",
@@ -17,6 +33,9 @@ function conversation(over: Partial<AldoHomeConversation> = {}): AldoHomeConvers
     state: "working",
     machine: "running",
     at: ago(5),
+    ...(over.state === "waiting" && !("pending" in over) && !("plan" in over)
+      ? { pending: ASKED }
+      : {}),
     ...over,
   };
 }
@@ -45,9 +64,12 @@ describe("workstreamState", () => {
   });
 
   it("is put off while snoozed or settled, whatever it's doing", () => {
-    expect(workstreamState(conversation({ state: "waiting", snoozedUntil: ahead(60) }), NOW)).toBe(
-      "later",
-    );
+    expect(
+      workstreamState(
+        conversation({ state: "waiting", pending: undefined as never, snoozedUntil: ahead(60) }),
+        NOW,
+      ),
+    ).toBe("later");
     expect(workstreamState(conversation({ state: "done", settled: true }), NOW)).toBe("later");
     expect(workstreamState(conversation({ state: "waiting", snoozedUntil: ago(1) }), NOW)).toBe(
       "needs",
