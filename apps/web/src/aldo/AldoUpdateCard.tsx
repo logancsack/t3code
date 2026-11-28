@@ -11,7 +11,12 @@ import { useState } from "react";
 import { cn } from "~/lib/utils";
 import { AgentMarkdown } from "./AldoQuoted";
 import { threadLink } from "./AldoWorkstream";
-import { UPDATE_STATE_LABELS, technicalUpdateLink, type AldoHomeUpdate } from "./homeUpdate.logic";
+import {
+  UPDATE_STATE_LABELS,
+  distinctSources,
+  technicalUpdateLink,
+  type AldoHomeUpdate,
+} from "./homeUpdate.logic";
 import { relativeTime } from "./home.logic";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { FOCUS } from "./surface";
@@ -185,7 +190,7 @@ function AldoFullAnswer({
         <>
           <h4 className={heading}>Sources · {sources.length}</h4>
           <div className="flex flex-wrap gap-1.5">
-            {sources.map((link) => (
+            {distinctSources(sources).map((link) => (
               <a
                 key={link.url}
                 href={link.url}

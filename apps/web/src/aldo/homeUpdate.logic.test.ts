@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { homeUpdateOf, legacyHomeUpdate, safeUpdateUrl } from "./homeUpdate.logic";
+import { distinctSources, homeUpdateOf, legacyHomeUpdate, safeUpdateUrl } from "./homeUpdate.logic";
 
 const target = { environmentId: "aldo-demo", threadId: "work" };
 const update = {
@@ -75,5 +75,34 @@ describe("Home update compatibility", () => {
     expect(parsed.summary).toBe("I couldn’t finish this attempt.");
     expect(parsed.notes).toEqual([original]);
     expect(parsed.checked).toEqual([]);
+  });
+});
+
+describe("distinctSources", () => {
+  it("says which page a source is when its site names more than one", () => {
+    const shown = distinctSources([
+      { url: "https://nodejs.org/en", label: "nodejs.org" },
+      { url: "https://www.nodejs.org/en/download/", label: "nodejs.org" },
+      { url: "https://nodejs.org/", label: "nodejs.org" },
+      { url: "https://github.com/nodejs/release#release-schedule", label: "github.com" },
+      { url: "https://example.com/a", label: "Release notes" },
+      { url: "https://example.com/b", label: "Release notes" },
+    ]).map((s) => s.label);
+    expect(shown).toEqual([
+      "nodejs.org/en",
+      "nodejs.org/en/download",
+      "nodejs.org",
+      "github.com",
+      "Release notes",
+      "Release notes",
+    ]);
+  });
+
+  it("leaves a lone site or an agent's own words as they are", () => {
+    const sources = [
+      { url: "https://nodejs.org/en", label: "nodejs.org" },
+      { url: "https://nodejs.org/en/download", label: "Node downloads" },
+    ];
+    expect(distinctSources(sources)).toEqual(sources);
   });
 });
