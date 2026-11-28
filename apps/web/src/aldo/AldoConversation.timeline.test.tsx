@@ -278,7 +278,9 @@ it.each(["Send", "Discard"])("keeps an approval's %s receipt where its card was"
   message("Another thought", 4);
   await act(async () => root.render(<Page home={home({ approvals: [approval()] })} />));
   const card = container.querySelector('[data-aldo-decision="aldo:draft-1"]')!;
-  const button = [...card.querySelectorAll("button")].find((b) => b.textContent === label)!;
+  const button = [...card.querySelectorAll("button")].find(
+    (b) => (b.querySelector("[data-aldo-choice-label]") ?? b).textContent === label,
+  )!;
   await act(async () => button.click());
   expect(backend.decide).toHaveBeenCalledWith(
     expect.objectContaining({ key: "aldo:draft-1" }),

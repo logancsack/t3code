@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  approvalChoices,
+  approvalQuestion,
+  placeOf,
+  placeSaysAll,
   approvalOutcome,
   heldStatus,
   threadApprovals,
@@ -128,5 +132,119 @@ describe("how a decided approval is worded", () => {
     expect(approvalOutcome({ kind: "email", status: "withdrawn" })).toBe("Withdrawn");
     expect(approvalOutcome({ kind: "email", status: "sending" })).toBe("Sending");
     expect(approvalOutcome({ kind: "confirm", status: "approved" })).toBe("Approved");
+  });
+});
+
+describe("approvalChoices", () => {
+  it("offers a paid step once, always up to Aldo's amount, or not, each saying what it does", () => {
+    const choices = approvalChoices(
+      approval({
+        fields: [
+          { label: "Where", value: "https://www.adp.com/pricing" },
+          { label: "Total", value: "$12.00" },
+          { label: "Terms", value: "No refunds" },
+        ],
+        approveLabel: "Buy",
+        discardLabel: "Don't",
+        allowUpTo: 15,
+      }),
+    );
+    expect(choices).toEqual([
+      {
+        decision: "approve",
+        label: "Allow once",
+        detail: "$12.00 to adp.com, this task only",
+        primary: true,
+      },
+      {
+        decision: "approve",
+        label: "Always allow up to $15",
+        detail:
+          "From now on, agents can pay up to $15 a purchase without asking. You can change it in Settings → Permissions",
+        spendLimit: 15,
+      },
+      { decision: "discard", label: "Don't allow", detail: "The agent carries on without it" },
+    ]);
+  });
+
+  it("offers no rule where Aldo offers none, and a free step says only where", () => {
+    const free = approvalChoices(
+      approval({
+        fields: [
+          { label: "Where", value: "Café de France (OpenTable)" },
+          { label: "Total", value: "$0.00" },
+        ],
+        approveLabel: "Book",
+        discardLabel: "Don't",
+      }),
+    );
+    expect(free.map((c) => [c.label, c.detail])).toEqual([
+      ["Allow", "At Café de France (OpenTable)"],
+      ["Don't allow", "The agent carries on without it"],
+    ]);
+    for (const allowUpTo of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(approvalChoices(approval({ allowUpTo })).map((c) => c.label)).not.toContain(
+        expect.stringMatching(/^Always/),
+      );
+    }
+  });
+
+  it("an email or event names its rule and what each answer does", () => {
+    const email = approvalChoices(
+      approval({
+        kind: "email",
+        approveLabel: "Send",
+        discardLabel: "Discard",
+        always: "Agents can send email to dana@example.com without asking",
+      }),
+    );
+    expect(email.map((c) => [c.decision, c.label, c.detail])).toEqual([
+      ["approve", "Send", "Sends it now, exactly as shown"],
+      [
+        "always",
+        "Always allow",
+        "Agents can send email to dana@example.com without asking. You can change it in Settings → Permissions",
+      ],
+      ["discard", "Discard", "Deletes the draft. Nothing is sent"],
+    ]);
+    const event = approvalChoices(
+      approval({
+        kind: "event",
+        approveLabel: "Add and invite",
+        discardLabel: "Discard",
+        fields: [{ label: "Invites", value: "dana@example.com" }],
+      }),
+    );
+    expect(event.map((c) => c.detail)).toEqual([
+      "Adds it to your calendar and invites them",
+      "Nothing is added to your calendar",
+    ]);
+  });
+});
+
+describe("approvalQuestion", () => {
+  it("asks a step once, whatever the agent ended it with", () => {
+    expect(approvalQuestion({ kind: "confirm", title: "Buy the price sheet." })).toBe(
+      "Buy the price sheet?",
+    );
+    expect(approvalQuestion({ kind: "confirm", title: "Buy the price sheet?" })).toBe(
+      "Buy the price sheet?",
+    );
+    expect(approvalQuestion({ kind: "email", title: "Re: Thursday" })).toBe('Send "Re: Thursday"?');
+  });
+
+  it("says a web address as its site", () => {
+    expect(placeOf("https://www.adp.com/pricing?x=1")).toBe("adp.com");
+    expect(placeOf("ADP (adp.com)")).toBe("ADP (adp.com)");
+    expect(placeOf("https://")).toBe("https://");
+  });
+
+  it("knows when the site alone says all a place does", () => {
+    expect(placeSaysAll("https://www.adp.com")).toBe(true);
+    expect(placeSaysAll("https://www.adp.com/")).toBe(true);
+    expect(placeSaysAll("ADP (adp.com)")).toBe(true);
+    expect(placeSaysAll("https://market.example/seller/alice")).toBe(false);
+    expect(placeSaysAll("https://market.example/?seller=bob")).toBe(false);
+    expect(placeSaysAll("https://market.example/#bob")).toBe(false);
   });
 });

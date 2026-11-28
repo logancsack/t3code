@@ -144,7 +144,11 @@ export function quickChoice(
 export async function confirmQuickChoice(
   d: AldoDecision,
   choice?: AldoChoice,
-  options: { readonly seen?: boolean } = {},
+  options: {
+    readonly seen?: boolean;
+    /** The card showed the rule "Always allow" saves, on the row tapped: no need to ask again. */
+    readonly ruleShown?: boolean;
+  } = {},
 ): Promise<boolean> {
   if (choice?.kind === "aldo" && choice.decision === "discard") {
     if (d.kind !== "aldo-approval" || d.approval.kind !== "email") return true;
@@ -158,6 +162,7 @@ export async function confirmQuickChoice(
   if (choice?.kind === "aldo" && choice.decision === "always") {
     // A rule from now on is said yes to as what it is, whatever's on screen.
     if (d.kind !== "aldo-approval" || !d.approval.always) return false;
+    if (options.ruleShown) return true;
     return (
       (await (requestConfirmDialog(
         `${d.approval.always}, from now on? This one is approved now too, and you can undo the rule.`,

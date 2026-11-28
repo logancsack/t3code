@@ -1,35 +1,40 @@
 import { plainCardText } from "./plainCardText";
-// Full approval controls load when a card is shown, keeping first-run spending choices off the initial Home bundle.
+// Full approval controls load when a card is shown, keeping them off the initial Home bundle.
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "../components/ui/badge";
-import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
+import { ApprovalChoices } from "./AldoApprovalChoices";
 import { ApprovalBody, toastAldoRule } from "./AldoApprovals";
 import { ThreadLink } from "./AldoHomeInbox";
-import { FOCUS, PRIMARY, SECONDARY } from "./surface";
+import { FOCUS, SECONDARY } from "./surface";
 import { AldoApiError } from "./api";
-import { APPROVAL_KIND_LABEL, approvalQuestion } from "./approvals.logic";
+import {
+  APPROVAL_KIND_LABEL,
+  approvalChoices,
+  approvalQuestion,
+  placeSaysAll,
+  type ApprovalChoice,
+} from "./approvals.logic";
 import { relativeTime } from "./home.logic";
 import type { AldoApproval } from "./homeApi";
 import { sendAldoApproval } from "./homeFeed";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-// Keep unsaved spending choices across a refresh or failed request, without
-// granting a rule before the server accepts the decision.
-const limitDrafts = new Map<string, { choice: string; custom: string }>();
-function keepLimitDraft(id: string, choice: string, custom: string): void {
-  if (!limitDrafts.has(id) && limitDrafts.size >= 100)
-    limitDrafts.delete(limitDrafts.keys().next().value!);
-  limitDrafts.set(id, { choice, custom });
-}
 const KIND_ICON = {
   email: MailIcon,
   event: CalendarPlusIcon,
   start: SparklesIcon,
   confirm: CircleCheckBigIcon,
 } as const;
+/**
+ * A step's total and place are said in its first choice ("$12.00 to adp.com"), not again above it;
+ * a web address with more than its site in it (a seller's page) stays, so the payee is never lost.
+ */
+const inChoice = (f: { label: string; value: string }) =>
+  f.label === "Total" || (f.label === "Where" && placeSaysAll(f.value));
+const QUIET_LINK = `${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`;
 
 export type ApprovalCardProps = {
   readonly approval: AldoApproval;
@@ -43,23 +48,16 @@ export type ApprovalCardProps = {
 export function ApprovalCard(props: ApprovalCardProps) {
   const a = props.approval;
   const Icon = KIND_ICON[a.kind];
-  const [busy, setBusy] = useState(false);
+  // The choice being sent, by its place; -1 for a reason (Don't allow, because…).
+  const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const acting = useRef(false);
-  const sending = busy || a.status === "sending";
+  const sending = busy !== null || a.status === "sending";
   const reasons = a.reasons ?? [];
-  const limitId = useId();
-  const [limitChoice, setLimitChoice] = useState(() => limitDrafts.get(a.id)?.choice ?? "");
-  const [customLimit, setCustomLimit] = useState(() => limitDrafts.get(a.id)?.custom ?? "");
-  const [limitTouched, setLimitTouched] = useState(false);
-  const limitText = limitChoice === "custom" ? customLimit : limitChoice;
-  const spendLimit = limitText.trim() === "" ? NaN : Number(limitText);
-  const validLimit =
-    Number.isFinite(spendLimit) &&
-    spendLimit >= 0 &&
-    Number(spendLimit.toFixed(2)) === spendLimit &&
-    Number.isSafeInteger(Math.round(spendLimit * 100));
-  // Saying why not: its choices take the buttons' place until one is picked, or Back.
+  const choices = approvalChoices(a);
+  const fields = a.kind === "confirm" ? a.fields.filter((f) => !inChoice(f)) : a.fields;
+  const no = choices.find((c) => c.decision === "discard");
+  // Saying why not: its choices take the rows' place until one is picked, or Back.
   const [sayingWhy, setSayingWhy] = useState(false);
   const whyDoor = useRef<HTMLButtonElement>(null);
   const firstReason = useRef<HTMLButtonElement>(null);
@@ -70,12 +68,8 @@ export function ApprovalCard(props: ApprovalCardProps) {
     else if (wasSayingWhy.current) whyDoor.current?.focus();
     wasSayingWhy.current = sayingWhy;
   }, [sayingWhy]);
-  const decide = async (decision: "approve" | "discard" | "always", reason?: string) => {
-    if (decision === "approve" && a.spendingLimit && !validLimit) {
-      setLimitTouched(true);
-      document.getElementById(limitChoice === "custom" ? `${limitId}-custom` : limitId)?.focus();
-      return;
-    }
+  const decide = async (choice: ApprovalChoice, index: number, reason?: string) => {
+    const { decision, spendLimit } = choice;
     if (decision === "discard" && a.kind === "email") {
       const confirmed = await (requestConfirmDialog(
         "Discard this draft? It's deleted from your drafts, and isn't sent.",
@@ -83,25 +77,16 @@ export function ApprovalCard(props: ApprovalCardProps) {
       ) ?? Promise.resolve(true));
       if (!confirmed) return;
     }
-    if (decision === "always") {
-      const confirmed = await (requestConfirmDialog(
-        `${a.always}, from now on? This one is approved now too, and you can undo the rule.`,
-      ) ?? Promise.resolve(true));
-      if (!confirmed) return;
-    }
     if (acting.current) return;
     acting.current = true;
-    setBusy(true);
+    setBusy(index);
     setError(null);
     try {
       const {
         message,
         rule,
         approval: decided,
-      } = a.spendingLimit && decision === "approve"
-        ? await sendAldoApproval(a, decision, reason, spendLimit, { afterAccepted: true })
-        : await sendAldoApproval(a, decision, reason, undefined, { afterAccepted: true });
-      if (decided.status !== "pending") limitDrafts.delete(a.id);
+      } = await sendAldoApproval(a, decision, reason, spendLimit, { afterAccepted: true });
       if (rule) toastAldoRule(message, rule);
       else {
         const expected = decision === "discard" ? "discarded" : "approved";
@@ -112,7 +97,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
         });
       }
     } catch (cause) {
-      // A draft that changed since it was shown comes back as it is now, to look at again.
+      // A card that changed since it was shown comes back as it is now, to look at again.
       const refresh =
         cause instanceof AldoApiError &&
         (cause.body as { decisionChanged?: boolean })?.decisionChanged;
@@ -125,7 +110,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
       });
     } finally {
       acting.current = false;
-      setBusy(false);
+      setBusy(null);
       props.onActed();
     }
   };
@@ -161,21 +146,26 @@ export function ApprovalCard(props: ApprovalCardProps) {
                 ) : null}
                 <span>· {relativeTime(a.createdAt, props.now)}</span>
               </div>
-              <p className="mt-1 font-medium text-sm">{approvalQuestion(a)}</p>
+              <p className="mt-1 font-semibold text-[15px] leading-5">{approvalQuestion(a)}</p>
             </>
           ) : null}
-          {a.fields.length > 0 ? (
+          {a.why ? (
+            <p className="mt-0.5 text-[14px] text-muted-foreground leading-5">
+              {plainCardText(a.why)}
+            </p>
+          ) : null}
+          {fields.length > 0 ? (
             <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm">
-              {a.fields.map((f) => (
+              {fields.map((f) => (
                 <div key={f.label} className="contents">
                   <dt className="text-muted-foreground">{f.label}</dt>
                   <dd className="min-w-0 break-words">{f.value}</dd>
                 </div>
               ))}
             </dl>
-          ) : (
+          ) : a.kind !== "confirm" ? (
             <p className="mt-0.5 text-muted-foreground text-xs">{plainCardText(a.summary)}</p>
-          )}
+          ) : null}
           {a.body ? (
             <div className="mt-2 flex flex-col gap-1 rounded-lg border border-border/50 bg-background/40 px-2.5 py-2">
               <ApprovalBody approval={a} lines={6} className="text-sm" />
@@ -184,65 +174,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
           {a.failed && a.result ? (
             <p className="mt-2 text-destructive-foreground text-xs">{a.result}</p>
           ) : null}
-          {a.spendingLimit && !sayingWhy ? (
-            <div className="mt-3 flex flex-col gap-2">
-              <label htmlFor={limitId} className="font-medium text-sm">
-                For future spending, ask me above
-              </label>
-              <select
-                id={limitId}
-                aria-describedby={`${limitId}-help`}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={limitChoice}
-                disabled={sending}
-                onChange={(event) => {
-                  setLimitChoice(event.target.value);
-                  keepLimitDraft(a.id, event.target.value, customLimit);
-                }}
-                onBlur={() => setLimitTouched(true)}
-              >
-                <option value="">Choose a limit in US dollars</option>
-                <option value="0">Ask every time</option>
-                <option value="20">$20</option>
-                <option value="50">$50</option>
-                <option value="custom">Another amount…</option>
-              </select>
-              {limitChoice === "custom" ? (
-                <label htmlFor={`${limitId}-custom`} className="flex flex-col gap-1 text-sm">
-                  Custom limit (US$)
-                  <Input
-                    id={`${limitId}-custom`}
-                    aria-label="Spending limit in US dollars"
-                    aria-describedby={`${limitId}-help`}
-                    aria-invalid={limitTouched && !validLimit}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={customLimit}
-                    disabled={sending}
-                    onChange={(event) => {
-                      setCustomLimit(event.target.value);
-                      keepLimitDraft(a.id, limitChoice, event.target.value);
-                    }}
-                    onBlur={() => setLimitTouched(true)}
-                  />
-                </label>
-              ) : null}
-              {limitTouched && !validLimit ? (
-                <p role="alert" className="text-destructive-foreground text-xs">
-                  {limitChoice === "custom"
-                    ? "Use zero or a positive amount, with at most two decimal places."
-                    : "Choose a spending limit before approving. You can choose to ask every time."}
-                </p>
-              ) : null}
-              <p id={`${limitId}-help`} className="text-muted-foreground text-xs">
-                Saved for your account when you approve this step. Zero means ask every time. Your
-                other pause points still apply.
-              </p>
-            </div>
-          ) : null}
-          {sayingWhy ? (
+          {sayingWhy && no ? (
             <div
               role="group"
               aria-label="Why not?"
@@ -264,14 +196,14 @@ export function ApprovalCard(props: ApprovalCardProps) {
                     ref={i === 0 ? firstReason : undefined}
                     className={SECONDARY}
                     disabled={sending}
-                    onClick={() => void decide("discard", reason)}
+                    onClick={() => void decide(no, -1, reason)}
                   >
                     {reason}
                   </button>
                 ))}
                 <button
                   type="button"
-                  className={`${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`}
+                  className={QUIET_LINK}
                   disabled={sending}
                   onClick={() => setSayingWhy(false)}
                 >
@@ -280,47 +212,22 @@ export function ApprovalCard(props: ApprovalCardProps) {
               </div>
             </div>
           ) : (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={PRIMARY}
+            <div className="mt-3 flex flex-col gap-1">
+              <ApprovalChoices
+                choices={choices}
+                busy={busy}
                 disabled={sending}
-                onClick={() => void decide("approve")}
-              >
-                {sending
-                  ? "Working…"
-                  : a.spendingLimit
-                    ? `${a.approveLabel} and save limit`
-                    : a.approveLabel}
-              </button>
-              <button
-                type="button"
-                className={SECONDARY}
-                disabled={sending}
-                onClick={() => void decide("discard")}
-              >
-                {a.discardLabel}
-              </button>
-              {a.always ? (
-                <button
-                  type="button"
-                  className={`${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`}
-                  disabled={sending}
-                  onClick={() => void decide("always")}
-                  aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
-                >
-                  Always allow…
-                </button>
-              ) : null}
-              {reasons.length > 0 ? (
+                onChoose={(choice, index) => void decide(choice, index)}
+              />
+              {reasons.length > 0 && no ? (
                 <button
                   type="button"
                   ref={whyDoor}
-                  className={`${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`}
+                  className={`${QUIET_LINK} self-start`}
                   disabled={sending}
                   onClick={() => setSayingWhy(true)}
                 >
-                  {a.discardLabel}, because…
+                  {no.label}, and say why…
                 </button>
               ) : null}
             </div>
