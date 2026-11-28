@@ -122,6 +122,7 @@ export function legacyThreadShell(shell: OrchestrationV2ThreadShell) {
     pinOrderKey: shell.pinOrderKey ?? null,
     activeOrderKey: shell.activeOrderKey ?? null,
     autoSettleDisabledAt: isoOrNull(shell.autoSettleDisabledAt),
+    ...(shell.goal === undefined ? {} : { goal: shell.goal }),
     session:
       status === null
         ? null
