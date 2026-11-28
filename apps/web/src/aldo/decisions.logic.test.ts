@@ -8,9 +8,13 @@ import {
   type AldoHomePending,
   type AldoHomePullRequest,
 } from "./homeApi";
+import { boardFor } from "./home.logic";
+import { simpleNeedsYou } from "./simpleMode.logic";
+import { summonSections } from "./summon.logic";
 import {
   aldoDecisions,
   aldoChatDecisions,
+  boardAskingOnce,
   aldoHiddenFromChat,
   decidesInPlace,
   decisionAsk,
@@ -208,6 +212,9 @@ describe("aldoDecisions", () => {
         // Decided, or a card for another thread: the thread's own ask stays.
         card("decided", { status: "approved" }),
         card("elsewhere", { thread: at("other") }),
+        // Being carried out: decided, and its thread hasn't caught up yet.
+        card("carried", { status: "sending" }),
+        card("planasks"),
       ],
       conversations: [
         // The paid step's card is the ask; the words its turn ended on repeat it.
@@ -224,15 +231,19 @@ describe("aldoDecisions", () => {
         conversation({ ref: "failed", thread: at("failed"), state: "failed", at: ago(3) }),
         turnAsk("decided"),
         turnAsk("elsewhere"),
+        turnAsk("carried"),
+        // A plan to start is its own decision, as Aldo's brief has it.
+        { ...turnAsk("planasks"), plan: { id: "p2", text: "1. Buy it" } },
       ],
     });
     const keys = aldoDecisions(read, NOW).map((d) => d.key);
-    expect(keys.filter((k) => !k.startsWith("aldo:"))).toEqual([
-      "question:stopped:r1",
+    expect(keys.filter((k) => !k.startsWith("aldo:")).toSorted()).toEqual([
+      `failed:failed:${ago(3)}`,
+      "plan:planned:p1",
       "question:decided:ask:turn-decided",
       "question:elsewhere:ask:turn-elsewhere",
-      "plan:planned:p1",
-      `failed:failed:${ago(3)}`,
+      "question:planasks:ask:turn-planasks",
+      "question:stopped:r1",
     ]);
     expect(keys.filter((k) => k.startsWith("aldo:"))).toEqual([
       "aldo:ap-asks",
@@ -241,9 +252,47 @@ describe("aldoDecisions", () => {
       "aldo:ap-planned",
       "aldo:ap-failed",
       "aldo:ap-elsewhere",
+      "aldo:ap-planasks",
     ]);
     // The count says the same: one thing per step.
     expect(aldoWaitingCount(read, NOW)).toBe(keys.length);
+    // And so does every list of what waits: simple mode's Needs you lists the
+    // card, not its thread's form too, and the board has the thread waiting
+    // to continue, not in Needs you.
+    const onCard = ["asks", "waits", "carried"];
+    const simple = simpleNeedsYou(read, NOW);
+    expect(simple.conversations.map((c) => c.ref).toSorted()).toEqual([
+      "decided",
+      "elsewhere",
+      "failed",
+      "planasks",
+      "planned",
+      "stopped",
+    ]);
+    expect(simple.approvals.filter((a) => a.status === "pending")).toHaveLength(7);
+    const board = boardAskingOnce(boardFor(read.conversations, NOW), read);
+    expect(board.needsYou.filter((c) => onCard.includes(c.ref))).toEqual([]);
+    expect(board.waiting.map((c) => c.ref).toSorted()).toEqual(onCard.toSorted());
+    expect(board.needsYou.length + 3).toBe(boardFor(read.conversations, NOW).needsYou.length);
+  });
+
+  it("lists a step on an approval card once in the summon menu", () => {
+    const read = home({
+      approvals: [approval("ap-asks", { kind: "confirm", thread: at("asks") })],
+      conversations: [
+        {
+          ...question,
+          ref: "asks",
+          thread: at("asks"),
+          pending: { ...question.pending!, requestId: "ask:turn-asks" },
+        },
+        { ...question, ref: "stopped", thread: at("stopped") },
+      ],
+    });
+    const needs = summonSections({ query: "", onScreen: null, home: read, threads: [], now: NOW })
+      .find((s) => s.title === "Needs you")
+      ?.rows.map((r) => r.key);
+    expect(needs).toEqual(["approval:ap-asks", "needs:stopped"]);
   });
 
   it("counts threads paused mid-turn among what waits, though they aren't decisions", () => {

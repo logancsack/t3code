@@ -12,6 +12,7 @@ import {
   type AldoHomeConversation,
   type AldoHomePullRequest,
 } from "./homeApi";
+import { askedOnCard } from "./decisions.logic";
 import { boardFor, sameTarget } from "./home.logic";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -156,8 +157,9 @@ export function summonSections(input: {
         key: `approval:${approval.id}`,
         approval,
       })),
+      // A thread waiting on one of those cards asks once, on it.
       ...board.needsYou
-        .filter((c) => elsewhere(c.thread))
+        .filter((c) => elsewhere(c.thread) && !askedOnCard(home, c))
         .map((conversation) => ({
           kind: "needs" as const,
           key: `needs:${conversation.ref}`,

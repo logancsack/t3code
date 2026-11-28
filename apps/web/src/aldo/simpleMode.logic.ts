@@ -97,10 +97,14 @@ export function simpleNeedsYou(home: AldoHome, now: number): AldoSimpleNeedsYou 
   const keys = new Set(counted.map((item) => item.key));
   return {
     payments: waitingPayments(home, now).filter((p) => keys.has(`payment:${p.id}`)),
+    // By what it asks itself: an approval card of Aldo's for its thread is listed with the approvals.
     conversations: boardFor(home.conversations, now).needsYou.filter(
       (c) =>
         !putAway(c, now) &&
-        counted.some((item) => item.thread && sameTarget(item.thread, c.thread)),
+        counted.some(
+          (item) =>
+            !item.key.startsWith("aldo:") && item.thread && sameTarget(item.thread, c.thread),
+        ),
     ),
     merges: aldoDecisions(home, now).filter(
       (d): d is Extract<AldoDecision, { kind: "merge" }> => d.kind === "merge" && keys.has(d.key),
