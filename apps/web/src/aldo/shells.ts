@@ -91,16 +91,16 @@ function ownShellComing(environmentId: string): boolean {
 }
 
 /** Copies these machines' shells from Aldo into the cache. Returns the thread ids Aldo sent. */
-async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<Set<string>> {
+async function download(
+  environments: ReadonlyArray<AldoEnvironment>,
+): Promise<{ sent: Set<string>; failed: boolean }> {
   const shells = await fetchAldoShells(environments.map((environment) => environment.threadId));
-  await Promise.all(
+  const results = await Promise.allSettled(
     environments.map(async (environment) => {
       const environmentId = environment.environmentId;
       const shell = shells[environment.threadId] as { snapshotSequence?: unknown } | undefined;
       // A machine coming up for a thread shown here: its own shell is moments away.
       if (!shell || ownShellComing(environmentId) || aldoShowsStartingThread(environmentId)) return;
-      // One that doesn't decode isn't fetched again until the machine reports another.
-      known.set(environmentId, environment.shellSequence ?? -1);
       await seedEnvironmentCache({
         environmentId: environmentId as EnvironmentId,
         shell,
@@ -113,8 +113,11 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
         appAtomRegistry.refresh(environmentShell.stateAtom(environmentId as EnvironmentId));
       }
     }),
-  ).catch(() => undefined);
-  return new Set(Object.keys(shells));
+  );
+  return {
+    sent: new Set(Object.keys(shells)),
+    failed: results.some((result) => result.status === "rejected"),
+  };
 }
 
 function readModelsChecked(): Map<string, string> {
@@ -237,22 +240,33 @@ async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void>
 
   // A response holds as many shells as fit; ask again for the rest until none come.
   let remaining = plan.download;
+  let failed = false;
   while (remaining.length > 0) {
-    const sent = await download(remaining.slice(0, BATCH)).catch(() => null);
-    if (!sent || sent.size === 0) break;
+    const result = await download(remaining.slice(0, BATCH));
+    failed ||= result.failed;
+    const sent = result.sent;
+    if (sent.size === 0) break;
     remaining = remaining.filter((environment) => !sent.has(environment.threadId));
   }
+  if (failed) throw new Error("Some threads could not load.");
 }
 
 /**
  * Whether this page has brought its copies of the listed threads up to date
  * once: until then a sidebar with none of them is loading, not empty.
  */
-let synced = false;
+export type AldoThreadsLoadState = "loading" | "ready" | "error";
+let loadState: AldoThreadsLoadState = "loading";
 const syncedListeners = new Set<() => void>();
 
-export function aldoThreadsSynced(): boolean {
-  return synced;
+export function aldoThreadsLoadState(): AldoThreadsLoadState {
+  return loadState;
+}
+
+function setLoadState(state: AldoThreadsLoadState): void {
+  if (loadState === state) return;
+  loadState = state;
+  for (const listener of syncedListeners) listener();
 }
 
 export function subscribeAldoThreadsSynced(listener: () => void): () => void {
@@ -291,12 +305,14 @@ export function installAldoShellSync(): void {
     // Not waited for: a machine that registers first reloads its models once they're in.
     void seedModels(environments);
     // One at a time: a fetch that comes while one runs (slow Aldo) waits for it.
-    running ??= sync(environments).finally(() => {
-      running = null;
-      if (synced) return;
-      synced = true;
-      for (const listener of syncedListeners) listener();
-    });
+    running ??= sync(environments)
+      .then(
+        () => setLoadState("ready"),
+        () => setLoadState("error"),
+      )
+      .finally(() => {
+        running = null;
+      });
     return running;
   });
 }

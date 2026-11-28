@@ -78,3 +78,31 @@ it("an answer with no body still reads as an empty one", async () => {
   );
   await expect(api("/api/environments/t/touch", { method: "POST" })).resolves.toEqual({});
 });
+
+it("a stalled shell response times out even after headers, so the sidebar can retry", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_path: string, init?: RequestInit) => {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encode('{"shells":'));
+            onAbort(init, (error) => controller.error(error));
+          },
+        }),
+      );
+    }),
+  );
+  const { fetchAldoShells } = await import("./threadApi");
+  const read = fetchAldoShells(["sleeping"]);
+  const failed = expect(read).rejects.toThrow("aborted");
+  await vi.advanceTimersByTimeAsync(10_000);
+  await failed;
+  vi.mocked(fetch).mockResolvedValueOnce(
+    Response.json({ shells: { sleeping: { snapshotSequence: 1 } } }),
+  );
+  await expect(fetchAldoShells(["sleeping"])).resolves.toEqual({
+    sleeping: { snapshotSequence: 1 },
+  });
+});

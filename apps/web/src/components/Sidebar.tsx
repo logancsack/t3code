@@ -143,7 +143,8 @@ import { useAldoSidebarOrder } from "../aldo/sidebarOrder";
 import {
   AldoArchivedThreadsLink,
   AldoSidebarThreadsSkeleton,
-  useAldoThreadsLoading,
+  useAldoThreadsState,
+  AldoSidebarThreadsError,
 } from "../aldo/AldoSidebarList";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -1164,7 +1165,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? null
       : scopedThreadKey(resolveListedAncestorThreadRef(routeThreadRef, threads));
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
-  const aldoThreadsLoading = useAldoThreadsLoading();
+  const aldoThreadsState = useAldoThreadsState();
   // Aldo: search results keep their order while a search is open.
   const {
     order: aldoOrder,
@@ -3414,8 +3415,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             snoozedThreads.length ===
             0 &&
           (settledCount === 0 || scopedProjectGroups.length > 0) ? (
-            aldoThreadsLoading ? (
-              <AldoSidebarThreadsSkeleton />
+            aldoThreadsState !== "ready" ? (
+              aldoThreadsState === "loading" ? (
+                <AldoSidebarThreadsSkeleton />
+              ) : null
             ) : (
               <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
                 {projects.length === 0 ? (
@@ -3804,6 +3807,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 </SortableContext>
               </DndContext>
             </TooltipProvider>
+          ) : null}
+          {isAldoCloud && !isSearchingThreads && aldoThreadsState === "error" ? (
+            <AldoSidebarThreadsError />
           ) : null}
           {isAldoCloud && !isSearchingThreads ? <AldoArchivedThreadsLink /> : null}
         </SidebarGroup>
