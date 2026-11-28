@@ -8,7 +8,7 @@ import { type AldoZip, type AldoZipFile, aldoZipOf } from "./download.logic";
 import { type SourceControlRepositorySummary } from "@t3tools/contracts";
 import { type AldoHostKind } from "./accountApi";
 import { type AldoPullRequestStage, type AldoCheckCounts } from "./pullRequests.logic";
-import { type AldoMachineSize, requestAldoDirectoryRefresh } from "./directory";
+import { requestAldoDirectoryRefresh } from "./directory";
 
 // ---------------------------------------------------------------------------
 // Previews, the shared browser and the vault (served by aldod in each sandbox)
@@ -233,15 +233,6 @@ export async function fetchAldoPullRequests(
     `/api/environments/${threadIdForEnvironment(environmentId)}/prs`,
   );
   return pullRequests;
-}
-
-/** Moves a thread to another computer size (an older Aldo, which sizes them by hand). A running one restarts, and its agent carries on. */
-export async function setAldoMachine(environmentId: string, size: AldoMachineSize): Promise<void> {
-  await api(`/api/environments/${threadIdForEnvironment(environmentId)}/machine`, {
-    method: "POST",
-    body: JSON.stringify({ size }),
-  });
-  requestAldoDirectoryRefresh();
 }
 
 /** Answers a thread's agent asking for one of the user's computers: agreeing starts it. */

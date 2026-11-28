@@ -1,9 +1,10 @@
 import { CheckCircle2Icon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
+import { toastManager } from "../components/ui/toast";
 import { disconnectAldoAccount, type AldoAccount, type AldoAccountKind } from "./accountApi";
 import { AldoBrandTile } from "./AldoBrandTile";
 import { useAldoAccounts } from "./useAldoAccounts";
@@ -41,7 +42,7 @@ function accountStatus(account: AldoAccount | undefined) {
   );
 }
 
-/** One account the user signs in to with its wizard: its status, Disconnect and Connect. */
+/** One account the user signs in to with its wizard: its status, confirmed Disconnect and Connect. */
 export function AldoAccountRow(props: {
   readonly kind: AldoAccountKind;
   readonly account: AldoAccount | undefined;
@@ -49,6 +50,26 @@ export function AldoAccountRow(props: {
 }) {
   const spec = ALDO_ACCOUNT_SPECS[props.kind];
   const { account } = props;
+  const [confirming, setConfirming] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const disconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await disconnectAldoAccount(props.kind);
+      setConfirming(false);
+      props.onChanged();
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: `Couldn’t disconnect ${spec.title}`,
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   return (
     <SettingsRow
       id={`aldo-account-${props.kind}`}
@@ -58,24 +79,41 @@ export function AldoAccountRow(props: {
       status={accountStatus(account)}
       inline
       control={
-        <>
-          {account?.connected ? (
+        confirming && account?.connected ? (
+          <>
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => void disconnectAldoAccount(props.kind).then(props.onChanged)}
+              disabled={disconnecting}
+              onClick={() => setConfirming(false)}
             >
-              Disconnect
+              Keep
             </Button>
-          ) : null}
-          <AldoAccountButton kind={props.kind} account={account} onConnected={props.onChanged} />
-        </>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={disconnecting}
+              onClick={() => void disconnect()}
+            >
+              {disconnecting ? "Disconnecting…" : "Disconnect"}
+            </Button>
+          </>
+        ) : (
+          <>
+            {account?.connected ? (
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+                Disconnect
+              </Button>
+            ) : null}
+            <AldoAccountButton kind={props.kind} account={account} onConnected={props.onChanged} />
+          </>
+        )
       }
     />
   );
 }
 
-/** Account connections shared by every thread's sandbox. */
+/** Account connections shared by every thread's computer. */
 export function AldoAccountsPanel(props: {
   readonly kinds: ReadonlyArray<AldoAccountKind>;
   readonly title: string;
@@ -85,6 +123,8 @@ export function AldoAccountsPanel(props: {
   readonly about?: string | null;
   /** Rows before the accounts' (Aldo's own models). */
   readonly before?: ReactNode;
+  /** Rows after the accounts' (e.g. Google Antigravity). */
+  readonly after?: ReactNode;
 }) {
   const { accounts, error, refresh } = useAldoAccounts();
   return (
@@ -103,6 +143,7 @@ export function AldoAccountsPanel(props: {
         .map((kind) => (
           <AldoAccountRow key={kind} kind={kind} account={accounts?.[kind]} onChanged={refresh} />
         ))}
+      {props.after}
       {error ? <p className="px-4 text-destructive-foreground text-sm">{error}</p> : null}
     </SettingsSection>
   );

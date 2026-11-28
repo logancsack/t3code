@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
 import { aldoPhone, type AldoPhoneSettings } from "./accountApi";
 
@@ -75,7 +76,10 @@ export function AldoPhonePanel() {
         </p>
       ) : null}
       {!loaded ? (
-        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">Loading phone settings…</p>
+        <div className="space-y-2 px-3 py-3 sm:px-4">
+          <Skeleton className="h-4 w-44" />
+          <Skeleton className="h-3.5 w-64" />
+        </div>
       ) : null}
       {settings?.prototype ? (
         <p className="mx-3 rounded-lg bg-muted p-3 text-sm sm:mx-4">
@@ -187,7 +191,7 @@ export function AldoPhonePanel() {
                 </>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  We'll text a code to verify it's yours. Use a number only you control. Carrier
+                  We’ll text a code to verify it’s yours. Use a number only you control. Carrier
                   charges may apply.
                 </p>
               )}
@@ -276,6 +280,7 @@ export function AldoPhonePanel() {
                 title="Text messages"
                 description="Text Aldo from your verified number. Text STOP to turn SMS off; text START and enable it here to reconnect."
                 status={!settings.sms ? "Disabled by an administrator" : undefined}
+                inline
                 control={
                   <Switch
                     checked={settings.smsEnabled}
@@ -291,6 +296,7 @@ export function AldoPhonePanel() {
                 title="Phone calls"
                 description="Call Aldo, enter your PIN, and talk. You can interrupt while Aldo speaks. Press 0 to end the call."
                 status={!settings.voice ? "Voice bridge unavailable" : undefined}
+                inline
                 control={
                   <Switch
                     checked={settings.voiceEnabled}
@@ -436,8 +442,8 @@ function PhonePrototype({
         if (input.action === "pin" && result.state !== "active")
           setError(
             result.state === "failed"
-              ? "Call PIN verification failed. Reset your PIN in Phone settings, then call again."
-              : "That PIN didn't match. Try again.",
+              ? "Call PIN verification failed. Reset your PIN in Notifications & phone, then call again."
+              : "That PIN didn’t match. Try again.",
           );
       }
       if (result.reply) {

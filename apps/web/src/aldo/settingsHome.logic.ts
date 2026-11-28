@@ -6,19 +6,24 @@ import type {
   AldoAccount,
   AldoAccountKind,
   AldoApp,
+  AldoBriefSettings,
   AldoGitHostKind,
+  AldoHeadsUps,
   AldoIntegration,
+  AldoInstructions,
   AldoPhoneSettings,
+  AldoSkill,
   AldoVaultItem,
 } from "./accountApi";
 import type { AldoMemoryItem } from "./assistantApi";
-import type { AldoHomeUsage } from "./homeApi";
+import type { AldoHomeUsage, AldoPolicyView } from "./homeApi";
 
-const SUBSCRIPTIONS: ReadonlyArray<readonly [AldoAccountKind, string]> = [
+const SUBSCRIPTIONS: ReadonlyArray<readonly [AldoAccountKind | "antigravity", string]> = [
   ["claude", "Claude"],
   ["codex", "ChatGPT"],
   ["grok", "Grok"],
   ["muse", "Muse Code"],
+  ["antigravity", "Antigravity"],
 ];
 
 const CODE_HOSTS: ReadonlyArray<readonly [AldoAccountKind | AldoGitHostKind, string]> = [
@@ -28,7 +33,7 @@ const CODE_HOSTS: ReadonlyArray<readonly [AldoAccountKind | AldoGitHostKind, str
   ["azure", "Azure DevOps"],
 ];
 
-type Accounts = Partial<Record<AldoAccountKind | AldoGitHostKind, AldoAccount>>;
+type Accounts = Partial<Record<AldoAccountKind | AldoGitHostKind | "antigravity", AldoAccount>>;
 
 function count(n: number, one: string, many: string): string {
   return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
@@ -104,10 +109,50 @@ export function aldoVaultSummary(items: ReadonlyArray<AldoVaultItem> | undefined
   return parts.join(", ");
 }
 
-/** Personalization: what agents remember about them. */
-export function aldoMemorySummary(items: ReadonlyArray<AldoMemoryItem> | undefined): string | null {
-  if (!items) return null;
-  return items.length === 0 ? "Nothing yet" : count(items.length, "memory", "memories");
+/** About you: combined summary of memories, instructions and saved skills. */
+export function aldoAboutYouSummary(input: {
+  readonly memory: ReadonlyArray<AldoMemoryItem> | undefined;
+  readonly instructions: ReadonlyArray<AldoInstructions> | undefined;
+  readonly skills: ReadonlyArray<AldoSkill> | undefined;
+}): string | null {
+  if (
+    input.memory === undefined &&
+    input.instructions === undefined &&
+    input.skills === undefined
+  ) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (input.memory && input.memory.length > 0) {
+    parts.push(count(input.memory.length, "memory", "memories"));
+  }
+  const filledInstructions = (input.instructions ?? []).filter(
+    (item) => item.text.trim().length > 0,
+  );
+  if (filledInstructions.length > 0) {
+    parts.push(count(filledInstructions.length, "rule", "rules"));
+  }
+  if (input.skills && input.skills.length > 0) {
+    parts.push(count(input.skills.length, "skill", "skills"));
+  }
+  if (parts.length > 0) return parts.slice(0, 2).join(", ");
+  if (
+    input.memory !== undefined &&
+    input.instructions !== undefined &&
+    input.skills !== undefined
+  ) {
+    return "Not set up";
+  }
+  return null;
+}
+
+/** Permissions: spending threshold at a glance. */
+export function aldoPermissionsSummary(policy: AldoPolicyView | null | undefined): string | null {
+  if (!policy) return null;
+  const dollars = policy.everywhere.spendThreshold ?? policy.defaults?.spendThreshold ?? 0;
+  if (dollars <= 0) return "Ask before spending";
+  const label = Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+  return `Up to ${label}`;
 }
 
 /**
@@ -120,7 +165,31 @@ export function aldoPhoneSummary(phone: AldoPhoneSettings | null | undefined): s
   return phone.available ? "Not set up" : null;
 }
 
-/** Appearance: light, dark or the device's, and which layout. */
+/** Notifications & phone: verified phone number or quiet/brief summary. */
+export function aldoNotificationsSummary(input: {
+  readonly phone: AldoPhoneSettings | null | undefined;
+  readonly brief: AldoBriefSettings | null | undefined;
+  readonly headsUps: AldoHeadsUps | null | undefined;
+}): string | null {
+  if (input.phone?.verified && input.phone.phone) return input.phone.phone;
+  const tuning = input.headsUps?.tuning;
+  if (tuning && tuning.quietStart !== tuning.quietEnd) return "Quiet hours on";
+  if (input.brief?.push) {
+    const hours = Math.floor(input.brief.minute / 60) % 24;
+    const mins = input.brief.minute % 60;
+    const h12 = hours % 12 || 12;
+    const suffix = hours >= 12 ? "PM" : "AM";
+    const time =
+      mins === 0 ? `${h12} ${suffix}` : `${h12}:${String(mins).padStart(2, "0")} ${suffix}`;
+    return `Brief ${time}`;
+  }
+  if (input.phone !== undefined || input.brief !== undefined || input.headsUps !== undefined) {
+    return "Push & email";
+  }
+  return null;
+}
+
+/** Preferences: light, dark or the device's, and which view. */
 export function aldoAppearanceSummary(mode: string, simple: boolean): string {
   const theme = mode === "light" ? "Light" : mode === "dark" ? "Dark" : "System";
   return `${theme}, ${simple ? "simple" : "full"}`;

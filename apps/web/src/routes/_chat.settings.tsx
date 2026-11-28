@@ -151,12 +151,18 @@ function SettingsContentLayout() {
     <AppRouteModal label={gt("Settings")}>
       <div className="relative flex min-h-0 flex-1">
         {aldoPhone ? null : <SettingsSidebarNav pathname={location.pathname} />}
-        <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div {...contentArea} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {aldoPhone ? (
             <AldoSettingsPhoneBar pathname={location.pathname} />
+          ) : isAldoCloud ? (
+            <div className="pointer-events-none absolute top-3 end-3 z-20 flex items-center gap-1">
+              <div className="pointer-events-auto rounded-lg bg-background/80 backdrop-blur-xs">
+                <AppRouteModalClose />
+              </div>
+            </div>
           ) : (
             <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
-              {isAldoCloud ? null : <SettingsBreadcrumb pathname={location.pathname} />}
+              <SettingsBreadcrumb pathname={location.pathname} />
               <div className="ms-auto flex shrink-0 items-center gap-1">
                 {location.pathname === "/settings/general" ? (
                   <RestoreDeviceDefaultsButton onRestored={bumpRestoreSignal} />

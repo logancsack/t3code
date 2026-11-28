@@ -3,10 +3,13 @@ import { describe, expect, it } from "vite-plus/test";
 import type { AldoApp, AldoIntegration, AldoVaultItem } from "./accountApi";
 import type { AldoHomeUsage } from "./homeApi";
 import {
+  aldoAboutYouSummary,
   aldoAccountSummary,
   aldoConnectionsSummary,
   aldoEndedPlan,
   aldoModelsSummary,
+  aldoNotificationsSummary,
+  aldoPermissionsSummary,
   aldoPhoneSummary,
   aldoPlanLabel,
   aldoVaultSummary,
@@ -174,5 +177,52 @@ describe("aldoAccountSummary", () => {
   it("says nothing without a plan", () => {
     expect(aldoAccountSummary(undefined)).toBeNull();
     expect(aldoAccountSummary(usage({ plan: null }))).toBeNull();
+  });
+});
+
+describe("overhauled phone directory summaries", () => {
+  it("includes Antigravity in aldoModelsSummary", () => {
+    expect(aldoModelsSummary({ antigravity: account(true) }, false)).toBe("Antigravity");
+  });
+
+  it("summarizes Permissions spending threshold cleanly", () => {
+    expect(aldoPermissionsSummary(undefined)).toBeNull();
+    expect(
+      aldoPermissionsSummary({ everywhere: { spendThreshold: 0 }, workspaces: [], repos: [] }),
+    ).toBe("Ask before spending");
+    expect(
+      aldoPermissionsSummary({ everywhere: { spendThreshold: 25 }, workspaces: [], repos: [] }),
+    ).toBe("Up to $25");
+  });
+
+  it("summarizes About you across memories, instructions, and skills", () => {
+    expect(
+      aldoAboutYouSummary({ memory: undefined, instructions: undefined, skills: undefined }),
+    ).toBeNull();
+    expect(aldoAboutYouSummary({ memory: [], instructions: [], skills: [] })).toBe("Not set up");
+    expect(
+      aldoAboutYouSummary({
+        memory: [{ id: "1", text: "concise", scope: "*", createdAt: "" }] as never,
+        instructions: [{ scope: "*", text: "Be brief", updated_at: "" }],
+        skills: [],
+      }),
+    ).toBe("1 memory, 1 rule");
+  });
+
+  it("summarizes Notifications & phone cleanly", () => {
+    expect(
+      aldoNotificationsSummary({
+        phone: { available: true, verified: true, phone: "+1 415 555 0100" } as never,
+        brief: null,
+        headsUps: null,
+      }),
+    ).toBe("+1 415 555 0100");
+    expect(
+      aldoNotificationsSummary({
+        phone: null,
+        brief: { minute: 480, push: true, nextAt: null },
+        headsUps: null,
+      }),
+    ).toBe("Brief 8 AM");
   });
 });

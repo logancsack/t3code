@@ -50,4 +50,33 @@ describe("Aldo's settings search", () => {
     expect(interests(ids({ hasAldoOnboarding: false }))).toBe(false);
     expect(interests(ids({}))).toBe(false);
   });
+
+  it("never returns dead desktop or retired routes in Aldo search", () => {
+    const all = ids({
+      aldoDeveloperTools: true,
+      aldoPolicyRules: ["merge", "accounts", "publishing"],
+      hasAldoOnboarding: true,
+    });
+    const deadPaths = new Set([
+      "/settings/labs",
+      "/settings/browser",
+      "/settings/devices",
+      "/settings/worktrees",
+      "/settings/access",
+      "/settings/appearance",
+      "/settings/threads",
+      "/settings/phone",
+    ]);
+    const leaking = all.filter((item) => deadPaths.has(item.to));
+    expect(leaking).toEqual([]);
+  });
+
+  it("includes new overhaul targets like extra usage cap, computers, and developer tools", () => {
+    const all = ids({ aldoDeveloperTools: true });
+    const idSet = new Set(all.map((item) => item.id));
+    expect(idSet.has("aldo-extra-usage-cap")).toBe(true);
+    expect(idSet.has("aldo-computers")).toBe(true);
+    expect(idSet.has("aldo-developer-tools")).toBe(true);
+    expect(idSet.has("aldo-reset-device")).toBe(true);
+  });
 });

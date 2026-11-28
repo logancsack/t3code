@@ -33,7 +33,7 @@ import {
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 const AGENT_INBOX_DESCRIPTION =
-  "Your agents' own email address, shared by all your threads: for signing up for things, getting codes and links, and writing to people for a task. It isn't your mail.";
+  "Your agents’ own email address, shared by all your threads: for signing up for things, getting codes and links, and writing to people for a task. It isn’t your mail.";
 
 /** Picking the agents' address: a handle at Aldo's mail domain, checked as it's typed, claimed for good. */
 function ClaimAgentAddress(props: {
@@ -88,14 +88,14 @@ function ClaimAgentAddress(props: {
     }
   };
   const status = !handle ? (
-    "Pick a handle, like one on a social site. It's yours for good: an address can't be changed or given up, so mail meant for it never reaches someone else."
+    "Pick a handle, like one on a social site. It’s yours for good: an address can’t be changed or given up, so mail meant for it never reaches someone else."
   ) : problem ? (
     <span className="text-warning-foreground">{problem}</span>
   ) : !current && unchecked === handle ? (
     <span className="inline-flex items-center gap-1.5 text-warning-foreground">
-      Couldn't check that handle.
+      Couldn’t check that handle.
       <Button
-        size="micro"
+        size="sm"
         variant="outline"
         onClick={() => {
           setUnchecked(null);
@@ -114,7 +114,7 @@ function ClaimAgentAddress(props: {
     </span>
   ) : (
     <span className="text-warning-foreground">
-      {current.reason ?? "That one can't be claimed."}
+      {current.reason ?? "That one can’t be claimed."}
     </span>
   );
   return (
@@ -126,7 +126,7 @@ function ClaimAgentAddress(props: {
       status={
         confirming ? (
           <span className="text-foreground">
-            Claim {address} for good? You can't change it later.
+            Claim {address} for good? You can’t change it later.
           </span>
         ) : (
           status
@@ -202,12 +202,12 @@ function AgentSenderNameRow(props: {
       toastManager.add({
         type: "success",
         title: "Sender name saved",
-        description: `Your agents' mail goes out as ${renamed.displayName} now.`,
+        description: `Your agents’ mail goes out as ${renamed.displayName} now.`,
       });
     } catch (cause) {
       toastManager.add({
         type: "error",
-        title: "Couldn't change the sender name",
+        title: "Couldn’t change the sender name",
         description: messageOf(cause),
       });
     } finally {
@@ -217,7 +217,7 @@ function AgentSenderNameRow(props: {
   return (
     <SettingsRow
       title="Sender name"
-      description="What people see beside your agents' address in the mail they send, for every thread. Change it whenever you like; the address stays."
+      description="What people see beside your agents’ address in the mail they send, for every thread. Change it whenever you like; the address stays."
       status={
         problem ? (
           <span className="text-warning-foreground">{problem}</span>

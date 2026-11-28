@@ -88,6 +88,20 @@ export function setAldoSimpleMode(on: boolean): void {
   }
 }
 
+export function hasAldoSimpleModeOverride(): boolean {
+  return chosen !== null || read(KEY) !== null;
+}
+
+export function resetAldoSimpleMode(): void {
+  chosen = null;
+  try {
+    window.localStorage.removeItem(KEY);
+  } catch {
+    // Private mode: cleared in memory above.
+  }
+  useAldoSimple.setState({ on: current(), place: "aldo" });
+}
+
 export function setAldoSimplePlace(place: AldoSimplePlace): void {
   useAldoSimple.setState({ place });
 }

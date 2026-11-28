@@ -6,8 +6,8 @@ import {
 } from "./settingsData";
 import { createSettingsResource, useSettingsResource } from "./settingsResource";
 import { Link } from "@tanstack/react-router";
-import { BellIcon, MailIcon, SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { BellIcon, ClockIcon, MailIcon, SparklesIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   SettingsPageContainer,
@@ -28,6 +28,7 @@ import {
   type AldoHeadsUpsChange,
   type AldoHeadsUpsTuning,
 } from "./accountApi";
+import { AldoPhonePanel } from "./AldoPhonePanel";
 import { AldoPolicySelect, AldoPolicySubList, AldoPolicySubRow } from "./AldoPolicy";
 import { BRIEF_OFF, briefTimeOptions } from "./briefSettings.logic";
 import {
@@ -97,7 +98,8 @@ function AldoNotificationSettings() {
   const soundRow = (
     <SettingsRow
       {...searchableSetting("aldo-notification-sound")}
-      description="A soft chime while Aldo is open on this device, except for the thread you're looking at."
+      description="A soft chime while Aldo is open on this device, except for the thread you’re looking at."
+      inline
       control={
         <Switch
           checked={sound}
@@ -106,7 +108,7 @@ function AldoNotificationSettings() {
             // Turning it on plays it once, so the user knows the sound.
             if (checked) playAldoChime();
           }}
-          aria-label="Play a sound when a thread finishes or needs you"
+          aria-label="Play a chime when a thread finishes or needs you"
         />
       }
     />
@@ -114,7 +116,7 @@ function AldoNotificationSettings() {
 
   if (!status || status.availability === "unsupported") {
     return (
-      <SettingsSection title="On this device" icon={<BellIcon className="size-4" />}>
+      <SettingsSection title="This device" icon={<BellIcon className="size-4" />}>
         {soundRow}
       </SettingsSection>
     );
@@ -151,10 +153,11 @@ function AldoNotificationSettings() {
   const on = status.availability === "available" && status.on;
 
   return (
-    <SettingsSection title="On this device" icon={<BellIcon className="size-4" />}>
+    <SettingsSection title="This device" icon={<BellIcon className="size-4" />}>
       <SettingsRow
         {...searchableSetting("aldo-notifications")}
         description={description}
+        inline={!(on && canTest)}
         {...(on && canTest && test.state
           ? {
               status: (
@@ -205,7 +208,7 @@ function useHeadsUpsChange() {
         (cause: unknown) => {
           toastManager.add({
             type: "error",
-            title: "Couldn't change that",
+            title: "Couldn’t change that",
             description: messageOf(cause),
           });
           return false;
@@ -223,57 +226,60 @@ function useHeadsUpsChange() {
  * time at both ends, which is how Aldo keeps it (quietHoursOn). Hidden on an
  * Aldo that doesn't let them be set.
  */
-function QuietHoursRow() {
+function QuietHoursSection() {
   const tuning = useSettingsResource(settingsHeadsUps).data?.tuning;
   const { saving, change } = useHeadsUpsChange();
   const zone = useMemo(() => new Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   if (!tuning) return null;
   const on = quietHoursOn(tuning);
   return (
-    <SettingsRow
-      {...searchableSetting("aldo-quiet-hours")}
-      description="Aldo holds heads-ups, finished threads and news from agents until quiet hours end. Anything that needs you, like a question, an approval or a sign-in, still comes through."
-      control={
-        <Switch
-          checked={on}
-          disabled={saving}
-          onCheckedChange={(checked) => void change(quietHoursChange(checked))}
-          aria-label="Quiet hours"
-        />
-      }
-    >
-      {on ? (
-        <AldoPolicySubList>
-          <AldoPolicySubRow
-            label="From"
-            control={
-              <AldoPolicySelect
-                value={String(tuning.quietStart)}
-                options={quietTimeOptions(tuning.quietStart, tuning.quietEnd)}
-                label="Quiet hours start"
-                disabled={saving}
-                className="w-32"
-                onChange={(value) => void change({ quietStart: Number(value) })}
-              />
-            }
+    <SettingsSection title="Quiet hours" icon={<ClockIcon className="size-4" />}>
+      <SettingsRow
+        {...searchableSetting("aldo-quiet-hours")}
+        description="Hold heads-ups, finished threads and routine updates until quiet hours end. Questions, approvals and sign-ins still come through."
+        inline
+        control={
+          <Switch
+            checked={on}
+            disabled={saving}
+            onCheckedChange={(checked) => void change(quietHoursChange(checked))}
+            aria-label="Quiet hours"
           />
-          <AldoPolicySubRow
-            label="Until"
-            control={
-              <AldoPolicySelect
-                value={String(tuning.quietEnd)}
-                options={quietTimeOptions(tuning.quietEnd, tuning.quietStart)}
-                label="Quiet hours end"
-                disabled={saving}
-                className="w-32"
-                onChange={(value) => void change({ quietEnd: Number(value) })}
-              />
-            }
-          />
-          <p className="text-muted-foreground text-xs">Times are where you are now ({zone}).</p>
-        </AldoPolicySubList>
-      ) : null}
-    </SettingsRow>
+        }
+      >
+        {on ? (
+          <AldoPolicySubList>
+            <AldoPolicySubRow
+              label="From"
+              control={
+                <AldoPolicySelect
+                  value={String(tuning.quietStart)}
+                  options={quietTimeOptions(tuning.quietStart, tuning.quietEnd)}
+                  label="Quiet hours start"
+                  disabled={saving}
+                  className="w-32"
+                  onChange={(value) => void change({ quietStart: Number(value) })}
+                />
+              }
+            />
+            <AldoPolicySubRow
+              label="Until"
+              control={
+                <AldoPolicySelect
+                  value={String(tuning.quietEnd)}
+                  options={quietTimeOptions(tuning.quietEnd, tuning.quietStart)}
+                  label="Quiet hours end"
+                  disabled={saving}
+                  className="w-32"
+                  onChange={(value) => void change({ quietEnd: Number(value) })}
+                />
+              }
+            />
+            <p className="text-muted-foreground text-xs">Times are where you are now ({zone}).</p>
+          </AldoPolicySubList>
+        ) : null}
+      </SettingsRow>
+    </SettingsSection>
   );
 }
 
@@ -295,7 +301,7 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
     return (
       <SettingsRow
         {...searchableSetting("aldo-heads-ups")}
-        description={`Couldn't read whether they're on: ${error}`}
+        description={`Couldn’t read whether they’re on: ${error}`}
         control={
           <Button size="sm" variant="outline" onClick={load}>
             Try again
@@ -305,8 +311,8 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
     );
   }
   const description = headsUps?.tuning
-    ? "Every half hour outside your quiet hours, Aldo looks at your new mail and coming events and tells you what's worth knowing (here and on your phone), sometimes with a thread to start for it. Your other apps it reads every few hours. Most looks say nothing."
-    : "Every half hour of your day, Aldo looks at your new mail and coming events and tells you what's worth knowing (here and on your phone), sometimes with a thread to start for it. Most looks say nothing.";
+    ? "Every half hour outside quiet hours, Aldo checks new mail and upcoming events and shares what’s worth knowing. Other apps are checked every few hours."
+    : "Every half hour of your day, Aldo checks new mail and upcoming events and shares what’s worth knowing.";
   if (!headsUps) {
     return (
       <SettingsRow
@@ -322,6 +328,7 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
     <SettingsRow
       {...searchableSetting("aldo-heads-ups")}
       description={description}
+      inline
       {...(nothingToRead
         ? {
             status: (
@@ -365,7 +372,7 @@ function withHeadsUpsChange(before: AldoHeadsUps, change: AldoHeadsUpsChange): A
 
 /**
  * Under the switch: how often Aldo reads the other apps, and what the user
- * wants to hear about or not, saved together when they're done.
+ * wants to hear about or not, auto-saved on blur with quiet confirmation.
  */
 function HeadsUpsTuning(props: {
   readonly tuning: AldoHeadsUpsTuning;
@@ -375,17 +382,33 @@ function HeadsUpsTuning(props: {
   const { tuning, saving, change } = props;
   // What they're typing; null shows what's saved (and follows it).
   const [draft, setDraft] = useState<{ tell: string; skip: string } | null>(null);
+  const [savedNotice, setSavedNotice] = useState(false);
+  const noticeTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+    },
+    [],
+  );
   const topics = draft ?? { tell: tuning.tell, skip: tuning.skip };
-  const topicChange = draft ? topicsChange(tuning, draft) : {};
-  const edited = Object.keys(topicChange).length > 0;
   const apps = appsNote(tuning);
-  // Saved, it shows what's saved, unless they typed more meanwhile.
-  const saveTopics = () => {
-    const sent = draft;
-    void change(topicChange).then((saved) => {
-      if (saved) setDraft((current) => (current === sent ? null : current));
+
+  const commitTopics = (sent: { tell: string; skip: string } | null) => {
+    if (!sent) return;
+    const diff = topicsChange(tuning, sent);
+    if (Object.keys(diff).length === 0) {
+      setDraft((current) => (current === sent ? null : current));
+      return;
+    }
+    void change(diff).then((saved) => {
+      if (!saved) return;
+      setDraft((current) => (current === sent ? null : current));
+      setSavedNotice(true);
+      if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = window.setTimeout(() => setSavedNotice(false), 2000);
     });
   };
+
   return (
     <AldoPolicySubList>
       <AldoPolicySubRow
@@ -408,7 +431,7 @@ function HeadsUpsTuning(props: {
             <Link to="/settings/connections" className="underline underline-offset-2">
               Connect an app
             </Link>{" "}
-            and Aldo reads what's new in it.
+            and Aldo reads what’s new in it.
           </>
         )}
       </p>
@@ -420,30 +443,35 @@ function HeadsUpsTuning(props: {
           placeholder="Anything from my landlord, flight changes"
           maxLength={HEADS_UP_TOPIC_CHARS}
           value={topics.tell}
-          onChange={(e) => setDraft({ ...topics, tell: e.currentTarget.value })}
+          onChange={(e) => {
+            setSavedNotice(false);
+            setDraft({ ...topics, tell: e.currentTarget.value });
+          }}
+          onBlur={() => commitTopics(draft)}
         />
       </label>
       <label className="block space-y-1">
-        <span className="text-sm">Don't tell me about</span>
+        <span className="text-sm">Don’t tell me about</span>
         <Textarea
           size="sm"
           className="text-sm"
           placeholder="Newsletters, package tracking"
           maxLength={HEADS_UP_TOPIC_CHARS}
           value={topics.skip}
-          onChange={(e) => setDraft({ ...topics, skip: e.currentTarget.value })}
+          onChange={(e) => {
+            setSavedNotice(false);
+            setDraft({ ...topics, skip: e.currentTarget.value });
+          }}
+          onBlur={() => commitTopics(draft)}
         />
       </label>
-      {edited ? (
-        <div className="flex justify-end gap-2 pb-1">
-          <Button size="sm" variant="ghost" disabled={saving} onClick={() => setDraft(null)}>
-            Cancel
-          </Button>
-          <Button size="sm" disabled={saving} onClick={saveTopics}>
-            Save
-          </Button>
-        </div>
-      ) : null}
+      <p className="min-h-4 text-muted-foreground text-xs" aria-live="polite">
+        {saving
+          ? "Saving…"
+          : savedNotice
+            ? "Saved"
+            : "Changes save automatically when you leave the field."}
+      </p>
     </AldoPolicySubList>
   );
 }
@@ -458,12 +486,12 @@ function BriefRow() {
   const [saving, setSaving] = useState(false);
   if (brief === null) return null;
   const description =
-    "Each day at this time, Aldo sends your brief to the devices you turned notifications on for: what needs you, what it's watching and what can wait. If you've opened Aldo by then, it doesn't.";
+    "Each day at this time, Aldo sends a summary of what needs you, what it’s watching and what can wait. Skipped if you’ve already opened Aldo.";
   if (!brief) {
     return (
       <SettingsRow
         {...searchableSetting("aldo-brief")}
-        description={cached.error ? `Couldn't read when it comes: ${cached.error}` : description}
+        description={cached.error ? `Couldn’t read when it comes: ${cached.error}` : description}
         {...(cached.error
           ? {
               control: (
@@ -491,7 +519,7 @@ function BriefRow() {
       .catch((cause: unknown) =>
         toastManager.add({
           type: "error",
-          title: "Couldn't change that",
+          title: "Couldn’t change that",
           description: messageOf(cause),
         }),
       )
@@ -526,7 +554,11 @@ function MomentEmailsSection() {
   const [saving, setSaving] = useState<ReadonlySet<AldoMomentEmailKind>>(new Set());
   if (settings === null || (settings === undefined && !cached.error)) return null;
   const section = (children: ReactNode) => (
-    <SettingsSection title="By email" icon={<MailIcon className="size-4" />}>
+    <SettingsSection
+      id="aldo-fallback-emails"
+      title="Fallback emails"
+      icon={<MailIcon className="size-4" />}
+    >
       {children}
     </SettingsSection>
   );
@@ -534,7 +566,7 @@ function MomentEmailsSection() {
     return section(
       <SettingsRow
         id="aldo-moment-emails"
-        title="Emails when you’re away"
+        title="Fallback emails"
         description={`Couldn’t read which ones you get: ${cached.error}`}
         control={
           <Button
@@ -572,17 +604,16 @@ function MomentEmailsSection() {
   };
   return section(
     <>
-      <SettingsRow
-        id="aldo-moment-emails"
-        title="Emails when you’re away"
-        description={momentEmailsIntro(settings.to)}
-      />
+      <p id="aldo-moment-emails" className="px-3 pt-3 pb-1 text-muted-foreground text-xs sm:px-4">
+        {momentEmailsIntro(settings.to)}
+      </p>
       {ALDO_MOMENT_EMAIL_ROWS.map((row) => (
         <SettingsRow
           key={row.kind}
           id={`aldo-moment-emails-${row.kind}`}
           title={row.title}
           description={row.description}
+          inline
           control={
             <Switch
               checked={settings[row.kind]}
@@ -611,15 +642,16 @@ function useMailConnected(): boolean | null {
       );
 }
 
-/** Settings → Notifications: what reaches the user, on this device, by email and from Aldo. */
+/** Settings → Notifications & phone: quiet hours, this device, text & call, fallback emails, and proactive updates. */
 export function AldoNotificationsPage() {
   const connected = useMailConnected();
   return (
     <SettingsPageContainer>
+      <QuietHoursSection />
       <AldoNotificationSettings />
+      <AldoPhonePanel />
       <MomentEmailsSection />
-      <SettingsSection title="From Aldo" icon={<SparklesIcon className="size-4" />}>
-        <QuietHoursRow />
+      <SettingsSection title="Proactive updates" icon={<SparklesIcon className="size-4" />}>
         <BriefRow />
         <HeadsUpsRow connected={connected} />
       </SettingsSection>

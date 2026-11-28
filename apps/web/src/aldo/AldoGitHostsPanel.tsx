@@ -6,6 +6,7 @@ import { AldoBrandTile } from "./AldoBrandTile";
 import { AldoConnectionTile } from "./AldoConnectionTile";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { toastManager } from "../components/ui/toast";
 import {
   connectAldoGitHost,
   disconnectAldoAccount,
@@ -81,10 +82,28 @@ export function AldoGitHostRow(props: {
 }) {
   const spec = HOSTS[props.kind];
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const connected = props.account?.connected === true;
+
+  const disconnect = () => {
+    setBusy(true);
+    disconnectAldoAccount(props.kind)
+      .then(() => {
+        setConfirming(false);
+        props.onChanged();
+      })
+      .catch((cause: unknown) => {
+        toastManager.add({
+          type: "error",
+          title: `Couldn’t disconnect ${spec.title}`,
+          description: cause instanceof Error ? cause.message : String(cause),
+        });
+      })
+      .finally(() => setBusy(false));
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -103,13 +122,20 @@ export function AldoGitHostRow(props: {
   };
 
   const control = connected ? (
-    <Button
-      size="sm"
-      variant="ghost"
-      onClick={() => void disconnectAldoAccount(props.kind).then(props.onChanged)}
-    >
-      Disconnect
-    </Button>
+    confirming ? (
+      <div className="flex items-center gap-1.5">
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
+          Keep
+        </Button>
+        <Button size="sm" variant="destructive" disabled={busy} onClick={disconnect}>
+          Disconnect
+        </Button>
+      </div>
+    ) : (
+      <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+        Disconnect
+      </Button>
+    )
   ) : (
     <Button
       size={props.tile ? "compact" : "sm"}

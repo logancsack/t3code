@@ -214,6 +214,8 @@ export function AldoConversationPage(props: {
   readonly tabs: ReactNode;
   /** At the top's end, on a wider screen: what to start. */
   readonly actions: ReactNode;
+  /** At the top's end on a phone: direct 2-tap entry to Account and Settings. */
+  readonly mobileAccount?: ReactNode;
   /** Under the empty conversation's welcome: the first run's starters. */
   readonly welcome: ReactNode;
   readonly issues: ReturnType<typeof healthIssues>;
@@ -455,7 +457,10 @@ export function AldoConversationPage(props: {
             <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center px-4 pt-2 pb-1 sm:px-6">
               {fresh ? null : <AldoPresence home={home} now={now} unread={unread} />}
               {props.actions ? (
-                <div className="absolute end-3 top-2.5 hidden sm:block">{props.actions}</div>
+                <div className="absolute end-3 top-2.5 hidden md:block">{props.actions}</div>
+              ) : null}
+              {props.mobileAccount ? (
+                <div className="absolute end-2 top-1.5 md:hidden">{props.mobileAccount}</div>
               ) : null}
             </header>
             {/* The empty page centers its question and composer, a little above the middle; then it's the conversation over the composer. */}
@@ -569,7 +574,7 @@ export function AldoConversationPage(props: {
                 ref={startersRef}
                 className={cn(
                   "flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto",
-                  props.tabs ? "pb-3" : "pb-[max(1.5rem,env(safe-area-inset-bottom))]",
+                  props.tabs ? "pb-8" : "pb-[max(1.5rem,env(safe-area-inset-bottom))]",
                 )}
               >
                 {props.welcome ? <div className={cn(column, "pt-4")}>{props.welcome}</div> : null}

@@ -30,7 +30,7 @@ export function AldoSettingsPhoneBar(props: { readonly pathname: string }) {
   // A page under another (a member's, under Members) goes back to it.
   const parent = aldoSettingsParent(props.pathname);
   return (
-    <header className="grid h-[var(--workspace-topbar-height)] min-w-0 shrink-0 grid-cols-[6rem_minmax(0,1fr)_6rem] items-center gap-2 border-border/60 border-b pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)">
+    <header className="grid h-[var(--workspace-topbar-height)] min-w-0 shrink-0 grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)_minmax(4rem,auto)] items-center gap-2 border-border/60 border-b pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)">
       <div className="flex min-w-0">
         {root ? null : (
           <Button

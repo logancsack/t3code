@@ -1430,7 +1430,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (triageEnvironmentId !== null && canTriage) {
+  if (!isAldoCloud && triageEnvironmentId !== null && canTriage) {
     actionItems.push({
       kind: "action",
       value: "action:triage",
@@ -1708,10 +1708,10 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  actionItems.push(changeThemeItem);
+  if (!isAldoCloud) actionItems.push(changeThemeItem);
   actionItems.push(changeAppearanceItem);
 
-  actionItems.push(themeEditorItem);
+  if (!isAldoCloud) actionItems.push(themeEditorItem);
 
   if (aldoDeveloperTools && environments.some((environment) => environment.serverConfig !== null)) {
     actionItems.push({
@@ -1758,33 +1758,35 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  actionItems.push({
-    kind: "action",
-    value: "action:use-in-another-app",
-    searchTerms: [
-      "mcp",
-      "connector",
-      "another app",
-      "poke",
-      "claude",
-      "chatgpt",
-      "grok",
-      "muse",
-      "instinct",
-      "openclaw",
-      "hermes",
-    ],
-    title: gt("Use T3 Code in another app (MCP)"),
-    icon: <PlugIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      openUseInAnotherApp(
-        currentProjectEnvironmentId ??
-          (paletteRouteTarget?.kind === "server"
-            ? paletteRouteTarget.threadRef.environmentId
-            : null),
-      );
-    },
-  });
+  if (!isAldoCloud) {
+    actionItems.push({
+      kind: "action",
+      value: "action:use-in-another-app",
+      searchTerms: [
+        "mcp",
+        "connector",
+        "another app",
+        "poke",
+        "claude",
+        "chatgpt",
+        "grok",
+        "muse",
+        "instinct",
+        "openclaw",
+        "hermes",
+      ],
+      title: gt("Use T3 Code in another app (MCP)"),
+      icon: <PlugIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openUseInAnotherApp(
+          currentProjectEnvironmentId ??
+            (paletteRouteTarget?.kind === "server"
+              ? paletteRouteTarget.threadRef.environmentId
+              : null),
+        );
+      },
+    });
+  }
 
   actionItems.push({
     kind: "action",

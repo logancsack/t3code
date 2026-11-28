@@ -11,6 +11,7 @@
 // in a popup; how the sign-in reports back to this tab is in
 // integrations.logic.ts.
 
+import { Link } from "@tanstack/react-router";
 import { CheckCircle2Icon, MailIcon, SearchIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 
@@ -24,6 +25,7 @@ import { SettingsGroup } from "../components/settings/SettingsGroup";
 import { Button } from "../components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import { Skeleton } from "../components/ui/skeleton";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import {
@@ -46,6 +48,7 @@ import {
 import { AldoBrandTile } from "./AldoBrandTile";
 import { AldoBrokenStatus } from "./AldoConnectionStatus";
 import { AldoConnectionGrid, AldoConnectionTile } from "./AldoConnectionTile";
+import { useAldoDeveloperTools } from "./developerTools";
 import { AldoGeneratorRow, aldoGeneratorWhat } from "./AldoGeneratorRows";
 import { ALDO_GIT_HOST_KINDS, AldoGitHostRow } from "./AldoGitHostsPanel";
 import {
@@ -467,6 +470,7 @@ export function AldoConnectionsPage() {
   const accounts = useAldoAccounts();
   const integrations = useAldoIntegrations();
   const apps = useAldoApps();
+  const showDeveloperTools = useAldoDeveloperTools();
   const [kind, setKind] = useState<ConnectionKind | "all">("all");
   const [query, setQuery] = useState("");
   const [byAddress, setByAddress] = useState(false);
@@ -599,12 +603,16 @@ export function AldoConnectionsPage() {
     .toSorted((a, b) => Number(Boolean(b.broken)) - Number(Boolean(a.broken)));
   const catalog = connections.filter((connection) => !connection.connected);
   const searching = query.trim() !== "";
+  // Non-developers don't see code hosts in the browse grid unless they search for one.
+  const browseCatalog = showDeveloperTools
+    ? catalog
+    : catalog.filter((connection) => connection.kind !== "code");
   // Only the kinds left to connect get a filter; one whose last was just connected shows all.
   const kinds = KINDS.filter((group) =>
-    catalog.some((connection) => connection.kind === group.value),
+    browseCatalog.some((connection) => connection.kind === group.value),
   );
   const shownKind = kinds.some((group) => group.value === kind) ? kind : "all";
-  const offered = catalog.filter(
+  const offered = (searching ? catalog : browseCatalog).filter(
     (connection) =>
       (searching || shownKind === "all" || connection.kind === shownKind) &&
       matches(connection, query),
@@ -615,29 +623,35 @@ export function AldoConnectionsPage() {
   });
   const errors = [accounts.error, integrations.error, apps.error].filter(Boolean);
   const takesAddresses = Boolean(apps.data);
+  const showConnectedSection = loading || connected.length > 0 || errors.length > 0;
 
   return (
     <SettingsPageContainer>
-      <SettingsSection
-        id="aldo-connections"
-        title="Connected"
-        icon={<CheckCircle2Icon className="size-4" />}
-      >
-        {errors.map((error) => (
-          <p key={error} className="px-3 py-2 text-destructive-foreground text-sm sm:px-4">
-            {error}
-          </p>
-        ))}
-        {loading ? (
-          <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">Loading…</p>
-        ) : connected.length === 0 ? (
-          <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">
-            Nothing yet. Connect an account below, and your agents can use it as you.
-          </p>
-        ) : (
-          connected.map((connection) => <Fragment key={connection.key}>{connection.view}</Fragment>)
-        )}
-      </SettingsSection>
+      {showConnectedSection ? (
+        <SettingsSection
+          id="aldo-connections"
+          title="Connected"
+          icon={<CheckCircle2Icon className="size-4" />}
+        >
+          {errors.map((error) => (
+            <p key={error} className="px-3 py-2 text-destructive-foreground text-sm sm:px-4">
+              {error}
+            </p>
+          ))}
+          {loading ? (
+            <div className="space-y-2.5 px-3 py-3 sm:px-4">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-3.5 w-64" />
+            </div>
+          ) : (
+            connected.map((connection) => (
+              <Fragment key={connection.key}>{connection.view}</Fragment>
+            ))
+          )}
+        </SettingsSection>
+      ) : (
+        <span id="aldo-connections" aria-hidden="true" className="sr-only" />
+      )}
       <SettingsSection title="Your agents’ email" icon={<MailIcon className="size-4" />}>
         <AldoAgentInboxRows />
       </SettingsSection>
@@ -661,7 +675,7 @@ export function AldoConnectionsPage() {
                 <InputGroupInput
                   type="search"
                   aria-label="Search connections"
-                  placeholder={`Search ${catalog.length} apps and accounts`}
+                  placeholder={`Search ${browseCatalog.length} apps and accounts`}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
@@ -698,7 +712,7 @@ export function AldoConnectionsPage() {
             </p>
           )
         ) : null}
-        {!loading && !searching && catalog.length === 0 ? (
+        {!loading && !searching && browseCatalog.length === 0 ? (
           <p className="px-3 text-muted-foreground text-sm sm:px-4">
             Everything here is connected.
           </p>
@@ -728,6 +742,13 @@ export function AldoConnectionsPage() {
           )
         ) : null}
       </section>
+      <p className="px-3 text-muted-foreground text-xs sm:px-4">
+        Looking for Claude, ChatGPT, Google Antigravity or OpenCode? Connect them in{" "}
+        <Link to="/settings/agents" className="text-foreground underline underline-offset-4">
+          Models
+        </Link>
+        .
+      </p>
     </SettingsPageContainer>
   );
 }

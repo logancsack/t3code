@@ -556,15 +556,17 @@ function ProjectDetail({
   return (
     <>
       <SettingsPageContainer className="gap-6">
-        <Alert variant="info">
-          <InfoIcon aria-hidden />
-          <AlertDescription>
-            <T>
-              Can't find a setting? Keep this project picked above and hop to any other settings
-              page.
-            </T>
-          </AlertDescription>
-        </Alert>
+        {isAldoCloud ? null : (
+          <Alert variant="info">
+            <InfoIcon aria-hidden />
+            <AlertDescription>
+              <T>
+                Can't find a setting? Keep this project picked above and hop to any other settings
+                page.
+              </T>
+            </AlertDescription>
+          </Alert>
+        )}
         <SettingsSection id="project-overview" title={gt("Project")} hideTitle>
           {!canEditGroup ? (
             <p className="px-3 py-2 text-sm text-muted-foreground sm:px-4">

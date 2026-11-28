@@ -5,12 +5,13 @@ import { useSettingsResource } from "./settingsResource";
 // writes them as it talks and after each conversation; the user can change
 // anything here, add a note, or have Aldo forget one.
 
-import { BrainIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
+import { BrainIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
 import { Textarea } from "../components/ui/textarea";
 import { AldoApiError } from "./api";
 import { aldoMemory, type AldoMemoryItem } from "./assistantApi";
@@ -159,13 +160,13 @@ function NoteEditor(props: {
     <li className="space-y-2 rounded-lg border border-border/60 px-3 py-2">
       <Input
         value={title}
-        placeholder="Title, e.g. Package manager"
+        placeholder="Title, e.g. Time zone or writing style"
         onChange={(event) => setTitle(event.target.value)}
       />
       <Textarea
         size="sm"
         value={body}
-        placeholder="The fact, e.g. Uses pnpm in every repository."
+        placeholder="The fact, e.g. Works in Pacific time and prefers bullet summaries."
         onChange={(event) => setBody(event.target.value)}
       />
       {error ? <p className="text-destructive-foreground text-sm">{error}</p> : null}
@@ -232,23 +233,24 @@ export function AldoMemoryPanel() {
         ) : null
       }
     >
-      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-        What Aldo knows about you, across every conversation: a few lines about you that it always
-        has in mind, and notes, one fact each, that it looks up when they matter. Aldo writes them
-        as you talk and after each conversation; change anything here, or tell Aldo to forget
-        something. Secrets from your vault never go in.
+      <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
+        Facts Aldo remembers across conversations. Edit or forget anything here; vault secrets are
+        never stored in memory.
       </p>
       {unsupported ? (
         <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          This Aldo server doesn't have memory yet.
+          This Aldo server doesn’t support memory yet.
         </p>
       ) : null}
       {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
       {items === null && !unsupported && !error ? (
-        <LoaderCircleIcon className="mx-4 size-4 animate-spin text-muted-foreground" />
+        <div className="space-y-3 px-3 py-3 sm:px-4" aria-busy="true">
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+        </div>
       ) : null}
       {items ? (
-        <>
+        <div className="space-y-4 py-3">
           <ProfileEditor profile={profile} onSaved={saved} />
           <div className="space-y-2 px-3 sm:px-4">
             <h3 className="font-medium text-sm">Notes</h3>
@@ -262,12 +264,11 @@ export function AldoMemoryPanel() {
             </ul>
             {notes.length === 0 && !adding ? (
               <p className="text-muted-foreground text-sm">
-                No notes yet. Facts about you and your work show here, one each, as Aldo picks them
-                up while you talk.
+                No notes yet. Facts about your work appear here as Aldo learns them.
               </p>
             ) : null}
           </div>
-        </>
+        </div>
       ) : null}
     </SettingsSection>
   );

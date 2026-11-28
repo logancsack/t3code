@@ -1,3 +1,4 @@
+import { CheckCircle2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AuthConnectorMethod } from "@t3tools/contracts";
 
@@ -5,9 +6,9 @@ import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog"
 import { AGENT_AUTH_METHODS } from "../components/settings/authConnectorMethods";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
-import { AldoBrandTile } from "./AldoBrandTile";
-import { AldoPolicyRuleRow, useAldoPolicy } from "./AldoPolicy";
 import { Input } from "../components/ui/input";
+import { toastManager } from "../components/ui/toast";
+import { AldoBrandTile } from "./AldoBrandTile";
 import {
   disconnectAldoAccount,
   fetchOpenCodeProviders,
@@ -47,9 +48,92 @@ function otherProviderMethod(provider: AldoOpenCodeProvider) {
   };
 }
 
-/** Another provider than the four OpenCode offers by name: search OpenCode's list, then connect its key. */
+/** Google Antigravity row rendered alongside the other AI subscriptions in Models. */
+export function AldoGoogleAntigravityRow() {
+  const { accounts, refresh } = useAldoAccounts();
+  const [confirming, setConfirming] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  if (!accounts?.antigravity) return null;
+
+  const disconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await disconnectAldoAccount("antigravity");
+      setConfirming(false);
+      refresh();
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: "Couldn’t disconnect Google Antigravity",
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  return (
+    <SettingsRow
+      id="aldo-account-antigravity"
+      leading={<AldoBrandTile id="antigravity" name="Google Antigravity" />}
+      title="Google Antigravity"
+      description="Use the models and limits included with your Google account."
+      status={
+        accounts.antigravity.connected ? (
+          <span className="inline-flex items-center gap-1 text-success-foreground">
+            <CheckCircle2Icon className="size-3.5" />
+            Connected
+          </span>
+        ) : undefined
+      }
+      inline
+      control={
+        confirming && accounts.antigravity.connected ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disconnecting}
+              onClick={() => setConfirming(false)}
+            >
+              Keep
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={disconnecting}
+              onClick={() => void disconnect()}
+            >
+              {disconnecting ? "Disconnecting…" : "Disconnect"}
+            </Button>
+          </>
+        ) : (
+          <>
+            {accounts.antigravity.connected ? (
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+                Disconnect
+              </Button>
+            ) : null}
+            <AuthConnectorDialog
+              connector="antigravity"
+              serviceName="Google Antigravity"
+              methods={[GOOGLE]}
+              isAuthenticated={accounts.antigravity.connected}
+              accountScoped
+              triggerLabel={accounts.antigravity.connected ? "Reconnect" : "Connect"}
+              onConnected={refresh}
+            />
+          </>
+        )
+      }
+    />
+  );
+}
+
+/** Another provider than the ones OpenCode offers by name: search OpenCode's list, then connect its key. */
 function OtherOpenCodeProvider(props: {
-  /** The four named above and the keys already connected: not offered again. */
+  /** The named methods and the keys already connected: not offered again. */
   readonly listed: ReadonlySet<string>;
   readonly onConnected: () => void;
 }) {
@@ -76,8 +160,8 @@ function OtherOpenCodeProvider(props: {
   );
   return (
     <SettingsRow
-      title="Another provider"
-      description="Any provider OpenCode supports with an API key, such as Groq, DeepSeek or Mistral. Your provider may bill you for usage."
+      title="Another API provider"
+      description="Any provider OpenCode supports with an API key, such as Groq, DeepSeek or Mistral. Your provider bills you directly."
       inline
       control={
         chosen ? (
@@ -108,7 +192,7 @@ function OtherOpenCodeProvider(props: {
       }
     >
       {open && !chosen ? (
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 space-y-2 pb-2">
           <Input
             type="search"
             aria-label="Search providers"
@@ -119,7 +203,7 @@ function OtherOpenCodeProvider(props: {
           />
           {failed ? (
             <p role="alert" className="text-sm text-destructive-foreground">
-              Couldn't load the providers. Try again in a moment.
+              Couldn’t load the providers. Try again in a moment.
             </p>
           ) : !providers ? (
             <p className="text-sm text-muted-foreground">Loading providers…</p>
@@ -161,126 +245,115 @@ function OtherOpenCodeProvider(props: {
   );
 }
 
+/** API keys section in Settings → Models (OpenCode and connected provider keys). */
 export function AldoAgentConnections() {
   const { accounts, refresh } = useAldoAccounts();
-  const policy = useAldoPolicy();
+  const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const disconnect = async (kind: "antigravity" | `opencode:${string}`) => {
+
+  const disconnect = async (kind: `opencode:${string}`, label: string) => {
     setDisconnecting(kind);
-    setError(null);
     try {
       await disconnectAldoAccount(kind);
+      setConfirmingKey(null);
       refresh();
-    } catch {
-      setError("Couldn't disconnect this account. Try again.");
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: `Couldn’t disconnect ${label}`,
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
     } finally {
       setDisconnecting(null);
     }
   };
-  if (!accounts?.opencode && !accounts?.antigravity) return null;
-  const methods = accounts.opencode?.methods ?? [];
+
+  if (!accounts?.opencode) return null;
+  const methods = accounts.opencode.methods ?? [];
   const offered = [GO, ...(AGENT_AUTH_METHODS.opencode?.methods ?? [])].filter((option) =>
     methods.some((method) => method.method === option.method),
   );
+
   return (
-    <SettingsSection title="Provider accounts">
-      {accounts.opencode ? (
-        <SettingsRow
-          id="aldo-account-opencode"
-          leading={<AldoBrandTile id="opencode" name="OpenCode" />}
-          title="OpenCode"
-          description="Use OpenCode models with your own key. Your provider may bill you for usage."
-          status={accounts.opencode.connected ? "Connected" : undefined}
-          inline
-          control={
-            <AuthConnectorDialog
-              connector="opencode"
-              serviceName="OpenCode"
-              methods={offered}
-              isAuthenticated={accounts.opencode.connected}
-              accountScoped
-              triggerLabel={accounts.opencode.connected ? "Manage keys" : "Connect OpenCode"}
-              onConnected={refresh}
-            />
-          }
-        />
-      ) : null}
+    <SettingsSection title="API keys">
+      <SettingsRow
+        id="aldo-account-opencode"
+        leading={<AldoBrandTile id="opencode" name="OpenCode" />}
+        title="OpenCode"
+        description="Run models using your own OpenCode, Anthropic, OpenAI or OpenRouter API keys. Your provider bills you directly."
+        status={
+          accounts.opencode.connected ? (
+            <span className="inline-flex items-center gap-1 text-success-foreground">
+              <CheckCircle2Icon className="size-3.5" />
+              Connected
+            </span>
+          ) : undefined
+        }
+        inline
+        control={
+          <AuthConnectorDialog
+            connector="opencode"
+            serviceName="OpenCode"
+            methods={offered}
+            isAuthenticated={accounts.opencode.connected}
+            accountScoped
+            triggerLabel={accounts.opencode.connected ? "Manage keys" : "Connect"}
+            onConnected={refresh}
+          />
+        }
+      />
       {methods
         .filter((method) => method.connected)
-        .map(({ method, kind, label }) => (
-          <SettingsRow
-            key={kind}
-            title={
-              offered.find((option) => option.method === method)?.label ?? label ?? "OpenCode key"
-            }
-            status="Connected"
-            inline
-            control={
-              kind.startsWith("opencode:") ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={disconnecting !== null}
-                  onClick={() => void disconnect(kind as `opencode:${string}`)}
-                >
-                  {disconnecting === kind ? "Disconnecting…" : "Disconnect"}
-                </Button>
-              ) : null
-            }
-          />
-        ))}
-      {accounts.opencode?.otherProviders ? (
+        .map(({ method, kind, label }) => {
+          const displayLabel =
+            offered.find((option) => option.method === method)?.label ?? label ?? "OpenCode key";
+          return (
+            <SettingsRow
+              key={kind}
+              title={displayLabel}
+              status="Connected"
+              inline
+              control={
+                kind.startsWith("opencode:") ? (
+                  confirmingKey === kind ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={disconnecting !== null}
+                        onClick={() => setConfirmingKey(null)}
+                      >
+                        Keep
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={disconnecting !== null}
+                        onClick={() => void disconnect(kind as `opencode:${string}`, displayLabel)}
+                      >
+                        {disconnecting === kind ? "Disconnecting…" : "Disconnect"}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={disconnecting !== null}
+                      onClick={() => setConfirmingKey(kind)}
+                    >
+                      Disconnect
+                    </Button>
+                  )
+                ) : null
+              }
+            />
+          );
+        })}
+      {accounts.opencode.otherProviders ? (
         <OtherOpenCodeProvider
           listed={new Set(methods.map((m) => m.method))}
           onConnected={refresh}
         />
-      ) : null}
-      {accounts.antigravity ? (
-        <SettingsRow
-          id="aldo-account-antigravity"
-          leading={<AldoBrandTile id="antigravity" name="Google Antigravity" />}
-          title="Google Antigravity"
-          description="Use the models and limits available on your Google account."
-          status={accounts.antigravity.connected ? "Connected" : undefined}
-          inline
-          control={
-            <>
-              {accounts.antigravity.connected ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={disconnecting !== null}
-                  onClick={() => void disconnect("antigravity")}
-                >
-                  {disconnecting === "antigravity" ? "Disconnecting…" : "Disconnect"}
-                </Button>
-              ) : null}
-              <AuthConnectorDialog
-                connector="antigravity"
-                serviceName="Google Antigravity"
-                methods={[GOOGLE]}
-                isAuthenticated={accounts.antigravity.connected}
-                accountScoped
-                triggerLabel={accounts.antigravity.connected ? "Reconnect" : "Sign in with Google"}
-                onConnected={refresh}
-              />
-            </>
-          }
-        />
-      ) : null}
-      {accounts.opencode?.connected ? (
-        <AldoPolicyRuleRow
-          rule="paidConnectedModels"
-          setting="aldo-paid-connected-models"
-          policy={policy}
-          description="Let Automatic choose models that can charge your OpenCode or API account, including when a model fails."
-        />
-      ) : null}
-      {error ? (
-        <p role="alert" className="px-4 py-2 text-sm text-destructive-foreground">
-          {error}
-        </p>
       ) : null}
     </SettingsSection>
   );

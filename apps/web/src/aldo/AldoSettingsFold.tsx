@@ -30,8 +30,8 @@ export function AldoSettingsFold(props: {
   }, [opensFor, targetId]);
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="group flex w-full items-start gap-2 rounded-lg px-3 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4">
-        <ChevronRightIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90" />
+      <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11 sm:px-4">
+        <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90" />
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
           <span className="font-medium text-foreground text-sm">{props.title}</span>
           <span className="text-muted-foreground text-xs">{props.hint}</span>

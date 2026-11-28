@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
 import { Button } from "../components/ui/button";
+import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "../lib/utils";
 import { aldoOrgInitials, aldoOrgManages, type AldoOrg } from "./organization.logic";
 import type { AldoJoining } from "./orgJoining.logic";
@@ -62,6 +63,13 @@ export function useLoadedOrg(): { readonly org: AldoOrg | null; readonly fallbac
           >
             Try again
           </Button>
+        </div>
+      </SettingsSection>
+    ) : org === undefined ? (
+      <SettingsSection title="Organization" hideTitle>
+        <div className="space-y-2.5 px-3 py-3 sm:px-4">
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="h-3.5 w-64" />
         </div>
       </SettingsSection>
     ) : null;

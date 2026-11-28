@@ -5,6 +5,7 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
 
 import {
+  AntigravityIcon,
   AzureDevOpsIcon,
   BitbucketIcon,
   ClaudeAI,
@@ -98,12 +99,32 @@ function DataMark({ mark, className }: { mark: BrandMark; className?: string }) 
   );
 }
 
+/** OpenCode's geometric nested-square mark. */
+function OpenCodeMark({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} viewBox="0 0 24 24" fill="none">
+      <rect
+        x="3.5"
+        y="3.5"
+        width="17"
+        height="17"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="2.2"
+      />
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
 const MARKS: Readonly<Record<string, (className: string) => ReactNode>> = {
   aldo: (c) => <AldoMark className={c} />,
   claude: (c) => <ClaudeAI className={c} />,
   codex: (c) => <OpenAI className={c} />,
   grok: (c) => <GrokIcon className={c} />,
   muse: (c) => <MuseCodeIcon className={c} />,
+  antigravity: (c) => <AntigravityIcon className={c} />,
+  opencode: (c) => <OpenCodeMark className={c} />,
   github: (c) => <GitHubIcon className={c} />,
   gitlab: (c) => <GitLabIcon className={c} />,
   bitbucket: (c) => <BitbucketIcon className={c} />,

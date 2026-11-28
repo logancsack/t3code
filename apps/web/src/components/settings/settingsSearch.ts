@@ -65,6 +65,7 @@ export type SettingsSearchScope =
 export interface SettingsSearchItem {
   readonly id: string;
   readonly title: string;
+  readonly description?: string;
   readonly to: SettingsPath;
   readonly targetId?: string;
   readonly searchTerms?: ReadonlyArray<string>;
@@ -146,12 +147,18 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/voice": msg("Voice"),
   "/settings/archived": msg("Archive"),
   ...ALDO_SETTINGS_SECTION_LABELS,
-  // Aldo: what runs the agents and where code lives, in the words people use.
+  // Aldo: plain-language page labels matching its consolidated navigation.
   ...(isAldoCloud
     ? {
-        "/settings/providers": "AI subscriptions",
-        "/settings/source-control": "Git hosts",
+        "/settings/providers": "Models",
+        "/settings/source-control": "Connections",
         "/settings/connections": "Connections",
+        "/settings/general": "Preferences",
+        "/settings/appearance": "Preferences",
+        "/settings/scheduled-tasks": "Routines",
+        "/settings/projects": "Projects",
+        "/settings/keybindings": "Preferences",
+        "/settings/voice": "Voice input",
       }
     : {}),
 };
@@ -1737,6 +1744,7 @@ export function searchSettings(
       const fields = [
         title,
         normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
+        ...(item.description ? [normalizeSearchText(item.description)] : []),
         // The labels as displayed, so search also works in the active language.
         normalizeSearchText(translate(item.title)),
         normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),

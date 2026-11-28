@@ -1,30 +1,30 @@
 import { useEffect } from "react";
-import { useRouter, type AnyRoute } from "@tanstack/react-router";
+import { useNavigate, useRouter, type AnyRoute } from "@tanstack/react-router";
 import { prefetchSettingsData } from "./settingsData";
-// Aldo's settings nav (SettingsSidebarNav.tsx, in Aldo): the account at its
-// head, then its organization for someone in one, then its pages in groups
-// (settings.logic.ts ALDO_SETTINGS_NAV), Code only with the developer tools
-// (developerTools.ts). A connection that stopped working puts a dot on
-// Connections.
+// Aldo's settings nav (SettingsSidebarNav.tsx, in Aldo): Account & billing at its
+// head, then its organization for someone in one, then its pages in two groups
+// (settings.logic.ts ALDO_SETTINGS_NAV). Projects appears when the user has at
+// least one project; Code appears only when Developer tools is on.
 
 import {
   ArchiveIcon,
   BellIcon,
-  BotIcon,
   Building2Icon,
   CodeXmlIcon,
+  CpuIcon,
+  FolderKanbanIcon,
   HistoryIcon,
   KeyRoundIcon,
-  PaletteIcon,
   PlugIcon,
+  RepeatIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
-  SmartphoneIcon,
-  SparklesIcon,
+  UserRoundIcon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react";
 
+import { useOptionalSettingsScope } from "../components/settings/SettingsScopeContext";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 import type { SettingsPath } from "../components/settings/settingsSearch";
 import { cn } from "~/lib/utils";
@@ -40,24 +40,29 @@ export const ALDO_SETTINGS_ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
   "/settings/organization": Building2Icon,
   "/settings/members": UsersIcon,
   "/settings/activity": HistoryIcon,
-  "/settings/agents": BotIcon,
+  "/settings/agents": CpuIcon,
   "/settings/permissions": ShieldCheckIcon,
-  "/settings/instructions": SparklesIcon,
+  "/settings/instructions": UserRoundIcon,
+  "/settings/memory": UserRoundIcon,
+  "/settings/skills": UserRoundIcon,
+  "/settings/notifications": BellIcon,
+  "/settings/phone": BellIcon,
   "/settings/connections": PlugIcon,
   "/settings/vault": KeyRoundIcon,
-  "/settings/appearance": PaletteIcon,
   "/settings/general": SlidersHorizontalIcon,
-  "/settings/notifications": BellIcon,
-  "/settings/phone": SmartphoneIcon,
+  "/settings/appearance": SlidersHorizontalIcon,
+  "/settings/projects": FolderKanbanIcon,
   "/settings/code": CodeXmlIcon,
+  "/settings/scheduled-tasks": RepeatIcon,
   "/settings/archived": ArchiveIcon,
 };
 
-/** The nav's groups for this account, with its organization for someone in one. */
+/** The nav's groups for this account, with its organization and Projects when present. */
 export function useAldoSettingsNav() {
   const developer = useAldoDeveloperTools();
   const organization = useSettingsResource(settingsOrg).data?.name ?? null;
-  return aldoSettingsNav({ developer, organization });
+  const hasProjects = (useOptionalSettingsScope()?.groups.length ?? 0) > 0;
+  return aldoSettingsNav({ developer, organization, hasProjects });
 }
 
 /** How the connections stand, for the nav's and the phone list's line on them. */
@@ -91,7 +96,7 @@ export function AldoSettingsAccountCard(props: {
           {profileName(profile)}
         </span>
         <span className="truncate text-[11px] text-sidebar-muted-foreground">
-          {summary ?? "Account and plan"}
+          {summary ?? "Account & billing"}
         </span>
       </span>
     </button>
@@ -103,6 +108,7 @@ export function AldoSettingsNav(props: {
   readonly onNavigate: (to: SettingsPath) => void;
 }) {
   const router = useRouter();
+  const navigate = useNavigate();
   const nav = useAldoSettingsNav();
   const connections = useAldoConnectionsSummary();
   // Settings pages sit under the chat layout: their route ids carry its prefix.
@@ -119,6 +125,7 @@ export function AldoSettingsNav(props: {
           group.items.flatMap((item) => [item.to, ...(item.also ?? [])] as SettingsPath[]),
         ),
         "/settings/account",
+        "/settings/projects",
       ];
       for (const path of paths) warmRoute(path);
     };
@@ -126,7 +133,7 @@ export function AldoSettingsNav(props: {
     return () => window.clearTimeout(timer);
   }, [router]);
   return (
-    <nav aria-label="Settings sections" className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       {nav.map((group) => (
         <div key={group.group} className="flex flex-col gap-0.5">
           <p className="px-2 pb-0.5 text-sidebar-muted-foreground/70 text-xs">{group.group}</p>
@@ -161,6 +168,16 @@ export function AldoSettingsNav(props: {
           </SidebarMenu>
         </div>
       ))}
-    </nav>
+      <div className="border-sidebar-border/60 border-t pt-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={() => void navigate({ to: "/routines" })}>
+              <RepeatIcon />
+              <span className="flex-1 truncate">Routines</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </div>
+    </div>
   );
 }

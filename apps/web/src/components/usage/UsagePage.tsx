@@ -388,7 +388,75 @@ export function UsagePage() {
         });
   const windowOptionLabel = WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label;
   const metricOptionLabel = METRIC_OPTIONS.find((option) => option.value === metric)?.label;
-  const topbarContent = (
+  const topbarContent = isAldoCloud ? (
+    <div className="flex w-full min-w-0 items-center justify-between gap-2 py-2">
+      <h1 className="truncate text-sm font-semibold text-foreground">
+        <T>Usage</T>
+      </h1>
+      <div className="ms-auto flex shrink-0 items-center gap-1.5">
+        {selectedEnvironments.length > 0 && tokenDetails ? (
+          <>
+            <Select
+              value={String(windowDays)}
+              onValueChange={(value) => selectWindow(Number(value))}
+            >
+              <SelectTrigger
+                aria-label={gt("Usage period")}
+                size="compact"
+                variant="ghost"
+                className="w-auto min-w-0"
+              >
+                <SelectValue>{windowOptionLabel && m(windowOptionLabel)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {WINDOW_OPTIONS.map((option) => (
+                  <SelectItem
+                    key={option.days}
+                    value={String(option.days)}
+                    title={shortcutTitle(option)}
+                  >
+                    {m(option.label)}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            <Select
+              value={metric}
+              onValueChange={(value) => {
+                if (isUsageMetric(value)) selectMetric(value);
+              }}
+            >
+              <SelectTrigger
+                aria-label={gt("Usage metric")}
+                size="compact"
+                variant="ghost"
+                className="w-auto min-w-0"
+              >
+                <SelectValue>{metricOptionLabel && m(metricOptionLabel)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {METRIC_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value} title={shortcutTitle(option)}>
+                    {m(option.label)}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </>
+        ) : null}
+        <Button
+          onClick={refreshWindow}
+          aria-label={gt("Refresh usage")}
+          aria-busy={isRefreshing}
+          disabled={isRefreshing}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <RefreshIcon size="sm" refreshing={isRefreshing} />
+        </Button>
+      </div>
+    </div>
+  ) : (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 @4xl/usage-header:flex">
       <WorkspaceBreadcrumb ariaLabel={gt("Usage breadcrumb")} className="min-w-0">
         <WorkspaceBreadcrumbItem>
@@ -547,15 +615,17 @@ export function UsagePage() {
               onChanged={aldoWorkspace.refresh}
             />
             {selectedEnvironments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {environments.length === 0
-                  ? showingLimits
-                    ? gt("Connect an environment to see limits.")
-                    : gt("Connect an environment to see usage.")
-                  : showingLimits
-                    ? gt("Select an environment to see limits.")
-                    : gt("Select an environment to see usage.")}
-              </p>
+              isAldoCloud ? null : (
+                <p className="text-sm text-muted-foreground">
+                  {environments.length === 0
+                    ? showingLimits
+                      ? gt("Connect an environment to see limits.")
+                      : gt("Connect an environment to see usage.")
+                    : showingLimits
+                      ? gt("Select an environment to see limits.")
+                      : gt("Select an environment to see usage.")}
+                </p>
+              )
             ) : showingLimits ? (
               <UsageLimitsSection
                 selectedEnvironmentIds={selectedEnvironmentIds}

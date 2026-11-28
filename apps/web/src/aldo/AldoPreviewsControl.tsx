@@ -4,9 +4,11 @@ import {
   ExternalLinkIcon,
   MonitorIcon,
   PanelRightIcon,
+  SettingsIcon,
   SquareTerminalIcon,
 } from "lucide-react";
 import type { ThreadId } from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -82,6 +84,7 @@ export function AldoPreviewsControl(props: {
 }) {
   useAldoMachineOffer(props.environmentId);
   useAldoComputerAsk(props.environmentId, props.threadId);
+  const navigate = useNavigate();
   const [previews, setPreviews] = useState<AldoPreviews | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { home } = useAldoHomeRead();
@@ -333,6 +336,11 @@ export function AldoPreviewsControl(props: {
             {aldoCostLine(cost, props.threadId)}
           </div>
         ) : null}
+        <MenuSeparator />
+        <MenuItem onClick={() => void navigate({ to: "/settings" })}>
+          <SettingsIcon className="size-3.5" />
+          Settings
+        </MenuItem>
       </MenuPopup>
       <AldoActivityDialog
         key={`${props.environmentId}:${props.threadId}`}

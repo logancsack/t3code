@@ -222,6 +222,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const handleSearchResultClick = (item: SettingsSearchItem) => {
     clearSearch();
     setCompactSearchOpen(false);
+    if (isAldoCloud && item.to === "/settings/scheduled-tasks") {
+      void navigate({ to: "/routines" });
+      return;
+    }
+    if (isAldoCloud && item.to === "/settings/shared") {
+      void navigate({ to: "/library" });
+      return;
+    }
     const targetId = item.targetId ?? item.id;
     revealSettingsSearchTarget(targetId);
     if (pathname === item.to && currentHash.replace(/^#/, "") === targetId) {
@@ -362,17 +370,22 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       tabIndex={-1}
                       size="sm"
                       isActive={index === activeResultIndex}
-                      className="h-auto min-h-10 items-start"
+                      className="h-auto min-h-10 items-start [&>span:last-child]:overflow-visible [&>span:last-child]:whitespace-normal"
                       onMouseMove={() => setActiveResultIndex(index)}
                       onClick={() => handleSearchResultClick(item)}
                     >
-                      <SettingsSectionIcon to={item.to} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-sidebar-foreground">
+                      <span className="mt-1 shrink-0">
+                        <SettingsSectionIcon to={item.to} />
+                      </span>
+                      <span className="min-w-0 flex-1 space-y-0.5 py-1">
+                        <span className="block break-words font-medium text-sidebar-foreground text-xs leading-snug">
                           {m(item.title)}
                         </span>
-                        <span className="block truncate text-2xs text-sidebar-muted-foreground/75">
-                          {m(SETTINGS_SECTION_LABELS[item.to])}
+                        <span className="line-clamp-2 block break-words text-2xs text-sidebar-muted-foreground leading-snug">
+                          <span className="font-medium text-sidebar-foreground/75">
+                            {m(SETTINGS_SECTION_LABELS[item.to])}
+                          </span>
+                          {item.description ? ` · ${item.description}` : ""}
                         </span>
                       </span>
                     </SidebarMenuButton>

@@ -25,6 +25,10 @@
   }
   [data-settings-page-scroll] [data-slot="input"] {
     min-height: 42px;
+    font-size: 16px;
+  }
+  [data-settings-page-scroll] :is(input, textarea, select) {
+    font-size: 16px;
   }
   [data-settings-page-scroll] [data-slot="switch"] {
     position: relative;

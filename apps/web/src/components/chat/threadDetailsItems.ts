@@ -1,5 +1,6 @@
 import type { ClientSettings } from "@t3tools/contracts";
 import { msg } from "gt-react";
+import { isAldoCloud } from "../../aldo/api";
 
 // Ids are stored in client settings, so never rename one.
 export const THREAD_DETAILS_ITEMS = [
@@ -31,6 +32,11 @@ export const THREAD_DETAILS_ITEMS = [
 
 export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];
 export type ThreadDetailsVisibility = Readonly<Record<ThreadDetailsItemId, boolean>>;
+
+/** Items shown in thread details controls; Aldo hides T3 desktop-only scripts and automations. */
+export const VISIBLE_THREAD_DETAILS_ITEMS = isAldoCloud
+  ? THREAD_DETAILS_ITEMS.filter((item) => item.id !== "scripts" && item.id !== "automations")
+  : THREAD_DETAILS_ITEMS;
 
 type ThreadDetailsItem = (typeof THREAD_DETAILS_ITEMS)[number];
 type ThreadDetailsItemSettings = Pick<

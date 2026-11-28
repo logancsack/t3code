@@ -136,7 +136,7 @@ function PromptFontRow() {
   );
 }
 
-function CodeFontRow({
+export function CodeFontRow({
   title,
   resetLabel,
   description,
@@ -177,7 +177,7 @@ function CodeFontRow({
         defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
         onChange: (fontSizeCode) => updateSettings({ fontSizeCode }),
       }}
-      preview={preview ?? <CodeFontPreview />}
+      preview={preview === undefined ? <CodeFontPreview /> : preview}
     />
   );
 }
@@ -257,7 +257,7 @@ function FontSmoothingRow() {
   );
 }
 
-function WordWrapRow() {
+export function WordWrapRow() {
   const gt = useGT();
   const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();

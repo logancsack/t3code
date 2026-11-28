@@ -1,18 +1,15 @@
 // The account menu, from who's signed in at the foot of the sidebar
-// (AppSidebarLayout.tsx) and simple mode's rail: their name and picture from
-// their sign-in, their plan and credits (opening Settings → Account), the way
-// to Library, Routines, Settings, the agents' mail and the keyboard shortcuts
-// (Goals too, for an account that has one; and, for the owner, the admin
-// pages), the two things people change most
-// (theme, simple mode), and signing out. An Aldo that can't say who's signed
-// in still shows the rest.
+// (AppSidebarLayout.tsx), simple mode's rail, and Phone Home's top-right
+// avatar button: their name and picture, their plan and credits (opening
+// Settings → Account & billing), navigation to Library, Routines, Settings and
+// agents' mail (plus Goals when present and Admin for owners), Theme and View
+// toggles, and signing out.
 
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronRightIcon,
   ChevronsUpDownIcon,
   InboxIcon,
-  KeyboardIcon,
   LayoutDashboardIcon,
   LibraryBigIcon,
   LogOutIcon,
@@ -23,8 +20,15 @@ import {
 import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
+import {
+  Sheet,
+  SheetDescription,
+  SheetHeader,
+  SheetPopup,
+  SheetTitle,
+} from "../components/ui/sheet";
 import { useSidebar } from "../components/ui/sidebar";
-import { Switch } from "../components/ui/switch";
+import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { cn } from "~/lib/utils";
 import { AldoThemeToggle } from "./AldoThemeToggle";
 import { requestAldoProfile, type AldoProfile } from "./assistantApi";
@@ -107,7 +111,7 @@ function creditsLine(usage: AldoHomeUsage | null): string | null {
 }
 
 const ITEM =
-  "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent/60";
+  "flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent/60 max-md:min-h-11 max-md:text-[15px]";
 
 function MenuItem(props: {
   readonly icon: ComponentType<{ className?: string }>;
@@ -170,7 +174,7 @@ function AccountMenu(props: {
         <span className="flex items-center gap-2 text-sm">
           <span className="font-medium">{aldoPlanLabel(usage) ?? "Plan"}</span>
           <span className="ms-auto inline-flex items-center gap-0.5 text-muted-foreground text-xs">
-            Plan and billing
+            Account & billing
             <ChevronRightIcon className="size-3.5" />
           </span>
         </span>
@@ -185,25 +189,22 @@ function AccountMenu(props: {
                 style={{ width: `${Math.round(share * 100)}%` }}
               />
             </span>
-            <span className="text-muted-foreground text-xs">{creditsLine(usage)}</span>
+            <span className="tabular-nums text-muted-foreground text-xs">{creditsLine(usage)}</span>
           </>
         ) : (
-          <span className="text-muted-foreground text-xs">Choose a plan, and see what's used</span>
+          <span className="text-muted-foreground text-xs">Choose a plan and see what’s used</span>
         )}
       </button>
       <MenuGroup>
+        <MenuItem icon={SettingsIcon} label="Settings" onClick={() => go("/settings")} />
+        <MenuItem icon={RepeatIcon} label="Routines" onClick={() => go("/routines")} />
+        {!simple ? (
+          <MenuItem icon={LibraryBigIcon} label="Library" onClick={() => go("/library")} />
+        ) : null}
+        <MenuItem icon={InboxIcon} label="Your agents’ mail" onClick={() => go("/mail")} />
         {props.hasGoals ? (
           <MenuItem icon={TargetIcon} label="Goals" onClick={() => go("/goals")} />
         ) : null}
-        <MenuItem icon={LibraryBigIcon} label="Library" onClick={() => go("/library")} />
-        <MenuItem icon={RepeatIcon} label="Routines" onClick={() => go("/routines")} />
-        <MenuItem icon={SettingsIcon} label="Settings" onClick={() => go("/settings")} />
-        <MenuItem icon={InboxIcon} label="Your agents' mail" onClick={() => go("/mail")} />
-        <MenuItem
-          icon={KeyboardIcon}
-          label="Keyboard shortcuts"
-          onClick={() => go("/settings/keybindings")}
-        />
         {adminUrl ? (
           <MenuItem
             icon={LayoutDashboardIcon}
@@ -213,27 +214,27 @@ function AccountMenu(props: {
         ) : null}
       </MenuGroup>
       <MenuGroup>
-        <div className="flex items-center justify-between gap-3 px-2 py-1">
+        <div className="flex min-h-9 items-center justify-between gap-3 px-2 py-1 max-md:min-h-11">
           <span className="text-sm">Theme</span>
           <AldoThemeToggle />
         </div>
-        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/60">
-          <span className="min-w-0">
-            <span className="block text-sm">Simple mode</span>
-            <span className="block text-muted-foreground text-xs">
-              Just Aldo, what needs you, and your Library
-            </span>
-          </span>
-          <Switch
-            checked={simple}
-            onCheckedChange={(checked) => {
-              // The sidebar or the rail this opened from goes with the change.
+        <div className="flex min-h-9 items-center justify-between gap-3 px-2 py-1 max-md:min-h-11">
+          <span className="text-sm">View</span>
+          <ToggleGroup
+            aria-label="View"
+            variant="segmented"
+            value={[simple ? "simple" : "full"]}
+            onValueChange={(next) => {
+              const mode = next[0];
+              if (mode !== "simple" && mode !== "full") return;
               props.onClose();
-              setAldoSimpleMode(checked);
+              setAldoSimpleMode(mode === "simple");
             }}
-            aria-label="Simple mode"
-          />
-        </label>
+          >
+            <Toggle value="simple">Simple</Toggle>
+            <Toggle value="full">Full</Toggle>
+          </ToggleGroup>
+        </div>
       </MenuGroup>
       {profile ? (
         <MenuGroup>
@@ -245,6 +246,55 @@ function AccountMenu(props: {
         </MenuGroup>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * On a phone's Home screen: a 44×44px top-right avatar button that opens the
+ * Account & Settings sheet in one tap (making Settings 2 taps from Home).
+ */
+export function AldoMobileAccountButton(props: { readonly className?: string }) {
+  const profile = useAldoProfile();
+  const usage = useAldoHomeFeed((s) => s.home?.usage ?? null);
+  const [hasGoals, setHasGoals] = useState(false);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Suspense fallback={null}>
+        <AldoGoalsProbe menuOpen={open} onHasGoals={setHasGoals} />
+      </Suspense>
+      <button
+        type="button"
+        aria-label="Account and settings"
+        data-aldo-mobile-account=""
+        className={cn(
+          "inline-flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors hover:bg-accent active:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+          props.className,
+        )}
+        onClick={() => setOpen(true)}
+      >
+        <AldoAvatar profile={profile} className="size-8 ring-1 ring-border/70" />
+      </button>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetPopup
+          side="bottom"
+          showCloseButton={false}
+          className="rounded-t-2xl border-t bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] text-foreground"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Account and settings</SheetTitle>
+            <SheetDescription>Your plan, Settings, Routines, theme and view.</SheetDescription>
+          </SheetHeader>
+          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" aria-hidden />
+          <AccountMenu
+            profile={profile}
+            usage={usage}
+            hasGoals={hasGoals}
+            onClose={() => setOpen(false)}
+          />
+        </SheetPopup>
+      </Sheet>
+    </>
   );
 }
 
@@ -265,13 +315,13 @@ export function AldoProfileButton(props: {
     <button
       type="button"
       className={cn(
-        "rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex size-10 items-center justify-center rounded-full outline-none transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-sidebar-row-hover",
         props.className,
       )}
       aria-label="Your account"
       data-aldo-profile=""
     >
-      <AldoAvatar profile={profile} />
+      <AldoAvatar profile={profile} className="size-8 ring-1 ring-sidebar-border/80" />
     </button>
   ) : (
     <button

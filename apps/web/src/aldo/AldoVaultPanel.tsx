@@ -1,9 +1,10 @@
 import { settingsIntegrations, settingsVault } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 import {
+  ChevronDownIcon,
+  ChevronUpIcon,
   GlobeIcon,
   KeyRoundIcon,
-  LockKeyholeIcon,
   PlusIcon,
   UploadIcon,
   VariableIcon,
@@ -28,9 +29,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { Skeleton } from "../components/ui/skeleton";
 import { Textarea } from "../components/ui/textarea";
 import { aldoVault, type AldoSecretKind, type AldoVaultItem } from "./accountApi";
 import { AldoBrandTile, AldoIconTile, aldoBrandForVaultItem } from "./AldoBrandTile";
+import { useAldoDeveloperTools } from "./developerTools";
 import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import {
   offerSavingLoginsFor,
@@ -51,15 +54,15 @@ const SHELL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DELIVERY: Record<AldoSecretKind, { label: string; help: string }> = {
   env: {
     label: "Variable",
-    help: "In every agent shell and dev service. Agents can read it, so use it for settings and for secrets a sandbox needs in full, like a database URL.",
+    help: "Available in every thread’s shell and running services. Agents can read it directly, so use it for configuration or values an agent needs in full.",
   },
   request: {
     label: "Injected into requests",
-    help: "The sandbox's network adds it to HTTPS requests to the sites you list. Agents see only a stand-in, so they can't read it or send it anywhere else. Best for API keys.",
+    help: "Added automatically to HTTPS requests to the sites you list. Agents only see a placeholder and can’t read or leak it. Best for API keys.",
   },
   file: {
     label: "File",
-    help: "Written to a path in the sandbox, readable only by the agent's user. For SSH keys, credential JSON files and config files.",
+    help: "Saved as a file on the agent’s computer, readable only by the agent. For SSH keys, credential JSON files and config files.",
   },
 };
 
@@ -197,19 +200,19 @@ function DeleteButton(props: { onDelete: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   if (!confirming) {
     return (
-      <Button type="button" size="compact" variant="ghost" onClick={() => setConfirming(true)}>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setConfirming(true)}>
         Delete
       </Button>
     );
   }
   return (
     <span className="inline-flex gap-1">
-      <Button type="button" size="compact" variant="ghost" onClick={() => setConfirming(false)}>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setConfirming(false)}>
         Keep
       </Button>
       <Button
         type="button"
-        size="compact"
+        size="sm"
         variant="destructive"
         disabled={busy}
         onClick={() => {
@@ -264,11 +267,14 @@ function draftOf(item: AldoVaultItem): SecretDraft {
 function SecretForm(props: {
   draft: SecretDraft;
   saving: boolean;
+  showAdvancedByDefault: boolean;
   onChange: (draft: SecretDraft) => void;
   onSubmit: (e: FormEvent) => void;
   onCancel: () => void;
 }) {
   const { draft, onChange } = props;
+  const [showAdvanced, setShowAdvanced] = useState(props.showAdvancedByDefault);
+  const advancedOpen = showAdvanced || draft.kind !== "env";
   const set = (patch: Partial<SecretDraft>) => onChange({ ...draft, ...patch });
   const ready =
     draft.name.trim() &&
@@ -278,7 +284,7 @@ function SecretForm(props: {
   return (
     <form
       onSubmit={props.onSubmit}
-      className="mx-3 space-y-2 rounded-xl border border-border p-3 sm:mx-4"
+      className="mx-3 space-y-2.5 rounded-xl border border-border p-3 sm:mx-4"
       autoComplete="off"
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -293,28 +299,32 @@ function SecretForm(props: {
           readOnly={draft.saved}
           onChange={(e) => set({ name: e.currentTarget.value })}
         />
-        <Select
-          value={draft.kind}
-          onValueChange={(value) => set({ kind: value as AldoSecretKind })}
-        >
-          <SelectTrigger className="h-8 min-w-48 text-xs" aria-label="How agents get it">
-            <SelectValue>{DELIVERY[draft.kind].label}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="start" alignItemWithTrigger={false}>
-            {(Object.keys(DELIVERY) as AldoSecretKind[]).map((kind) => (
-              <SelectItem key={kind} value={kind}>
-                {DELIVERY[kind].label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+        {advancedOpen ? (
+          <Select
+            value={draft.kind}
+            onValueChange={(value) => set({ kind: value as AldoSecretKind })}
+          >
+            <SelectTrigger className="h-9 min-w-48 text-xs sm:h-8" aria-label="How agents get it">
+              <SelectValue>{DELIVERY[draft.kind].label}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="start" alignItemWithTrigger={false}>
+              {(Object.keys(DELIVERY) as AldoSecretKind[]).map((kind) => (
+                <SelectItem key={kind} value={kind}>
+                  {DELIVERY[kind].label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        ) : null}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {DELIVERY[draft.kind].help}
-        {draft.kind === "env" && draft.name.trim() && !SHELL_NAME.test(draft.name.trim())
-          ? " A shell can't hold this name, so it reaches dev services and `aldo env`, not shell commands."
-          : ""}
-      </p>
+      {advancedOpen ? (
+        <p className="text-xs text-muted-foreground">
+          {DELIVERY[draft.kind].help}
+          {draft.kind === "env" && draft.name.trim() && !SHELL_NAME.test(draft.name.trim())
+            ? " A shell can’t hold this name, so it reaches running services and `aldo env`, not shell commands."
+            : ""}
+        </p>
+      ) : null}
       {draft.kind === "request" ? (
         <>
           <div className="flex flex-wrap items-center gap-1">
@@ -323,7 +333,7 @@ function SecretForm(props: {
               <Button
                 key={preset.label}
                 type="button"
-                size="compact"
+                size="sm"
                 variant="ghost"
                 onClick={() =>
                   set({
@@ -382,6 +392,20 @@ function SecretForm(props: {
         value={draft.value}
         onChange={(e) => set({ value: e.currentTarget.value })}
       />
+      {!props.showAdvancedByDefault && draft.kind === "env" ? (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => setShowAdvanced((open) => !open)}
+        >
+          {advancedOpen ? (
+            <ChevronUpIcon className="size-3.5" />
+          ) : (
+            <ChevronDownIcon className="size-3.5" />
+          )}
+          Advanced delivery options
+        </button>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {draft.saved ? (
           <span className="text-xs text-muted-foreground">{scopeLabel(draft.scope)}</span>
@@ -389,10 +413,10 @@ function SecretForm(props: {
           <ScopeSelect value={draft.scope} onChange={(scope) => set({ scope })} />
         )}
         <span className="flex-1" />
-        <Button type="button" size="compact" variant="ghost" onClick={props.onCancel}>
+        <Button type="button" size="sm" variant="ghost" onClick={props.onCancel}>
           Cancel
         </Button>
-        <Button type="submit" size="compact" disabled={props.saving || !ready}>
+        <Button type="submit" size="sm" disabled={props.saving || !ready}>
           Save
         </Button>
       </div>
@@ -417,6 +441,8 @@ type LoginDraft = {
 export function AldoVaultPanel() {
   const cached = useSettingsResource(settingsVault);
   const items = cached.data ?? null;
+  const loading = cached.data === undefined && !cached.error;
+  const developerTools = useAldoDeveloperTools();
   const [error, setError] = useState<string | null>(null);
   const [secret, setSecret] = useState<SecretDraft | null>(null);
   const [login, setLogin] = useState<LoginDraft | null>(null);
@@ -484,10 +510,10 @@ export function AldoVaultPanel() {
         if (answer) clearRequest();
         setNotice(
           secret.kind === "request"
-            ? `Saved ${secret.name}. Requests to ${secret.hosts} get it now; agents see a stand-in.`
+            ? `Saved ${secret.name}. Requests to ${secret.hosts} get it now; agents only see a placeholder.`
             : secret.kind === "file"
               ? `Saved ${secret.name} to ${secret.path} in running threads.`
-              : `Saved ${secret.name}. Agents' new commands see it now; restart running previews to pick it up.`,
+              : `Saved ${secret.name}. New agent commands see it now; restart running previews to pick it up.`,
         );
         setSecret(null);
       },
@@ -524,151 +550,24 @@ export function AldoVaultPanel() {
 
   return (
     <>
-      <SettingsSection title="Vault" icon={<LockKeyholeIcon className="size-4" />}>
-        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          Secrets for your agents, under any name. Everything is encrypted and can't be read back
-          here, only replaced. A secret can be a variable in every agent shell, injected into
-          requests to the sites you list (agents see only a stand-in, so they can't read or leak
-          it), or a file. Logins are typed into the browser for the agent, which never sees the
-          password. Agents save what they sign in with here too, and when you sign in in a thread's
-          browser, it offers to save the login.
+      {error || cached.error ? (
+        <p role="alert" className="px-1 text-sm text-destructive-foreground">
+          {error ?? cached.error}
         </p>
-        {error || cached.error ? (
-          <p className="px-3 text-sm text-destructive-foreground sm:px-4">
-            {error ?? cached.error}
-          </p>
-        ) : null}
-        {notice ? <p className="px-3 text-sm text-success-foreground sm:px-4">{notice}</p> : null}
-      </SettingsSection>
+      ) : null}
+      {notice ? (
+        <p role="status" className="px-1 text-sm text-success-foreground">
+          {notice}
+        </p>
+      ) : null}
 
       <SettingsSection
-        title="Secrets"
-        icon={<VariableIcon className="size-4" />}
-        headerAction={
-          <span className="inline-flex gap-1">
-            <Button
-              type="button"
-              size="compact"
-              variant="ghost"
-              onClick={() => setImporting({ scope: EVERY_THREAD, text: "" })}
-            >
-              <UploadIcon className="size-3.5" /> Import .env
-            </Button>
-            <Button
-              type="button"
-              size="compact"
-              variant="outline"
-              onClick={() => setSecret(NEW_SECRET)}
-            >
-              <PlusIcon className="size-3.5" /> Add secret
-            </Button>
-          </span>
-        }
-      >
-        {importing ? (
-          <form
-            onSubmit={importFile}
-            className="mx-3 space-y-2 rounded-xl border border-border p-3 sm:mx-4"
-          >
-            <Textarea
-              autoFocus
-              aria-label=".env contents"
-              placeholder={"DATABASE_URL=postgres://…\nSTRIPE_SECRET_KEY=sk_test_…"}
-              className="min-h-32 font-mono text-xs"
-              value={importing.text}
-              onChange={(e) => setImporting({ ...importing, text: e.currentTarget.value })}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <ScopeSelect
-                value={importing.scope}
-                onChange={(scope) => setImporting({ ...importing, scope })}
-              />
-              <span className="flex-1" />
-              <Button
-                type="button"
-                size="compact"
-                variant="ghost"
-                onClick={() => setImporting(null)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" size="compact" disabled={saving || !importing.text.trim()}>
-                Import
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Imported as variables. To keep an API key out of agents' reach, change it to Injected
-              into requests afterwards.
-            </p>
-          </form>
-        ) : null}
-        {secret && requested && answersAldoSecretRequest(requested, secret) ? (
-          <p className="px-3 text-sm sm:px-4">
-            An agent asked for <span className="font-mono">{requested.name}</span>
-            {requested.why ? `: ${requested.why}` : ""}. Paste the value below, not in the
-            conversation.{" "}
-            {secret.kind === "request"
-              ? "Injected into requests, it never reaches the agent's computer; agents only see a stand-in."
-              : "As a variable or a file it's on the agent's computer, where agents can read it; for an API key, prefer Injected into requests."}{" "}
-            The thread that asked carries on once it's saved.
-          </p>
-        ) : null}
-        {secret ? (
-          <SecretForm
-            draft={secret}
-            saving={saving}
-            onChange={setSecret}
-            onSubmit={saveSecret}
-            onCancel={() => {
-              // Cancelling the requested form declines the request.
-              if (requested && answersAldoSecretRequest(requested, secret)) clearRequest();
-              setSecret(null);
-            }}
-          />
-        ) : null}
-        {items && secrets.length === 0 && !secret && !importing ? (
-          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-            No secrets yet. Add API keys, settings and files your projects need, or import a .env
-            file.
-          </p>
-        ) : null}
-        {secrets.map((item) => (
-          <SettingsRow
-            key={item.id}
-            leading={<VaultTile item={item} fallback={<KeyRoundIcon />} />}
-            title={<span className="font-mono text-sm">{item.name}</span>}
-            description={`${deliveryLabel(item)} · ${scopeLabel(item.scope)} · updated ${ago(item.updated_at)}${savedBy(item)}`}
-            control={
-              <span className="inline-flex gap-1">
-                <Button
-                  type="button"
-                  size="compact"
-                  variant="ghost"
-                  onClick={() => setSecret(draftOf(item))}
-                >
-                  Edit
-                </Button>
-                <DeleteButton
-                  onDelete={() =>
-                    run(
-                      () => aldoVault.remove(item.id),
-                      () => setNotice(`Deleted ${item.name}.`),
-                    )
-                  }
-                />
-              </span>
-            }
-          />
-        ))}
-      </SettingsSection>
-
-      <SettingsSection
-        title="Logins"
+        title="Website logins"
         icon={<KeyRoundIcon className="size-4" />}
         headerAction={
           <Button
             type="button"
-            size="compact"
+            size="sm"
             variant="outline"
             onClick={() =>
               setLogin({ label: "", origin: "", username: "", password: "", scope: EVERY_THREAD })
@@ -681,20 +580,20 @@ export function AldoVaultPanel() {
         {login ? (
           <form
             onSubmit={saveLogin}
-            className="mx-3 space-y-2 rounded-xl border border-border p-3 sm:mx-4"
+            className="mx-3 space-y-2.5 rounded-xl border border-border p-3 sm:mx-4"
             autoComplete="off"
           >
             <div className="grid gap-2 sm:grid-cols-2">
               <Input
                 autoFocus
                 aria-label="Name"
-                placeholder="Name, e.g. Staging admin"
+                placeholder="Name, e.g. Client portal"
                 value={login.label}
                 onChange={(e) => setLogin({ ...login, label: e.currentTarget.value })}
               />
               <Input
                 aria-label="Site"
-                placeholder="Site, e.g. https://github.com"
+                placeholder="Site, e.g. https://app.example.com"
                 value={login.origin}
                 onChange={(e) => setLogin({ ...login, origin: e.currentTarget.value })}
               />
@@ -720,26 +619,32 @@ export function AldoVaultPanel() {
                 onChange={(scope) => setLogin({ ...login, scope })}
               />
               <span className="flex-1" />
-              <Button type="button" size="compact" variant="ghost" onClick={() => setLogin(null)}>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setLogin(null)}>
                 Cancel
               </Button>
               <Button
                 type="submit"
-                size="compact"
+                size="sm"
                 disabled={saving || !login.label || !login.origin || (!login.id && !login.password)}
               >
                 Save
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Filled only on this exact site. For two-factor codes, agents ask you in chat or you
-              take over the browser.
+              Filled only on this exact site; agents never see the password. For two-factor codes,
+              agents ask you in chat or hand you the browser.
             </p>
           </form>
         ) : null}
-        {items && logins.length === 0 && !login ? (
+        {loading ? (
+          <div className="space-y-2 px-3 py-3 sm:px-4">
+            <Skeleton className="h-4 w-44" />
+            <Skeleton className="h-3.5 w-64" />
+          </div>
+        ) : items && logins.length === 0 && !login ? (
           <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-            No logins yet. Save the sign-ins your agents need for your app, staging or dashboards.
+            No logins yet. Save sign-ins for dashboards, portals or tools your agents open in the
+            browser.
           </p>
         ) : null}
         {logins.map((item) => (
@@ -752,7 +657,7 @@ export function AldoVaultPanel() {
               <span className="inline-flex gap-1">
                 <Button
                   type="button"
-                  size="compact"
+                  size="sm"
                   variant="ghost"
                   onClick={() =>
                     setLogin({
@@ -783,11 +688,11 @@ export function AldoVaultPanel() {
           <SettingsRow
             key={origin}
             title={origin}
-            description={`Not offered: you chose Never for this site when signing in in a thread's browser${neverSave.synced ? "" : " (this browser only)"}.`}
+            description={`Not offered: you chose Never for this site when signing in in a thread’s browser${neverSave.synced ? "" : " (this browser only)"}.`}
             control={
               <Button
                 type="button"
-                size="compact"
+                size="sm"
                 variant="ghost"
                 disabled={saving}
                 onClick={() =>
@@ -795,13 +700,136 @@ export function AldoVaultPanel() {
                     () => offerSavingLoginsFor(origin),
                     () =>
                       setNotice(
-                        `Signing in on ${origin} in a thread's browser offers to save it again.`,
+                        `Signing in on ${origin} in a thread’s browser offers to save it again.`,
                       ),
                   )
                 }
               >
                 Offer again
               </Button>
+            }
+          />
+        ))}
+      </SettingsSection>
+
+      <SettingsSection
+        title="API keys & secrets"
+        icon={<VariableIcon className="size-4" />}
+        headerAction={
+          <span className="inline-flex gap-1.5">
+            {developerTools || importing ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setImporting({ scope: EVERY_THREAD, text: "" })}
+              >
+                <UploadIcon className="size-3.5" /> Import .env
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" variant="outline" onClick={() => setSecret(NEW_SECRET)}>
+              <PlusIcon className="size-3.5" /> Add secret
+            </Button>
+          </span>
+        }
+      >
+        {importing ? (
+          <form
+            onSubmit={importFile}
+            className="mx-3 space-y-2.5 rounded-xl border border-border p-3 sm:mx-4"
+          >
+            <Textarea
+              autoFocus
+              aria-label=".env contents"
+              placeholder={"DATABASE_URL=postgres://…\nSTRIPE_SECRET_KEY=sk_test_…"}
+              className="min-h-32 font-mono text-xs"
+              value={importing.text}
+              onChange={(e) => setImporting({ ...importing, text: e.currentTarget.value })}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <ScopeSelect
+                value={importing.scope}
+                onChange={(scope) => setImporting({ ...importing, scope })}
+              />
+              <span className="flex-1" />
+              <Button type="button" size="sm" variant="ghost" onClick={() => setImporting(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={saving || !importing.text.trim()}>
+                Import
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Imported as variables. To keep an API key out of agents’ reach, change it to Injected
+              into requests afterwards.
+            </p>
+          </form>
+        ) : null}
+        {secret && requested && answersAldoSecretRequest(requested, secret) ? (
+          <p className="px-3 text-sm sm:px-4">
+            An agent asked for <span className="font-mono">{requested.name}</span>
+            {requested.why ? `: ${requested.why}` : ""}. Paste the value below, not in the
+            conversation.{" "}
+            {secret.kind === "request"
+              ? "Injected into requests, it never reaches the agent’s computer; agents only see a placeholder."
+              : "As a variable or a file it’s on the agent’s computer, where agents can read it; for an API key, prefer Injected into requests."}{" "}
+            The thread that asked carries on once it’s saved.
+          </p>
+        ) : null}
+        {secret ? (
+          <SecretForm
+            key={secret.saved ? secret.name : "new"}
+            draft={secret}
+            saving={saving}
+            showAdvancedByDefault={
+              developerTools || secret.saved || secret.kind !== "env" || requested !== null
+            }
+            onChange={setSecret}
+            onSubmit={saveSecret}
+            onCancel={() => {
+              // Cancelling the requested form declines the request.
+              if (requested && answersAldoSecretRequest(requested, secret)) clearRequest();
+              setSecret(null);
+            }}
+          />
+        ) : null}
+        {loading ? (
+          <div className="space-y-2 px-3 py-3 sm:px-4">
+            <Skeleton className="h-4 w-44" />
+            <Skeleton className="h-3.5 w-64" />
+          </div>
+        ) : items && secrets.length === 0 && !secret && !importing ? (
+          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+            {developerTools
+              ? "No secrets yet. Add API keys, variables and files your projects need, or import a .env file."
+              : "No keys or secrets yet. Add values your agents need; once saved, they’re encrypted and never shown again."}
+          </p>
+        ) : null}
+        {secrets.map((item) => (
+          <SettingsRow
+            key={item.id}
+            leading={<VaultTile item={item} fallback={<KeyRoundIcon />} />}
+            title={<span className="font-mono text-sm">{item.name}</span>}
+            description={`${deliveryLabel(item)} · ${scopeLabel(item.scope)} · updated ${ago(item.updated_at)}${savedBy(item)}`}
+            control={
+              <span className="inline-flex gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSecret(draftOf(item))}
+                >
+                  Edit
+                </Button>
+                <DeleteButton
+                  onDelete={() =>
+                    run(
+                      () => aldoVault.remove(item.id),
+                      () => setNotice(`Deleted ${item.name}.`),
+                    )
+                  }
+                />
+              </span>
             }
           />
         ))}

@@ -1278,7 +1278,7 @@ export function SendShortcutRow() {
   );
 }
 
-export function SkillsInSlashMenuRow() {
+function SkillsInSlashMenuRow() {
   const setting = useSearchableSetting();
   const gt = useGT();
   const settings = useScopedSettings();

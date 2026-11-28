@@ -73,8 +73,32 @@ export interface AldoWorkspaceUsage {
     readonly extraHourlyUsd: number;
     readonly concurrentLimit: number;
   } | null;
+  /** Aldo cloud: Windows & GPU rates and currently running computers (newer Aldo only). */
+  readonly computers?: AldoComputersSummary | null;
   /** Aldo cloud: the plan is a seat on the user's organization's, whose owners and admins set its limit (newer Aldo, only for a seat). */
   readonly seat?: AldoSeat;
+}
+
+export interface AldoActiveComputer {
+  readonly kind: "windows" | "gpu";
+  readonly status: "starting" | "running" | "stopping";
+  readonly environmentId: string | null;
+  readonly t3ThreadId: string | null;
+}
+
+export interface AldoComputersSummary {
+  readonly windows: {
+    readonly disposable: true;
+    readonly creditsPerHour: number;
+    readonly extraHourlyUsd: number;
+    readonly concurrentLimit: number;
+  } | null;
+  readonly gpu: {
+    readonly configured: boolean;
+    readonly creditsPerHour: number;
+    readonly idleMinutes: number;
+  };
+  readonly active: readonly AldoActiveComputer[];
 }
 
 export interface AldoSeat {
@@ -158,6 +182,43 @@ function isWindowsDisk(value: unknown): value is AldoWindowsDisk {
     isRecord(value) &&
     isFiniteNumber(value.creditsPerHour) &&
     (value.deletedOn === null || typeof value.deletedOn === "string")
+  );
+}
+
+function isComputersSummary(value: unknown): value is AldoComputersSummary {
+  if (!isRecord(value)) return false;
+  if (
+    value.windows !== null &&
+    !(
+      isRecord(value.windows) &&
+      value.windows.disposable === true &&
+      isFiniteNumber(value.windows.creditsPerHour) &&
+      isFiniteNumber(value.windows.extraHourlyUsd) &&
+      isFiniteNumber(value.windows.concurrentLimit)
+    )
+  ) {
+    return false;
+  }
+  if (
+    !(
+      isRecord(value.gpu) &&
+      typeof value.gpu.configured === "boolean" &&
+      isFiniteNumber(value.gpu.creditsPerHour) &&
+      isFiniteNumber(value.gpu.idleMinutes)
+    )
+  ) {
+    return false;
+  }
+  return (
+    Array.isArray(value.active) &&
+    value.active.every(
+      (item) =>
+        isRecord(item) &&
+        (item.kind === "windows" || item.kind === "gpu") &&
+        (item.status === "starting" || item.status === "running" || item.status === "stopping") &&
+        (item.environmentId === null || typeof item.environmentId === "string") &&
+        (item.t3ThreadId === null || typeof item.t3ThreadId === "string"),
+    )
   );
 }
 
@@ -272,6 +333,13 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
     )
   )
     return false;
+  if (
+    value.computers !== undefined &&
+    value.computers !== null &&
+    !isComputersSummary(value.computers)
+  ) {
+    return false;
+  }
   if (
     value.seat !== undefined &&
     !(

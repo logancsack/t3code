@@ -198,11 +198,14 @@ export function ProjectDefaultsSettings({
                 : {})}
               getModelDisabledReason={modelDisabledReason}
               onOpenProviderSetup={(instanceId) => {
-                if (representative)
+                if (isAldoCloud) {
+                  void navigate({ to: "/settings/agents" });
+                } else if (representative) {
                   void navigate({
                     to: "/settings/providers",
                     search: { environmentId: representative.environmentId, instanceId },
                   });
+                }
               }}
               onInstanceModelChange={(instanceId, model) =>
                 setModel(pickModelSelection(mixedModel ? null : selection, instanceId, model))
@@ -226,7 +229,9 @@ export function ProjectDefaultsSettings({
           <span className="text-sm text-muted-foreground">
             {mixedModel
               ? gt("Mixed", { $context: "values differ across targets" })
-              : gt("No providers available")}
+              : isAldoCloud
+                ? gt("Automatic")
+                : gt("No providers available")}
           </span>
         )
       }

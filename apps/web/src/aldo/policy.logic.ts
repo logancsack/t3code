@@ -91,7 +91,7 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
     fallback: "never",
     options: [
       { value: "never", label: "Never" },
-      { value: "authorized", label: "Yes" },
+      { value: "authorized", label: "Use extra credits" },
     ],
     read: (p) => p.modelRouting?.paidFallback,
     set: (v) =>
@@ -109,11 +109,10 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
   },
   onProviderLimit: {
     clear: ["onProviderLimit"],
-    // The thread waits, and asks whoever opens it.
-    undecided: "Ask me",
+    fallback: "switch",
     options: [
-      { value: "switch", label: "Switch to another model" },
-      { value: "wait", label: "Wait for the reset" },
+      { value: "switch", label: "Switch automatically" },
+      { value: "wait", label: "Wait for reset" },
     ],
     read: (p) => p.onProviderLimit,
     set: (v) => (v === "wait" || v === "switch" ? { onProviderLimit: v } : null),
@@ -137,9 +136,10 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
   },
   mediaRouting: {
     clear: ["mediaRouting"],
+    fallback: "auto",
     options: [
-      { value: "auto", label: "Agents choose" },
-      { value: "ask", label: "Show me the options" },
+      { value: "auto", label: "Choose automatically" },
+      { value: "ask", label: "Ask me each time" },
     ],
     read: (p) => p.mediaRouting,
     set: (v) => (v === "auto" || v === "ask" ? { mediaRouting: v } : null),
