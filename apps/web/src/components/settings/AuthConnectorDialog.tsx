@@ -160,7 +160,7 @@ export function AuthConnectorDialog(props: {
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
 
   useEffect(() => {
-    if (!open || !session || (!ACCOUNT_SCOPED && !sessionEnvironmentId)) return;
+    if (!open || !session || isSubmitting || (!ACCOUNT_SCOPED && !sessionEnvironmentId)) return;
     if (session.status !== "starting" && session.status !== "waiting") return;
     let cancelled = false;
     const timer = window.setInterval(() => {
@@ -183,7 +183,7 @@ export function AuthConnectorDialog(props: {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [getConnector, open, session?.id, session?.status, sessionEnvironmentId]);
+  }, [getConnector, isSubmitting, open, session?.id, session?.status, sessionEnvironmentId]);
 
   useEffect(() => {
     if (!open || !session?.expiresAt || TERMINAL_STATUSES.has(session.status)) return;
@@ -401,7 +401,9 @@ export function AuthConnectorDialog(props: {
 
   const steps = session ? progressSteps(session) : [];
   const presentationStage =
-    session?.stage === "return" && openedSessionId !== session.id ? "authorize" : session?.stage;
+    session?.status === "waiting" && session.stage === "return" && openedSessionId !== session.id
+      ? "authorize"
+      : session?.stage;
   const activeStep = session
     ? presentationStage === "authorize"
       ? 1
@@ -500,7 +502,11 @@ export function AuthConnectorDialog(props: {
                   const isComplete = index < activeStep || session.stage === "complete";
                   const isActive = index === activeStep;
                   return (
-                    <li key={step} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+                    <li
+                      key={step}
+                      aria-current={isActive ? "step" : undefined}
+                      className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
+                    >
                       <span
                         className={`flex size-5 items-center justify-center rounded-full border text-[10px] font-semibold ${
                           isComplete
@@ -541,7 +547,10 @@ export function AuthConnectorDialog(props: {
                 ) : session.status === "failed" ||
                   session.status === "expired" ||
                   session.status === "cancelled" ? (
-                  <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4">
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-destructive/25 bg-destructive/5 p-4"
+                  >
                     <p className="text-sm font-medium text-foreground">
                       {session.status === "expired"
                         ? "This sign-in expired"
@@ -733,6 +742,7 @@ export function AuthConnectorDialog(props: {
             <Button
               onClick={() => {
                 reset();
+                if (quickStart) void start(quickStart);
               }}
             >
               Try again
