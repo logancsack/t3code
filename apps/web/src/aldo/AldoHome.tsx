@@ -535,7 +535,7 @@ function AldoHomeContent() {
                   </Section>
                 ) : null}
                 {board.unfinished.length > 0 ? (
-                  <Section title="Unfinished" count={board.unfinished.length}>
+                  <Section title="Stopped" count={board.unfinished.length}>
                     <ul className="rounded-xl border border-border/60 bg-card/30 p-1.5">
                       {board.unfinished.map((c) => (
                         <ConversationRow key={c.ref} {...rowProps(c)} />

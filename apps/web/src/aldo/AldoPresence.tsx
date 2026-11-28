@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEven
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { cn } from "~/lib/utils";
+import { ContinueButton } from "./AldoContinue";
 import { ThreadLink } from "./AldoHomeInbox";
 import { useAldoLiveNow, useAldoLiveWork } from "./liveWork";
 import { liveLineOf, liveLineText } from "./liveWork.logic";
@@ -76,7 +77,7 @@ const TITLES: Record<Exclude<View, "index">, string> = {
   needsYou: "Needs you",
   dismissed: "Dismissed",
   moved: "Moved since you looked",
-  unfinished: "Unfinished",
+  unfinished: "Stopped",
   working: "Working",
   coming: "Coming up",
 };
@@ -539,15 +540,8 @@ function ItemRow(props: {
     <>
       <span aria-hidden className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[row.tone])} />
       <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block font-medium text-sm leading-5",
-            onClear ? "line-clamp-2" : "truncate",
-          )}
-        >
-          {row.title}
-        </span>
-        <span className="block truncate text-[12px] text-muted-foreground leading-4 tabular-nums">
+        <span className="block line-clamp-2 font-medium text-sm leading-5">{row.title}</span>
+        <span className="block text-[12px] text-muted-foreground leading-4 tabular-nums">
           {onShow && row.target && row.tone === "live" ? (
             <LiveDetail target={row.target} fallback={row.detail} />
           ) : (
@@ -620,6 +614,11 @@ function ItemRow(props: {
             </button>
           ) : null}
         </div>
+        {row.retry ? (
+          <div className="px-2 pb-2">
+            <ContinueButton conversation={row.retry} />
+          </div>
+        ) : null}
       </div>
     </li>
   );

@@ -121,7 +121,7 @@ export function HealthStrip(props: { readonly issues: ReadonlyArray<HealthIssue>
 
 const STATE_LABEL: Record<string, string> = {
   scheduled: "Next step scheduled",
-  unfinished: "Unfinished",
+  unfinished: "Stopped",
   starting: "Starting",
   queued: "Waiting for room",
   retrying: "Trying again",

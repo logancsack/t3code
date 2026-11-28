@@ -467,17 +467,18 @@ describe("unfinished task presence", () => {
       }),
     );
     expect(b.unfinished.rows).toHaveLength(1);
+    expect(b.unfinished.rows[0]?.retry?.state).toBe("unfinished");
     expect(b.unfinished.rows[0]?.detail).toBe("Production remains unchecked");
     expect(b.needsYou.rows).toEqual([]);
     expect(b.working.rows).toEqual([]);
     expect(b.moved.rows).toEqual([]);
     expect(presenceLine({ ...quiet, unfinished: b.unfinished.rows.length })).toEqual({
-      text: "1 task unfinished",
+      text: "1 job stopped",
       state: "idle",
       dot: null,
     });
     expect(presenceLine({ ...quiet, unfinished: 2, waiting: 1 }).text).toBe(
-      "1 needs you · 2 unfinished",
+      "1 needs you · 2 stopped",
     );
   });
 });
