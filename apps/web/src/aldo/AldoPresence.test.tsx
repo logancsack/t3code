@@ -125,7 +125,7 @@ it("says all caught up after a recent read, and checking before one", () => {
   expect(text()).toContain("Checking…");
 });
 
-it("leaves a thread hidden from chat out of the header, and lists it to show again", () => {
+it("leaves a thread hidden from chat out of the header, shows only non-empty rows, and drops Moved since you looked", () => {
   show(
     home([
       conversation("a", { state: "waiting" }),
@@ -137,9 +137,10 @@ it("leaves a thread hidden from chat out of the header, and lists it to show aga
   press("Aldo:");
   expect(text()).toContain("Needs you");
   expect(text()).toContain("1 hidden from chat");
-  expect(text()).toContain("Moved since you looked");
+  expect(text()).not.toContain("Moved since you looked");
   expect(text()).toContain("Working");
-  expect(text()).toContain("Coming up");
+  expect(text()).not.toContain("Coming up");
+  expect(text()).not.toContain("Updated just now");
   expect(text()).toContain("Under the hood");
 });
 
@@ -150,22 +151,19 @@ it("opens a list, goes back to the index, and keeps Under the hood reachable", (
   expect(text()).toContain("Thread a");
   expect(document.querySelector('a[href="#thread"]')).not.toBeNull();
   press("Back");
-  expect(text()).toContain("Moved since you looked");
+  expect(text()).toContain("Needs you");
   press("Under the hood");
   expect(underTheHood).toHaveBeenCalledWith(true);
 });
 
-it("shows what moved until the drop-down is closed", () => {
+it("shows All caught up for finished threads without Moved since you looked", () => {
   show(home([conversation("done", { state: "done", stateAt: ago(20) })]));
-  expect(text()).toContain("1 thread moved");
+  expect(text()).toContain("All caught up");
   press("Aldo:");
-  press("Moved since you looked");
-  expect(text()).toContain("Reply received");
-  expect(text()).not.toContain("Finished");
-  press("Back");
+  expect(text()).not.toContain("Moved since you looked");
+  expect(text()).not.toContain("Reported complete");
   press("Under the hood");
   act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  expect(window.localStorage.getItem("aldo:presence:seen")).not.toBeNull();
   expect(text()).toContain("All caught up");
 });
 
@@ -297,14 +295,14 @@ it("says when a clear couldn't be sent, and the item is back", async () => {
   expect(document.querySelector('[aria-label="Restore Thread a"]')).not.toBeNull();
 });
 
-it("doesn't list what was cleared for good, and a clear-all needs no Dismissed row once none are left", () => {
+it("doesn't list what was cleared for good, and hides Needs you once none are left", () => {
   show(
     home([
       conversation("a", { state: "failed", chatDecision: { ...cleared("da"), removed: true } }),
     ]),
   );
   press("Aldo:");
-  press("Needs you");
+  expect(text()).toContain("All caught up");
   expect(text()).not.toContain("Dismissed");
 });
 

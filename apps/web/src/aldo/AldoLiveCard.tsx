@@ -8,7 +8,6 @@
 // shows the one line Aldo's action always had. The bar's peek (AldoPeek.tsx)
 // uses the pieces here too.
 
-import AldoTaskResult from "./AldoTaskResult";
 import { ChevronDownIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -266,7 +265,9 @@ function SettledRow(props: { readonly conversation: AldoHomeConversation; readon
       <span className="min-w-0 flex-1 text-foreground/85">
         <span className="block truncate group-hover:underline">{c.title}</span>
         <span className="block text-[12px] text-muted-foreground">
-          {c.progress?.label ?? "Reply received"} · unverified
+          {c.progress?.label && !/^(?:Reported complete|Reply received)$/i.test(c.progress.label)
+            ? c.progress.label
+            : "Done"}
         </span>
       </span>
       <span className="shrink-0 text-[12px] tabular-nums">
@@ -442,11 +443,6 @@ export function AldoThreadCard(props: {
           />
         )}
       </button>
-      {c.result ? (
-        <div className="px-4">
-          <AldoTaskResult result={c.result} compact />
-        </div>
-      ) : null}
       {opened || asks ? (
         <div className="flex flex-col gap-2.5 px-4 pb-3.5">
           {opened && surface ? (

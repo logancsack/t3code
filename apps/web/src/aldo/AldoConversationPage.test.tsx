@@ -310,10 +310,8 @@ it("keeps what finished and hasn't landed in view after its lines have left the 
     approvals: [],
   } as unknown as AldoHome;
   await act(async () => root.render(<Page home={home} />));
-  expect(container.textContent).not.toContain("What should we get done?");
-  expect(container.querySelector("[data-aldo-finished]")?.textContent).toContain(
-    "I found a problem with this update.",
-  );
+  // Duplicate "Following N updates" block is no longer mounted on the conversation page.
+  expect(container.querySelector("[data-aldo-finished]")).toBeNull();
 });
 
 it("reveals home content after eight seconds without pretending history is loaded", async () => {

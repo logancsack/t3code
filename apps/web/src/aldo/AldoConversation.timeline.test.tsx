@@ -761,7 +761,7 @@ it("offers the request shortcut only while the actionable card is outside the co
   expect(pill().textContent).toBe("Review 1 request");
 });
 
-it("says the whole count on the request shortcut even while one request is in view", async () => {
+it("hides the request shortcut while any waiting card is in view, and shows the full count when scrolled away", async () => {
   let report: IntersectionObserverCallback | undefined;
   const observed: Element[] = [];
   vi.stubGlobal(
@@ -787,7 +787,14 @@ it("says the whole count on the request shortcut even while one request is in vi
       {} as IntersectionObserver,
     ),
   );
-  // One is on screen, the other isn't: the shortcut stays, and counts both, as the header does.
+  // While a waiting card is already in view, don't stack a duplicate floating pill on top of it.
+  expect(container.querySelector("[data-aldo-needs-you]")).toBeNull();
+  await act(async () =>
+    report!(
+      [{ target: observed[0]!, intersectionRatio: 0 } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
   expect(pill().textContent).toBe("Review 2 requests");
 });
 
@@ -919,9 +926,8 @@ it.each(["checks-running", "deploying"] as const)(
     message("Here is the thread: https://aldo.computer/aldo-demo/work", 3, "assistant");
     await act(async () => root.render(<Page home={read} />));
     expect(container.querySelector("[data-aldo-update]")).toBeNull();
-    expect(container.querySelector("[data-aldo-finished]")?.textContent).toContain(
-      "I’m checking the update before it goes live.",
-    );
+    // Duplicate "Following N updates" block stays off Home chat.
+    expect(container.querySelector("[data-aldo-finished]")).toBeNull();
 
     // A structured result needs no raw thread URL. It owns the replacement status.
     await act(async () => {
@@ -1308,12 +1314,13 @@ it("keeps only the latest scheduled turn per thread inside the collapsed status 
   )!;
   expect(disclosure.getAttribute("aria-expanded")).toBe("false");
   await act(async () => disclosure.click());
-  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(1);
-  expect(container.textContent).toContain("Open work");
-  expect(container.textContent).toContain("Check 3");
-  expect(container.textContent).not.toContain("Check 1");
-  await act(async () => disclosure.click());
+  // Scheduled turns without deliverables render as a compact one-line row, not a full card box.
   expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(0);
+  expect(container.textContent).toContain("Waiting cards on Home must say exactly what’s needed");
+  await act(async () => disclosure.click());
+  expect(container.textContent).not.toContain(
+    "Waiting cards on Home must say exactly what’s needed",
+  );
 });
 
 it("keeps scheduled deliverables and artifacts inside status without duplicating a shown file", async () => {

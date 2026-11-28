@@ -29,13 +29,13 @@ export function NeedsYouPill(props: {
           for (const entry of entries) {
             const key = entry.target.getAttribute("data-aldo-needs-target");
             if (!key) continue;
-            if (entry.intersectionRatio >= 0.5) next.add(key);
+            if (entry.intersectionRatio >= 0.1) next.add(key);
             else next.delete(key);
           }
           return next;
         });
       },
-      { root, threshold: [0, 0.5] },
+      { root, threshold: [0, 0.1] },
     );
     const observed = new Set<Element>();
     const watch = () => {
@@ -56,10 +56,10 @@ export function NeedsYouPill(props: {
       changes.disconnect();
     };
   }, [scroller, props.items]);
-  // The count is the whole list (needsYouNow), wherever it's scrolled to; the pill itself
-  // only shows while something on it is out of view.
+  // Show the floating jump pill only when no waiting card is currently visible on screen.
   const items = props.items;
-  const outOfView = items.some((item) => !visible.has(item.key));
+  const anyInView = items.some((item) => visible.has(item.key));
+  const outOfView = items.length > 0 && !anyInView;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const selected = useRef<NeedsYouItem | null>(null);

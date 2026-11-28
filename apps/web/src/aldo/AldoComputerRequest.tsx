@@ -59,9 +59,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
       aria-label={request.title}
       className={cn(SURFACE, "flex min-w-0 flex-col gap-3 p-4 [overflow-wrap:anywhere]")}
     >
-      <p className="text-xs text-muted-foreground">
-        Computer request · {request.conversation.title}
-      </p>
+      <p className="text-xs text-muted-foreground">{request.conversation.title}</p>
       <h3 className="text-sm font-medium">{request.title}</h3>
       <p className="break-words text-sm text-muted-foreground">
         {aldoComputerAskDescription({

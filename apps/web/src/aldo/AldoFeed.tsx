@@ -10,7 +10,7 @@
 // card this visit, are a line each; a plan stays its card (AldoPlanCard.tsx),
 // including what it started with.
 
-import { CheckIcon, ChevronDownIcon, LayersIcon, RepeatIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ClockIcon, LayersIcon, RepeatIcon } from "lucide-react";
 import { useContext, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -20,7 +20,6 @@ import { AldoReply } from "./AldoReply";
 import { AldoPaymentLine } from "./AldoPaymentCard";
 import { AldoPlanCard } from "./AldoPlanCard";
 import { AldoFrame } from "./AldoFrame";
-import AldoTaskResult from "./AldoTaskResult";
 import { useAldoArrive } from "./arrive";
 import { aldoCanMorph } from "./morph";
 import { ACTION_LABELS } from "./assistant.logic";
@@ -97,15 +96,26 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
   const groups: ReadonlyArray<readonly [string, ReadonlyArray<ReactNode>]> = [
     [
       "Scheduled",
-      scheduled.map((e) => (
-        <AldoReply
-          key={e.key}
-          text={e.message.text}
-          artifacts={e.message.artifacts}
-          update={e.update}
-          at={e.at}
-        />
-      )),
+      scheduled.map((e) =>
+        e.update.links.length > 0 || (e.message.artifacts?.length ?? 0) > 0 ? (
+          <AldoReply
+            key={e.key}
+            text={e.message.text}
+            artifacts={e.message.artifacts}
+            update={e.update}
+            at={e.at}
+          />
+        ) : (
+          <Row
+            key={e.key}
+            icon={<ClockIcon className="size-4" strokeWidth={1.75} />}
+            verb="Scheduled"
+            title={e.update.title}
+            trailing={timeOf(e.at)}
+            onClick={open && e.update.thread ? (from) => open(e.update.thread!, from) : undefined}
+          />
+        ),
+      ),
     ],
     [
       "Shipped",
@@ -130,25 +140,21 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
           { clock: true, conversation: e.conversation },
         );
         return (
-          <div key={e.key} className="min-w-0">
-            <Row
-              icon={
-                state.tone === "done" ? (
-                  <CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />
-                ) : (
-                  <ResultIcon state={state} />
-                )
-              }
-              verb={state.words}
-              title={e.conversation.title}
-              trailing={state.tone === "done" ? timeOf(e.at) : state.words}
-              trailingClassName={resultToneClass(state)}
-              onClick={open ? (from) => open(e.conversation.thread, from) : undefined}
-            />
-            {e.conversation.result ? (
-              <AldoTaskResult result={e.conversation.result} compact />
-            ) : null}
-          </div>
+          <Row
+            key={e.key}
+            icon={
+              state.tone === "done" ? (
+                <CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />
+              ) : (
+                <ResultIcon state={state} />
+              )
+            }
+            verb={state.words}
+            title={e.conversation.title}
+            trailing={state.tone === "done" ? timeOf(e.at) : state.words}
+            trailingClassName={resultToneClass(state)}
+            onClick={open ? (from) => open(e.conversation.thread, from) : undefined}
+          />
         );
       }),
     ],
@@ -157,20 +163,16 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
       routines.map((r) => {
         const last = r.runs.at(-1)!;
         return (
-          <div key={r.id} className="min-w-0">
-            <Row
-              icon={<RepeatIcon className="size-4" strokeWidth={1.75} />}
-              verb="Ran"
-              title={r.title}
-              trailing={
-                r.runs.length > 1 ? `${r.runs.length} runs · ${timeOf(last.at)}` : timeOf(last.at)
-              }
-              onClick={open ? (from) => open(last.conversation.thread, from) : undefined}
-            />
-            {last.conversation.result ? (
-              <AldoTaskResult result={last.conversation.result} compact />
-            ) : null}
-          </div>
+          <Row
+            key={r.id}
+            icon={<RepeatIcon className="size-4" strokeWidth={1.75} />}
+            verb="Ran"
+            title={r.title}
+            trailing={
+              r.runs.length > 1 ? `${r.runs.length} runs · ${timeOf(last.at)}` : timeOf(last.at)
+            }
+            onClick={open ? (from) => open(last.conversation.thread, from) : undefined}
+          />
         );
       }),
     ],

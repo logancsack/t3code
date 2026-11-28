@@ -276,7 +276,7 @@ it("an approval says what the step is, why, whether it's safe and which answer A
       "git status --short",
     ),
   );
-  expect(el.querySelector("h4")?.textContent).toBe("Your agent wants to run a command that reads");
+  expect(el.querySelector("h4")?.textContent).toBe("Run a command that reads?");
   expect(el.textContent).toContain("The agent is looking at its workspace.");
   expect(el.textContent).toContain("Safe to allow.");
   expect(el.textContent).not.toMatch(/Approval requested|git status/);

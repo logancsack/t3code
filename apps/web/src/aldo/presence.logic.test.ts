@@ -33,22 +33,21 @@ describe("Aldo presence header", () => {
     });
     expect(presenceLine({ ...quiet, waiting: 1 }).state).toBe("needs-you");
   });
-  it("leads with what needs them, then what moved", () => {
+  it("leads with what needs them, then working without moved clutter", () => {
     expect(presenceLine({ ...quiet, waiting: 2, moved: 3, working: [job] }).text).toBe(
-      "2 need you · 3 moved",
+      "2 need you · 1 working",
     );
     expect(presenceLine({ ...quiet, moved: 3, working: [job] })).toMatchObject({
-      text: "3 moved · 1 working",
-      dot: "moved",
+      text: "Close September",
+      dot: null,
     });
   });
   it("says a lone count in full, with its dot", () => {
     expect(presenceLine({ ...quiet, waiting: 1 }).text).toBe("1 thing needs you");
     expect(presenceLine({ ...quiet, moved: 3 })).toMatchObject({
-      text: "3 threads moved",
-      dot: "moved",
+      text: "All caught up",
+      dot: null,
     });
-    expect(presenceLine({ ...quiet, moved: 1 }).text).toBe("1 thread moved");
     expect(presenceLine({ ...quiet, working: [job] })).toMatchObject({
       text: "Close September",
       dot: null,
@@ -277,13 +276,13 @@ describe("presenceBoard moved", () => {
     );
     expect(b.moved.rows.map((r) => [r.title, r.detail])).toEqual([
       ["Alpha", "#9 deploy failed · 10 min ago"],
-      ["Beta", "Reply received · unverified · 5 h ago"],
+      ["Beta", "Updated · 5 h ago"],
     ]);
     expect(b.moved.rows[0]!.tone).toBe("bad");
     expect(b.moved.rows[1]!.tone).toBe("quiet");
-    expect(b.moved.preview).toBe("1 deploy failed · 1 reply received");
+    expect(b.moved.preview).toBe("1 deploy failed · 1 updated");
   });
-  it("calls only an evidenced task report complete", () => {
+  it("uses plain labels for finished tasks without jargon", () => {
     const c = conversation({
       result: {
         state: "finished",
@@ -294,8 +293,8 @@ describe("presenceBoard moved", () => {
       },
     });
     const b = board(home({ conversations: [c] }));
-    expect(b.moved.rows[0]?.detail).toMatch(/^Reported complete/);
-    expect(b.moved.preview).toBe("1 reported complete");
+    expect(b.moved.rows[0]?.detail).toMatch(/^Done/);
+    expect(b.moved.preview).toBe("1 done");
     expect(b.moved.rows[0]?.tone).toBe("good");
   });
   it("counts from when they last looked, for a day", () => {
@@ -308,7 +307,7 @@ describe("presenceBoard moved", () => {
     });
     expect(board(read, NOW - 60 * 60_000).moved.rows).toHaveLength(1);
     expect(board(read, null).moved.rows).toHaveLength(2);
-    expect(board(read, null).moved.preview).toBe("2 replies received");
+    expect(board(read, null).moved.preview).toBe("2 updated");
   });
   it("drops a thread that has moved on", () => {
     const read = (state: AldoHomeConversation["state"]) =>
@@ -328,7 +327,7 @@ describe("presenceBoard moved", () => {
       }),
     );
     expect(b.moved.rows).toHaveLength(1);
-    expect(b.moved.rows[0]!.detail).toMatch(/^Reply received/);
+    expect(b.moved.rows[0]!.detail).toMatch(/^Updated/);
   });
   it("prefers a pull request's word when it ties with finishing", () => {
     const b = board(
@@ -348,7 +347,7 @@ describe("presenceBoard moved", () => {
         }),
       ).moved.rows[0]!.detail;
     expect(green(ahead(10))).toMatch(/^#7 checks passed/);
-    expect(green(null)).toMatch(/^Reply received/);
+    expect(green(null)).toMatch(/^Updated/);
   });
 });
 
