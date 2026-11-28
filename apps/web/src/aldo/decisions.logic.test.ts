@@ -235,10 +235,31 @@ describe("aldoDecisions", () => {
         // A plan to start is its own decision, as Aldo's brief has it.
         { ...turnAsk("planasks"), plan: { id: "p2", text: "1. Buy it" } },
       ],
+      // A payment for the same thread is listed with the payments, not as the thread's form.
+      payments: [
+        {
+          id: "pay-asks",
+          merchant: "Excalidraw",
+          site: "https://excalidraw.com",
+          total: "$7.00",
+          items: [],
+          context: "One month of Plus",
+          status: "pending_approval",
+          approvalUrl: "https://link.example/approve",
+          expiresAt: null,
+          cardLast4: null,
+          test: true,
+          thread: at("asks"),
+          threadTitle: "asks",
+          createdAt: ago(4),
+          updatedAt: ago(4),
+        },
+      ],
     });
     const keys = aldoDecisions(read, NOW).map((d) => d.key);
     expect(keys.filter((k) => !k.startsWith("aldo:")).toSorted()).toEqual([
       `failed:failed:${ago(3)}`,
+      "payment:pay-asks",
       "plan:planned:p1",
       "question:decided:ask:turn-decided",
       "question:elsewhere:ask:turn-elsewhere",
@@ -254,7 +275,7 @@ describe("aldoDecisions", () => {
       "aldo:ap-elsewhere",
       "aldo:ap-planasks",
     ]);
-    // The count says the same: one thing per step.
+    // The count says the same: one thing per step (and the payment).
     expect(aldoWaitingCount(read, NOW)).toBe(keys.length);
     // And so does every list of what waits: simple mode's Needs you lists the
     // card, not its thread's form too, and the board has the thread waiting
@@ -274,6 +295,28 @@ describe("aldoDecisions", () => {
     expect(board.needsYou.filter((c) => onCard.includes(c.ref))).toEqual([]);
     expect(board.waiting.map((c) => c.ref).toSorted()).toEqual(onCard.toSorted());
     expect(board.needsYou.length + 3).toBe(boardFor(read.conversations, NOW).needsYou.length);
+  });
+
+  it("lists a thread in simple mode by what it asks itself: a pause or a computer request", () => {
+    const read = home({
+      approvals: [approval("ap-p", { kind: "confirm", thread: at("p") })],
+      conversations: [
+        conversation({ ref: "p", thread: at("p"), state: "paused", machine: "asleep" }),
+        conversation({
+          ref: "c",
+          thread: at("c"),
+          state: "waiting",
+          computers: [
+            { computer: "windows", status: "asked", askedAt: ago(5), creditsPerHour: 38.4 },
+          ],
+        }),
+      ],
+    });
+    expect(
+      simpleNeedsYou(read, NOW)
+        .conversations.map((c) => c.ref)
+        .toSorted(),
+    ).toEqual(["c", "p"]);
   });
 
   it("lists a step on an approval card once in the summon menu", () => {

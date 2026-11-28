@@ -8,7 +8,7 @@ import {
   type AldoHomeConversation,
   type AldoPayment,
 } from "./homeApi";
-import { aldoDecisions, putAway, type AldoDecision } from "./decisions.logic";
+import { aldoDecisions, putAway, threadDecisionKey, type AldoDecision } from "./decisions.logic";
 import { boardFor, sameTarget } from "./home.logic";
 import { needsYouNow } from "./needsYou.logic";
 import { parseAldoPlans, type AldoPlan } from "./plans.logic";
@@ -97,15 +97,18 @@ export function simpleNeedsYou(home: AldoHome, now: number): AldoSimpleNeedsYou 
   const keys = new Set(counted.map((item) => item.key));
   return {
     payments: waitingPayments(home, now).filter((p) => keys.has(`payment:${p.id}`)),
-    // By what it asks itself: an approval card of Aldo's for its thread is listed with the approvals.
-    conversations: boardFor(home.conversations, now).needsYou.filter(
-      (c) =>
-        !putAway(c, now) &&
-        counted.some(
-          (item) =>
-            !item.key.startsWith("aldo:") && item.thread && sameTarget(item.thread, c.thread),
-        ),
-    ),
+    // By what it asks itself (its own decision, a pause, a computer request), not by a card,
+    // payment or pull request for its thread: those are listed in their own sections.
+    conversations: boardFor(home.conversations, now).needsYou.filter((c) => {
+      if (putAway(c, now)) return false;
+      const own = threadDecisionKey(c);
+      return counted.some(
+        (item) =>
+          item.key === own ||
+          item.key === `paused:${c.ref}` ||
+          (item.key.startsWith("computer:") && !!item.thread && sameTarget(item.thread, c.thread)),
+      );
+    }),
     merges: aldoDecisions(home, now).filter(
       (d): d is Extract<AldoDecision, { kind: "merge" }> => d.kind === "merge" && keys.has(d.key),
     ),

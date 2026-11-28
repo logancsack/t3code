@@ -131,6 +131,11 @@ export function boardAskingOnce(board: HomeBoard, home: Pick<AldoHome, "approval
   };
 }
 
+/** The key of what a thread asks itself (aldoDecisions keys it so), or null when it asks nothing of the kind. */
+export function threadDecisionKey(c: AldoHomeConversation): string | null {
+  return conversationDecision(c)?.key ?? null;
+}
+
 /** Put away in the user's list: settled, or snoozed (still, by `now`) without asking them anything (a turn's own ask is how it waits). */
 export function putAway(c: AldoHomeConversation, now: number): boolean {
   if (c.settled === true) return true;
