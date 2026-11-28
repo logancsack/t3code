@@ -664,6 +664,11 @@ export const layerExecutor: Layer.Layer<
                     })
                   : [],
               );
+              const shared = yield* projectionStore.getSharedLaunchAttachmentIds(
+                effect.threadId,
+                request.attachmentIds,
+              );
+              for (const id of shared) referenced.add(id);
               yield* resourceCleanup.cleanupAttachments(
                 request.attachmentIds.filter((id) => !referenced.has(id)),
               );

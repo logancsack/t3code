@@ -6,6 +6,7 @@ import {
   CommandId,
   type ChatAttachment,
   type MessageId,
+  type InitialDelegates,
   type ModelSelection,
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
@@ -100,6 +101,7 @@ export interface ThreadLaunchInput {
   readonly interactionMode: ProviderInteractionMode;
   readonly workspaceStrategy: ThreadLaunchWorkspaceStrategy;
   readonly initialMessage?: ThreadLaunchInitialMessage;
+  readonly initialDelegates?: typeof InitialDelegates.Type;
   readonly importedNativeThread?: {
     readonly ref: {
       readonly driver: ProviderDriverKind;
@@ -1386,6 +1388,9 @@ const make = Effect.gen(function* () {
                   : { delegatedFrom: input.delegatedFrom }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
+                ...(input.initialDelegates === undefined
+                  ? {}
+                  : { initialDelegates: input.initialDelegates }),
                 ...(initialMessage === undefined
                   ? {}
                   : { initialMessage: { ...initialMessage, workspaceStrategy } }),

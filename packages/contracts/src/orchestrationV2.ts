@@ -104,6 +104,15 @@ export type OrchestrationV2CreationSource = typeof OrchestrationV2CreationSource
 export const OrchestrationV2ThreadHistoryOrigin = Schema.Literals(["native", "v1_import"]);
 export type OrchestrationV2ThreadHistoryOrigin = typeof OrchestrationV2ThreadHistoryOrigin.Type;
 
+export const InitialDelegate = Schema.Struct({
+  modelSelection: ModelSelection,
+  task: TrimmedNonEmptyString.check(Schema.isMaxLength(50_000)),
+});
+export const InitialDelegates = Schema.Array(InitialDelegate).check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(19),
+);
+
 const OrchestrationV2CreationFields = {
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
@@ -3198,6 +3207,7 @@ export const OrchestrationV2Command = Schema.Union([
      * Only the server sets this. The thread and its first run commit together, so no client sees
      * the thread idle before its run exists. The run waits for `workspaceStrategy` when given one.
      */
+    initialDelegates: Schema.optional(InitialDelegates),
     initialMessage: Schema.optional(
       Schema.Struct({
         messageId: MessageId,

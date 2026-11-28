@@ -400,6 +400,7 @@ export interface ProjectionRecordFilter {
   readonly subagentIds?: ReadonlyArray<NodeId>;
   readonly subagentRunIds?: ReadonlyArray<RunId>;
   readonly subagentChildThreadIds?: ReadonlyArray<ThreadId>;
+  readonly initialLaunchSubagents?: true;
   readonly nodeIds?: ReadonlyArray<NodeId>;
   readonly turnItemRequestIds?: ReadonlyArray<RuntimeRequestId>;
   readonly turnItemTypes?: ReadonlyArray<OrchestrationV2TurnItem["type"]>;
@@ -547,6 +548,10 @@ export interface ProjectionStoreV2Shape {
   readonly getThreadAttachmentIds: (
     threadId: ThreadId,
     options?: { readonly includeShownByLiveFork?: boolean },
+  ) => Effect.Effect<ReadonlyArray<string>, ProjectionStoreV2Error>;
+  readonly getSharedLaunchAttachmentIds: (
+    threadId: ThreadId,
+    candidates: ReadonlyArray<string>,
   ) => Effect.Effect<ReadonlyArray<string>, ProjectionStoreV2Error>;
   readonly getThreadHistoryPage: (
     threadId: ThreadId,
@@ -4290,6 +4295,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ${filter?.subagentChildThreadIds === undefined ? sql`` : sql`AND child_thread_id IN (SELECT value FROM json_each(${encodeIdList(filter.subagentChildThreadIds)}))`}
               ${filter?.subagentRunIds === undefined ? sql`` : sql`AND run_id IN (SELECT value FROM json_each(${encodeIdList(filter.subagentRunIds)}))`}
               ${
+                filter?.initialLaunchSubagents
+                  ? sql`AND origin = 'app_owned' AND child_thread_id IS NOT NULL
+                AND json_extract(payload_json, '$.createdBy') = 'user'`
+                  : sql``
+              }
+              ${
                 filter?.omitSettledSubagents === true
                   ? sql`AND subagent.rowid IN (${unsettledSubagentRowids(threadId)})`
                   : filter?.omitSettledSubagents !== undefined
@@ -6880,6 +6891,42 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       (effect, threadId) =>
         effect.pipe(Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause }))),
     );
+
+    // Collaboration children share the original brief's files. Check survivors at cleanup time,
+    // after the deletion transaction marks all the removed threads.
+    const getSharedLaunchAttachmentIds: ProjectionStoreV2Shape["getSharedLaunchAttachmentIds"] = (
+      threadId,
+      candidates,
+    ) =>
+      sql<{ id: string }>`
+      WITH parent(thread_id) AS (
+        SELECT thread_id FROM orchestration_v2_projection_subagents
+        WHERE child_thread_id = ${threadId} AND origin = 'app_owned'
+          AND json_extract(payload_json, '$.createdBy') = 'user'
+        UNION SELECT ${threadId}
+        WHERE EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_subagents
+          WHERE thread_id = ${threadId} AND origin = 'app_owned'
+            AND json_extract(payload_json, '$.createdBy') = 'user'
+        )
+      ), collaborators(thread_id) AS (
+        SELECT thread_id FROM parent
+        UNION SELECT task.child_thread_id
+        FROM parent JOIN orchestration_v2_projection_subagents AS task USING (thread_id)
+        WHERE task.origin = 'app_owned' AND json_extract(task.payload_json, '$.createdBy') = 'user'
+      )
+      SELECT DISTINCT candidate.value AS id
+      FROM collaborators
+      JOIN orchestration_v2_projection_threads AS thread USING (thread_id)
+      JOIN orchestration_v2_projection_messages AS message USING (thread_id)
+      JOIN json_each(message.payload_json, '$.attachments') AS attachment
+      JOIN json_each(${encodeIdList(candidates)}) AS candidate
+        ON candidate.value = json_extract(attachment.value, '$.id')
+      WHERE thread.deleted_at IS NULL AND thread.thread_id <> ${threadId}
+    `.pipe(
+        Effect.map((rows) => rows.map((row) => row.id)),
+        Effect.mapError(controlReadError(threadId)),
+      );
 
     const getMessagesById = Effect.fn("ProjectionStore.getMessagesById")(
       function* (threadId: ThreadId, messageIds: ReadonlyArray<MessageId>) {
@@ -9801,6 +9848,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       searchThread: readOnReader(searchThread),
       searchThreadStream,
       getThreadAttachmentIds: readOnReader(getThreadAttachmentIds),
+      getSharedLaunchAttachmentIds: readOnReader(getSharedLaunchAttachmentIds),
     } satisfies ProjectionStoreV2Shape;
   }),
 );

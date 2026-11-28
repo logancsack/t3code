@@ -7,6 +7,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
 import {
+  ChatAttachmentId,
   CheckpointId,
   CommandId,
   EventId,
@@ -49,6 +50,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
@@ -126,6 +128,7 @@ const layerTest = Layer.mergeAll(
   RuntimeLayer.layerEventSink,
   ThreadCommandExecutor.layer,
   EffectOutbox.layer,
+  ProjectionStore.layer,
 ).pipe(
   Layer.provideMerge(RuntimeLayer.layerProjectService),
   Layer.provide(
@@ -5963,3 +5966,115 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
       }),
   );
 });
+
+it.effect(
+  "commits the parent and all initial delegates once, and rolls back a refused roster",
+  () =>
+    Effect.gen(function* () {
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projectId = ProjectId.make("project:collaboration");
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const attachmentId = ChatAttachmentId.make("collab-brief-image");
+      yield* projects.create({
+        commandId: CommandId.make("collab:project"),
+        projectId,
+        title: "Collaboration",
+        workspaceRoot: "/workspace/collaboration",
+      });
+      const threadId = ThreadId.make("thread:collaboration");
+      const start = {
+        type: "thread.create",
+        commandId: CommandId.make("collab:start"),
+        createdBy: "user",
+        creationSource: "web",
+        threadId,
+        projectId,
+        title: "Research together",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        initialMessage: {
+          messageId: MessageId.make("collab:message"),
+          text: "Research together",
+          attachments: [
+            {
+              type: "image",
+              id: attachmentId,
+              name: "brief.png",
+              mimeType: "image/png",
+              sizeBytes: 1,
+            },
+          ],
+          workspaceStrategy: { type: "root" },
+        },
+        initialDelegates: [
+          { modelSelection, task: "Find evidence" },
+          { modelSelection, task: "Cross-check conclusions" },
+        ],
+      } as const;
+      const rejectedThread = ThreadId.make("thread:collaboration-refused");
+      const refused = yield* Effect.exit(
+        orchestrator.dispatch({
+          ...start,
+          threadId: rejectedThread,
+          commandId: CommandId.make("collab:refused"),
+          initialDelegates: [
+            start.initialDelegates[0],
+            {
+              modelSelection: {
+                ...modelSelection,
+                instanceId: ProviderInstanceId.make("unavailable"),
+              },
+              task: "This participant cannot run",
+            },
+          ],
+        }),
+      );
+      assert.isTrue(Exit.isFailure(refused));
+      assert.isTrue(
+        Exit.isFailure(yield* Effect.exit(orchestrator.getThreadProjection(rejectedThread))),
+      );
+      const accepted = yield* orchestrator.dispatch(start);
+      const replay = yield* orchestrator.dispatch(start);
+      assert.equal(replay.sequence, accepted.sequence);
+      const parent = yield* orchestrator.getThreadProjection(threadId);
+      assert.lengthOf(parent.runs, 1);
+      assert.lengthOf(parent.subagents, 2);
+      assert.equal(parent.runs[0]!.status, "preparing");
+      for (const task of parent.subagents) {
+        const child = yield* orchestrator.getThreadProjection(task.childThreadId!);
+        assert.equal(child.thread.lineage.parentThreadId, threadId);
+        assert.lengthOf(child.runs, 1);
+        assert.equal(child.runs[0]!.status, "preparing");
+        assert.deepEqual(
+          yield* store.getSharedLaunchAttachmentIds(child.thread.id, [
+            attachmentId,
+            "unreferenced",
+          ]),
+          [attachmentId],
+        );
+      }
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("collab:workspace"),
+        threadId,
+        branch: "shared-work",
+        worktreePath: "/workspace/prepared",
+      });
+      yield* orchestrator.dispatch({
+        type: "prepared-run.release",
+        commandId: CommandId.make("collab:release"),
+        threadId,
+        runId: parent.runs[0]!.id,
+      });
+      for (const task of parent.subagents) {
+        const child = yield* orchestrator.getThreadProjection(task.childThreadId!);
+        assert.equal(child.thread.worktreePath, "/workspace/prepared");
+        assert.equal(child.thread.branch, "shared-work");
+        assert.equal(child.runs[0]!.status, "starting");
+      }
+    }).pipe(Effect.provide(layerTest)),
+);

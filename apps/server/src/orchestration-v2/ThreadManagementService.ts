@@ -91,6 +91,7 @@ export function withCreationProvenance(
         linkOrigin: _linkOrigin,
         delegatedFrom: _delegatedFrom,
         initialMessage: _initialMessage,
+        initialDelegates: _initialDelegates,
         ...rest
       } = command;
       return { ...rest, ...provenance };
@@ -757,6 +758,21 @@ const make = Effect.gen(function* () {
 
   const assertDispatchTargetEnabled = (command: OrchestrationV2ServerCommand) => {
     switch (command.type) {
+      case "thread.create":
+        if (command.initialDelegates === undefined) return Effect.void;
+        return Effect.forEach(
+          [
+            command.modelSelection,
+            ...command.initialDelegates.map(({ modelSelection }) => modelSelection),
+          ],
+          (modelSelection) =>
+            assertProviderInstanceEnabled({
+              projectId: command.projectId,
+              commandId: command.commandId,
+              instanceId: modelSelection.instanceId,
+            }),
+          { discard: true },
+        );
       case "thread.metadata.update":
         return command.continuation === undefined
           ? Effect.void

@@ -1299,6 +1299,32 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 
+// These are the same toolkit declarations used by the registrations below.
+export const registeredThreadToolNames = () =>
+  [
+    OrchestratorToolkit,
+    ThreadToolkit,
+    MessageToolkit,
+    WorktreeToolkit,
+    PreviewControlsToolkit,
+    PreviewStandardToolkit,
+    PreviewSnapshotToolkit,
+    EnvironmentToolkit,
+    ThemeToolkit,
+    ProjectToolkit,
+    AttachmentToolkit,
+    PullRequestsToolkit,
+    IssuesToolkit,
+    ReviewToolkit,
+    DeviceStandardToolkit,
+    DeviceScreenshotToolkit,
+    HtmlPreviewToolkit,
+    HtmlRenderToolkit,
+    ToolSearchToolkit,
+  ]
+    .flatMap((toolkit) => Object.keys(toolkit.tools))
+    .sort();
+
 const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, EX, RX>(
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,

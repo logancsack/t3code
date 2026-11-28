@@ -682,6 +682,45 @@ export const layer: Layer.Layer<
           });
         },
       );
+      if (run.ordinal === 1) {
+        const lineage = projection.thread.lineage;
+        const parentId =
+          lineage.relationshipToParent === "subagent" ? lineage.parentThreadId : null;
+        const owner =
+          parentId === null
+            ? undefined
+            : (yield* projectionStore.getThreadRecords(parentId, ["subagents"], {
+                subagentChildThreadIds: [run.threadId],
+                initialLaunchSubagents: true,
+              })).subagents[0];
+        const ownerRunId = parentId === null ? run.id : owner?.runId;
+        const group =
+          ownerRunId == null
+            ? null
+            : yield* projectionStore.getThreadRecords(
+                parentId ?? run.threadId,
+                ["subagents", "runs"],
+                {
+                  runIds: [ownerRunId],
+                  subagentRunIds: [ownerRunId],
+                  initialLaunchSubagents: true,
+                },
+              );
+        const otherFailed =
+          group &&
+          ((parentId !== null && group.runs.some((candidate) => candidate.status === "failed")) ||
+            group.subagents.some((task) => task.id !== owner?.id && task.status === "failed"));
+        if (otherFailed) {
+          const message = "A required collaborator failed. This participant was not started.";
+          yield* settleStartFailure({
+            signal: "collaborator-failed",
+            title: message,
+            error: new Error(message),
+            message,
+          });
+          return;
+        }
+      }
       if (
         expandAssistantCitationsForProvider(providerMessage.text).length >
         PROVIDER_SEND_TURN_MAX_INPUT_CHARS
