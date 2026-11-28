@@ -14,6 +14,7 @@ import {
   APPROVAL_KIND_LABEL,
   approvalChoices,
   approvalQuestion,
+  placeSaysAll,
   type ApprovalChoice,
 } from "./approvals.logic";
 import { relativeTime } from "./home.logic";
@@ -27,8 +28,12 @@ const KIND_ICON = {
   start: SparklesIcon,
   confirm: CircleCheckBigIcon,
 } as const;
-/** A step's total and place are said in its first choice ("$12.00 to adp.com"), not again above it. */
-const IN_CHOICE = new Set(["Total", "Where"]);
+/**
+ * A step's total and place are said in its first choice ("$12.00 to adp.com"), not again above it;
+ * a web address with more than its site in it (a seller's page) stays, so the payee is never lost.
+ */
+const inChoice = (f: { label: string; value: string }) =>
+  f.label === "Total" || (f.label === "Where" && placeSaysAll(f.value));
 const QUIET_LINK = `${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`;
 
 export type ApprovalCardProps = {
@@ -50,7 +55,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
   const sending = busy !== null || a.status === "sending";
   const reasons = a.reasons ?? [];
   const choices = approvalChoices(a);
-  const fields = a.kind === "confirm" ? a.fields.filter((f) => !IN_CHOICE.has(f.label)) : a.fields;
+  const fields = a.kind === "confirm" ? a.fields.filter((f) => !inChoice(f)) : a.fields;
   const no = choices.find((c) => c.decision === "discard");
   // Saying why not: its choices take the rows' place until one is picked, or Back.
   const [sayingWhy, setSayingWhy] = useState(false);

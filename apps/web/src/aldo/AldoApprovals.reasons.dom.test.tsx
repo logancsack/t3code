@@ -143,12 +143,28 @@ it("asks the question with why, and says what each choice does", async () => {
   ]);
   expect(detailOf("Allow once")).toBe("$12.00 to adp.com, this task only");
   expect(detailOf("Always allow up to $15")).toBe(
-    "Saves a rule. You can change it in Settings → Permissions",
+    "From now on, agents can pay up to $15 a purchase without asking. You can change it in Settings → Permissions",
   );
   expect(detailOf("Don't allow")).toBe("The agent carries on without it");
-  // The total and the place are said in the first choice; the terms stay above it.
-  const terms = [...container.querySelectorAll("dt")].map((dt) => dt.textContent);
-  expect(terms).toEqual(["Terms"]);
+  // The total is said in the first choice; a page of the site, and the terms, stay above it.
+  const terms = () => [...container.querySelectorAll("dt")].map((dt) => dt.textContent);
+  expect(terms()).toEqual(["Where", "Terms"]);
+  expect(container.querySelector("dd")?.textContent).toBe("https://www.adp.com/pricing");
+});
+
+it("leaves out a place its first choice says in full", async () => {
+  await show(
+    booking({
+      fields: [
+        { label: "Where", value: "https://www.adp.com/" },
+        { label: "Total", value: "$12.00" },
+        { label: "Terms", value: "No refunds" },
+      ],
+      allowUpTo: 15,
+    }),
+  );
+  expect(detailOf("Allow once")).toBe("$12.00 to adp.com, this task only");
+  expect([...container.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["Terms"]);
 });
 
 it("always allows up to Aldo's amount in one tap, which approves and saves that limit", async () => {

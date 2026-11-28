@@ -79,6 +79,18 @@ export function placeOf(where: string): string {
   }
 }
 
+/** Whether `placeOf` keeps all a place says: anything but a web address, or a site's front page. */
+export function placeSaysAll(where: string): boolean {
+  const trimmed = where.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return true;
+  try {
+    const url = new URL(trimmed);
+    return url.pathname === "/" && !url.search && !url.hash && !url.username;
+  } catch {
+    return true;
+  }
+}
+
 const CHANGE_IT = "You can change it in Settings → Permissions";
 
 /**
@@ -110,7 +122,8 @@ export function approvalChoices(
           {
             decision: "approve",
             label: `Always allow up to ${dollarsShort(upTo)}`,
-            detail: `Saves a rule. ${CHANGE_IT}`,
+            // The limit is the account's, for every purchase after this one: said where it's chosen.
+            detail: `From now on, agents can pay up to ${dollarsShort(upTo)} a purchase without asking. ${CHANGE_IT}`,
             spendLimit: upTo,
           },
         ]

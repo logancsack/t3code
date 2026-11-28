@@ -4,6 +4,7 @@ import {
   approvalChoices,
   approvalQuestion,
   placeOf,
+  placeSaysAll,
   approvalOutcome,
   heldStatus,
   threadApprovals,
@@ -158,7 +159,8 @@ describe("approvalChoices", () => {
       {
         decision: "approve",
         label: "Always allow up to $15",
-        detail: "Saves a rule. You can change it in Settings → Permissions",
+        detail:
+          "From now on, agents can pay up to $15 a purchase without asking. You can change it in Settings → Permissions",
         spendLimit: 15,
       },
       { decision: "discard", label: "Don't allow", detail: "The agent carries on without it" },
@@ -235,5 +237,14 @@ describe("approvalQuestion", () => {
     expect(placeOf("https://www.adp.com/pricing?x=1")).toBe("adp.com");
     expect(placeOf("ADP (adp.com)")).toBe("ADP (adp.com)");
     expect(placeOf("https://")).toBe("https://");
+  });
+
+  it("knows when the site alone says all a place does", () => {
+    expect(placeSaysAll("https://www.adp.com")).toBe(true);
+    expect(placeSaysAll("https://www.adp.com/")).toBe(true);
+    expect(placeSaysAll("ADP (adp.com)")).toBe(true);
+    expect(placeSaysAll("https://market.example/seller/alice")).toBe(false);
+    expect(placeSaysAll("https://market.example/?seller=bob")).toBe(false);
+    expect(placeSaysAll("https://market.example/#bob")).toBe(false);
   });
 });
