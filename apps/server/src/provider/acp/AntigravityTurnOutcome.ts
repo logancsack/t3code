@@ -19,12 +19,18 @@ const ERROR_STEP_TYPE = 17;
 const MAX_ERROR_PAYLOAD_BYTES = 16_384;
 // The Go harness's rendering of a Google API error, as the agent's api_errors.py reads it.
 const API_ERROR = /Error (\d{3}), Message: (.+?), Status: ([A-Z_]+)/s;
-const QUOTA_EXHAUSTED = /\breason:QUOTA_EXHAUSTED\b/;
+const QUOTA_EXHAUSTED =
+  /\b(?:QUOTA_EXHAUSTED|(?:individual )?quota (?:reached|exceeded|exhausted))\b/i;
+const INDIVIDUAL_QUOTA_NOTICE =
+  /^\s*⚠\uFE0F?\s*Individual quota reached\. Please upgrade your subscription to increase your limits\.\s*Resets in (?:\d{1,8}[hms]){1,3}\.?\s*$/i;
+const RATE_LIMITED =
+  /\b(?:RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|rate[ -]limit(?:ed| exceeded)?|too many requests)\b/i;
 // Claude rejects a saved thinking block without a valid signature. It sits in the native
 // history, so every later prompt to that session fails the same way.
 const INVALID_THINKING_SIGNATURE =
   /\bmessages\.\d+\.content\.\d+(?:\.thinking\.signature: Field required|: Invalid `signature` in `thinking` block)/;
 const RESET_TIMESTAMP = /\bquotaResetTimeStamp:([^\s\]]+)/;
+const NOTICE_RESET_DELAY = /\bresets in ((?:\d{1,8}(?:h|m|s)){1,3})(?![\w])/i;
 const RESET_DELAY = /\bquotaResetDelay:((?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|h|m|s))+)(?=[\s\]])/;
 // google.rpc.RetryInfo, which plain rate limits carry instead of a quota reset.
 const RETRY_DELAY = /\bretryDelay:((?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|h|m|s))+)(?=[\s\]])/;
@@ -97,7 +103,10 @@ function resetAtFrom(text: string, now: DateTime.Utc): string | undefined {
   // makeProviderFailure drops a timestamp that does not parse, so fall back to the delay.
   const timestamp = RESET_TIMESTAMP.exec(text)?.[1];
   if (timestamp !== undefined && Option.isSome(DateTime.make(timestamp))) return timestamp;
-  const delay = RESET_DELAY.exec(text)?.[1] ?? RETRY_DELAY.exec(text)?.[1];
+  const delay =
+    RESET_DELAY.exec(text)?.[1] ??
+    NOTICE_RESET_DELAY.exec(text)?.[1] ??
+    RETRY_DELAY.exec(text)?.[1];
   if (delay === undefined) return undefined;
   let delayMs = 0;
   for (const [, amount, unit] of delay.matchAll(GO_DURATION_PART)) {
@@ -110,6 +119,7 @@ function turnFailure(
   stopReason: EffectAcpSchema.StopReason,
   step: LastStep | undefined,
   now: DateTime.Utc,
+  finalAssistantText?: string,
 ):
   | {
       readonly failure: OrchestrationV2ProviderFailure;
@@ -126,14 +136,18 @@ function turnFailure(
   const apiError = API_ERROR.exec(text);
   const reusable = (failure: OrchestrationV2ProviderFailure) =>
     ({ failure, threadDisposition: "reusable" }) as const;
-  if (stopReason === "refusal" || QUOTA_EXHAUSTED.test(text)) {
+  const notice =
+    finalAssistantText && INDIVIDUAL_QUOTA_NOTICE.test(finalAssistantText)
+      ? finalAssistantText
+      : "";
+  if (stopReason === "refusal" || QUOTA_EXHAUSTED.test(text) || notice) {
     return reusable(
       makeProviderFailure({
         class: "usage_limit",
         message: "You have reached your Antigravity quota for this period.",
         code: apiError?.[3] ?? "QUOTA_EXHAUSTED",
         retryable: true,
-        resetAt: resetAtFrom(text, now) ?? null,
+        resetAt: resetAtFrom(text, now) ?? resetAtFrom(notice, now) ?? null,
       }),
     );
   }
@@ -150,6 +164,17 @@ function turnFailure(
     };
   }
   if (apiError === null) {
+    if (RATE_LIMITED.test(text)) {
+      return reusable(
+        makeProviderFailure({
+          class: "usage_limit",
+          message: "Antigravity is limiting how fast it can respond.",
+          code: "RATE_LIMIT_EXCEEDED",
+          retryable: true,
+          resetAt: resetAtFrom(text, now) ?? null,
+        }),
+      );
+    }
     return reusable(
       makeProviderFailure({
         class: "provider_error",
@@ -158,7 +183,7 @@ function turnFailure(
     );
   }
   const [, httpStatus, message, status] = apiError;
-  const rateLimited = httpStatus === "429" || status === "RESOURCE_EXHAUSTED";
+  const rateLimited = httpStatus === "429" || RATE_LIMITED.test(text);
   return reusable(
     makeProviderFailure({
       class: rateLimited ? "usage_limit" : "provider_error",
@@ -222,6 +247,7 @@ export const watchAntigravityPromptOutcome = Effect.fn("AntigravityTurnOutcome.w
   }
   return Effect.fn("AntigravityTurnOutcome.check")(function* (
     result: EffectAcpSchema.PromptResponse,
+    finalAssistantText?: string,
   ) {
     // The same file as before the prompt, or one this prompt created, still unlinked.
     const after = yield* Effect.tryPromise({
@@ -240,6 +266,6 @@ export const watchAntigravityPromptOutcome = Effect.fn("AntigravityTurnOutcome.w
           Effect.orElseSucceed(() => undefined),
         )
       : undefined;
-    return turnFailure(result.stopReason, step, yield* DateTime.now);
+    return turnFailure(result.stopReason, step, yield* DateTime.now, finalAssistantText);
   });
 });

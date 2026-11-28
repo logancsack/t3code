@@ -374,7 +374,7 @@ it("unfinished work owned by Aldo appears in Coming up with its next step", () =
       }),
     ]),
   );
-  press("All caught up");
+  press("1 scheduled");
   expect(text()).not.toContain("Stopped");
   press("Coming up");
   expect(text()).toContain(

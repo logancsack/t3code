@@ -161,7 +161,13 @@ export function threadCardOf(
       body: null,
       action: "show",
     };
-  if (c.progress && !["working", "starting", "queued"].includes(c.state))
+  if (
+    c.progress &&
+    (!["working", "starting", "queued"].includes(c.state) ||
+      (c.state === "working" &&
+        c.progress.execution === "failed" &&
+        c.progress.next.owner === "aldo"))
+  )
     return {
       tone:
         c.progress.execution === "failed" && c.progress.next.owner === "none" ? "problem" : "quiet",

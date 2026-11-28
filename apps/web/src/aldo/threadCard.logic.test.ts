@@ -267,3 +267,24 @@ it("keeps recovered screenshot updates and automatic continuations neutral while
     ).status,
   ).toBe("Stopped by you");
 });
+
+it("shows a Gemini quota pause on Home without a Retry or a needs-you card", () => {
+  const c = conversation({
+    state: "working",
+    progress: {
+      execution: "failed",
+      verdict: "unknown",
+      next: { owner: "aldo", kind: "delivery", at: "2026-11-28T10:03:00.000Z" },
+      label: "Paused for usage limit",
+      detail:
+        "Gemini hit your Google plan’s limit. It resets at Sat 3:01 AM MST. Aldo will continue automatically.",
+    },
+  });
+  expect(threadCardOf(homeWith(), c, now)).toMatchObject({
+    status: "Paused for usage limit",
+    body: expect.stringContaining("It resets at Sat 3:01 AM MST."),
+    action: null,
+  });
+  expect(needsYouKind(c)).toBeNull();
+  expect(boardFor([c], now)).toMatchObject({ needsYou: [], working: [], waiting: [c] });
+});

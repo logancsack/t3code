@@ -303,6 +303,7 @@ function itemActivities(
           class: item.failure.class,
           code: item.failure.code,
           retryable: item.failure.retryable,
+          ...(item.failure.resetAt ? { resetAt: item.failure.resetAt } : {}),
         },
         turnId: item.runId,
         createdAt: itemAt(item),
