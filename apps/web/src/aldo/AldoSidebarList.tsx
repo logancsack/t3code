@@ -2,6 +2,7 @@
 // directory hasn't listed the threads yet, and the way to archived ones.
 
 import { Link } from "@tanstack/react-router";
+import { T } from "gt-react";
 import { ArchiveIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
@@ -47,13 +48,15 @@ export function AldoSidebarThreadsError() {
       role="status"
       className="flex flex-col gap-2 px-2.5 py-3 text-xs text-sidebar-muted-foreground"
     >
-      <p>Some threads couldn’t load.</p>
+      <p>
+        <T>Some threads couldn’t load.</T>
+      </p>
       <button
         type="button"
         onClick={() => window.location.reload()}
         className="w-fit cursor-pointer rounded-md border border-sidebar-border px-3 py-2 hover:bg-sidebar-row-hover focus-visible:outline-2 focus-visible:outline-ring"
       >
-        Retry
+        <T>Retry</T>
       </button>
     </div>
   );
