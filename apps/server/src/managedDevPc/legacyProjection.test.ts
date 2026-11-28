@@ -46,6 +46,11 @@ const running = (overrides: Partial<OrchestrationV2ThreadShell> = {}) =>
   });
 
 describe("legacyThreadShell", () => {
+  it("keeps a native goal visible to cloud settlement, including after its turn ends", () => {
+    const goal = { objective: "Finish the release", status: "active" as const };
+    expect(shell({ goal }).goal).toEqual(goal);
+    expect(shell({ goal: { ...goal, status: "complete" } }).goal?.status).toBe("complete");
+  });
   it("says what a running thread is doing now, when the workspace tracks it", () => {
     expect(running()).not.toHaveProperty("currentWork");
     const plan = { step: "Run the tests", completedSteps: 1, totalSteps: 3 };
