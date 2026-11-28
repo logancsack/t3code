@@ -163,6 +163,7 @@ function layerProjectionStore(
       getRunProviderRecords: () => Effect.die("unused run provider read"),
       getRunCardRecords: () => Effect.die("unused run card read"),
       getThreadAttachmentIds: () => Effect.die("Unused attachment lookup"),
+      getSharedLaunchAttachmentIds: () => Effect.die("Unused attachment lookup"),
       searchThread: () => Effect.die("unused"),
       searchThreadStream: () => Stream.empty,
       getThreadHistoryPage: () => Effect.die("unused"),

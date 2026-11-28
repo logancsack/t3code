@@ -341,7 +341,8 @@ const make = Effect.gen(function* () {
     const instructions = yield* turnInstructions.supplied(
       snapshot.projection.runs.map((run) => run.id),
     );
-    const launchTasks = snapshot.projection.subagents.filter(
+    const { subagents } = yield* threads.getThreadRecords(threadId, ["subagents"]);
+    const launchTasks = subagents.filter(
       (task) =>
         task.origin === "app_owned" && task.createdBy === "user" && task.childThreadId !== null,
     );

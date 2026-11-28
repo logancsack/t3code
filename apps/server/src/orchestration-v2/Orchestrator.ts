@@ -9790,7 +9790,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command: Extract<OrchestrationV2Command, { readonly type: "delegated_task.request" }>,
       events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
       effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
-      launch?: { attachments: ReadonlyArray<ChatAttachment>; ordinal: number },
+      launch?: {
+        attachments: ReadonlyArray<ChatAttachment>;
+        ordinal: number;
+        waitForWorkspace: boolean;
+      },
     ) {
       const parentProjection = launch
         ? yield* getProjectionWithPendingEvents(command.parentThreadId, events)
@@ -10005,8 +10009,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         text: command.task,
         attachments: launch?.attachments ?? [],
         modelSelection: command.modelSelection,
-        dispatchMode:
-          command.workspaceStrategy === undefined
+        dispatchMode: launch?.waitForWorkspace
+          ? { type: "defer_start" }
+          : command.workspaceStrategy === undefined
             ? { type: "start_immediately" }
             : { type: "defer_start", workspaceStrategy: command.workspaceStrategy },
       } satisfies Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
@@ -12319,6 +12324,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command: Extract<OrchestrationV2Command, { readonly type: "prepared-run.release" }>,
       events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
       effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+      sharedWorkspace?: Pick<OrchestrationV2AppThread, "branch" | "worktreePath">,
     ) {
       const projection = yield* loadProjectionForCommand(
         command,
@@ -12334,8 +12340,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
       const now = yield* DateTime.now;
+      const thread = { ...projection.thread, ...sharedWorkspace };
       const resolvedRuntimePolicy = yield* runtimePolicy
-        .resolve({ thread: projection.thread, modelSelection: state.run.modelSelection })
+        .resolve({ thread, modelSelection: state.run.modelSelection })
         .pipe(mapDispatchError(command));
       const checkpointScope = yield* checkpointService
         .prepareRootRunScope({
@@ -12343,11 +12350,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           runId: state.run.id,
           rootNodeId: state.rootNode.id,
           providerThreadId: state.providerThread.id,
-          cwd: resolvedRuntimePolicy.cwd ?? projection.thread.worktreePath ?? process.cwd(),
+          cwd: resolvedRuntimePolicy.cwd ?? thread.worktreePath ?? process.cwd(),
           createdAt: now,
         })
         .pipe(mapDispatchError(command));
       const emitEvent = emit(events, command);
+      if (sharedWorkspace) {
+        yield* emitEvent({
+          type: "thread.metadata-updated",
+          threadId: thread.id,
+          occurredAt: now,
+          payload: { ...thread, updatedAt: now },
+        });
+      }
       yield* emitEvent({
         type: "checkpoint-scope.created",
         threadId: command.threadId,
@@ -12590,6 +12605,64 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         occurredAt: now,
         payload: { ...run, queueHeld: false },
       });
+    }
+  });
+
+  const settleInitialDelegatePreparation = Effect.fn(
+    "Orchestrator.settleInitialDelegatePreparation",
+  )(function* (
+    command: Extract<
+      OrchestrationV2Command,
+      { readonly type: "prepared-run.release" | "prepared-run.fail" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const parent = yield* loadProjectionForCommand(command, ["subagents"], {
+      subagentRunIds: [command.runId],
+    });
+    for (const task of parent.subagents) {
+      if (
+        task.origin !== "app_owned" ||
+        task.createdBy !== "user" ||
+        task.childThreadId === null ||
+        task.status !== "running"
+      )
+        continue;
+      const child = yield* projectionStore
+        .getThreadRecords(task.childThreadId, ["runs"], { runStatuses: ["preparing"] })
+        .pipe(mapDispatchError(command));
+      const run = child.runs.find(
+        (run) => run.ordinal === 1 && run.workspacePreparation === undefined,
+      );
+      if (run === undefined || child.thread.deletedAt !== null) continue;
+      const childCommand = { ...command, threadId: child.thread.id, runId: run.id };
+      if (childCommand.type === "prepared-run.release") {
+        yield* dispatchPreparedRunRelease(childCommand, events, effects, {
+          branch: parent.thread.branch,
+          worktreePath: parent.thread.worktreePath,
+        });
+      } else {
+        yield* dispatchPreparedRunFail(childCommand, events);
+        const at = yield* DateTime.now;
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "subagent.updated",
+          threadId: parent.thread.id,
+          runId: command.runId,
+          nodeId: task.id,
+          occurredAt: at,
+          payload: {
+            ...task,
+            status: "failed",
+            result: childCommand.failure.message,
+            completedAt: at,
+            updatedAt: at,
+          },
+        });
+      }
     }
   });
 
@@ -15473,7 +15546,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 },
                 events,
                 effects,
-                { attachments: initialMessage.attachments, ordinal: index + 1 },
+                {
+                  attachments: initialMessage.attachments,
+                  ordinal: index + 1,
+                  waitForWorkspace: initialMessage.dispatchMode?.type === "defer_start",
+                },
               );
             }
           }
@@ -15685,12 +15762,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "prepared-run.release":
         yield* dispatchPreparedRunRelease(command, events, effects);
+        yield* settleInitialDelegatePreparation(command, events, effects);
         break;
       case "prepared-run.progress":
         yield* dispatchPreparedRunProgress(command, events);
         break;
       case "prepared-run.fail":
         yield* dispatchPreparedRunFail(command, events);
+        yield* settleInitialDelegatePreparation(command, events, effects);
         break;
       case "prepared-run.retry":
         yield* dispatchPreparedRunRetry(command, events);

@@ -759,9 +759,13 @@ const make = Effect.gen(function* () {
   const assertDispatchTargetEnabled = (command: OrchestrationV2ServerCommand) => {
     switch (command.type) {
       case "thread.create":
+        if (command.initialDelegates === undefined) return Effect.void;
         return Effect.forEach(
-          command.initialDelegates ?? [],
-          ({ modelSelection }) =>
+          [
+            command.modelSelection,
+            ...command.initialDelegates.map(({ modelSelection }) => modelSelection),
+          ],
+          (modelSelection) =>
             assertProviderInstanceEnabled({
               projectId: command.projectId,
               commandId: command.commandId,
