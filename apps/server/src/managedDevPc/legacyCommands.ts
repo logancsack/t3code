@@ -8,6 +8,7 @@ import {
   ChatAttachmentId,
   CommandId,
   IsoDateTime,
+  InitialDelegates,
   MessageId,
   ModelSelection,
   PlanId,
@@ -48,6 +49,7 @@ const TurnStart = Schema.Struct({
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
+  initialDelegates: Schema.optional(InitialDelegates),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
   bootstrap: Schema.optional(

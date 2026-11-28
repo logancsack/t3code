@@ -6,6 +6,7 @@
  */
 import {
   isListedThreadLineage,
+  latestProviderTurnForAttempt,
   type OrchestrationProjectShell,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadProjection,
@@ -386,6 +387,7 @@ export function legacyThreadDetail(input: {
   const attemptRuns = new Map(projection.attempts.map((attempt) => [attempt.id, attempt.runId]));
 
   const activities: LegacyActivity[] = [];
+  const messagesById = new Map(projection.messages.map((message) => [message.id, message]));
   for (const run of projection.runs) {
     if (!inPage(run.id) || run.status === "queued") continue;
     // What this turn was started with, as the first model recorded when it reached the provider.
@@ -397,6 +399,16 @@ export function legacyThreadDetail(input: {
       payload: {
         requestId: run.userMessageId,
         modelSelection: run.modelSelection,
+        started: run.startedAt != null,
+        ...(run.userMessageId === null
+          ? {}
+          : {
+              collaborationOrigin: messagesById.get(run.userMessageId)?.delegatedCompletion
+                ?.parentRunId,
+            }),
+        executedModel:
+          latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)?.model ??
+          null,
         ...(input.instructions?.has(run.id)
           ? { instructions: input.instructions.get(run.id) }
           : {}),

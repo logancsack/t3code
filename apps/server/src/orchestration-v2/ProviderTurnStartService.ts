@@ -682,6 +682,45 @@ export const layer: Layer.Layer<
           });
         },
       );
+      if (run.ordinal === 1) {
+        const lineage = projection.thread.lineage;
+        const parentId =
+          lineage.relationshipToParent === "subagent" ? lineage.parentThreadId : null;
+        const group = yield* projectionStore.getThreadRecords(parentId ?? run.threadId, [
+          "subagents",
+          "runs",
+        ]);
+        const owner =
+          parentId === null
+            ? undefined
+            : group.subagents.find((task) => task.childThreadId === run.threadId);
+        const ownerRunId =
+          parentId === null ? run.id : owner?.createdBy === "user" ? owner.runId : null;
+        const otherFailed =
+          ownerRunId != null &&
+          ((parentId !== null &&
+            group.runs.some(
+              (candidate) => candidate.id === ownerRunId && candidate.status === "failed",
+            )) ||
+            group.subagents.some(
+              (task) =>
+                task.id !== owner?.id &&
+                task.runId === ownerRunId &&
+                task.origin === "app_owned" &&
+                task.createdBy === "user" &&
+                task.status === "failed",
+            ));
+        if (otherFailed) {
+          const message = "A required collaborator failed. This participant was not started.";
+          yield* settleStartFailure({
+            signal: "collaborator-failed",
+            title: message,
+            error: new Error(message),
+            message,
+          });
+          return;
+        }
+      }
       if (
         expandAssistantCitationsForProvider(providerMessage.text).length >
         PROVIDER_SEND_TURN_MAX_INPUT_CHARS

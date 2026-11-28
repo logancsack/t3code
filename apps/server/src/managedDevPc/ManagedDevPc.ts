@@ -5,6 +5,7 @@
  */
 import {
   ChatAttachmentId,
+  latestProviderTurnForAttempt,
   CommandId,
   type ChatAttachment,
   type OrchestrationV2Command,
@@ -28,6 +29,7 @@ import {
   PENDING_ATTACHMENT_THREAD_SEGMENT,
   parseThreadSegmentFromAttachmentId,
 } from "../attachmentStore.ts";
+import { registeredThreadToolNames } from "../mcp/McpHttpServer.ts";
 import * as ServerConfig from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
@@ -208,7 +210,16 @@ export interface ManagedDevPcThreadQuery {
 }
 
 type LegacyShell = ReturnType<typeof legacyShellSnapshot>;
-type LegacyThread = ReturnType<typeof legacyThreadDetail>;
+type LegacyThread = ReturnType<typeof legacyThreadDetail> & {
+  readonly participants: ReadonlyArray<{
+    readonly model: string | null;
+    readonly status: string;
+    readonly contributed: boolean;
+    readonly completedAt: string | null;
+    readonly dispatchedModel: string | null;
+    readonly executedModel: string | null;
+  }>;
+};
 
 export class ManagedDevPc extends Context.Service<
   ManagedDevPc,
@@ -234,6 +245,8 @@ export class ManagedDevPc extends Context.Service<
       readonly providers: ReturnType<typeof projectManagedProviders>;
       readonly threadProviderContinuation: true;
       readonly threadModelHandoff: true;
+      readonly initialDelegates: true;
+      readonly threadTools: readonly string[];
     }>;
     readonly dispatch: (
       command: LegacyCommand,
@@ -328,10 +341,41 @@ const make = Effect.gen(function* () {
     const instructions = yield* turnInstructions.supplied(
       snapshot.projection.runs.map((run) => run.id),
     );
+    const launchTasks = snapshot.projection.subagents.filter(
+      (task) =>
+        task.origin === "app_owned" && task.createdBy === "user" && task.childThreadId !== null,
+    );
+    const participants = yield* Effect.forEach(
+      launchTasks,
+      (task) =>
+        threads.getThreadRecords(task.childThreadId!, ["runs", "providerTurns"]).pipe(
+          Effect.map((child) => {
+            const first = child.runs.find((run) => run.ordinal === 1);
+            const result = child.runs.reduce<typeof first>(
+              (last, run) => (!last || run.ordinal > last.ordinal ? run : last),
+              undefined,
+            );
+            return {
+              model: task.modelSelection?.model ?? task.model,
+              status: task.status,
+              contributed: task.status === "completed" && Boolean(task.result?.trim()),
+              completedAt: task.completedAt === null ? null : DateTime.formatIso(task.completedAt),
+              dispatchedModel: first?.startedAt == null ? null : first.modelSelection.model,
+              executedModel:
+                latestProviderTurnForAttempt(child.providerTurns, result?.activeAttemptId ?? null)
+                  ?.model ?? null,
+            };
+          }),
+        ),
+      { concurrency: 3 },
+    );
     if (query.turnLimit === undefined) {
       return Option.some({
         snapshotSequence: snapshot.snapshotSequence,
-        thread: legacyThreadDetail({ shell, projection: snapshot.projection, instructions }),
+        thread: {
+          ...legacyThreadDetail({ shell, projection: snapshot.projection, instructions }),
+          participants,
+        },
       });
     }
     const loaded = new Set(snapshot.projection.turnItems.map((item) => item.runId));
@@ -346,12 +390,15 @@ const make = Effect.gen(function* () {
     });
     return Option.some({
       snapshotSequence: snapshot.snapshotSequence,
-      thread: legacyThreadDetail({
-        shell,
-        projection: snapshot.projection,
-        runIds,
-        instructions,
-      }),
+      thread: {
+        ...legacyThreadDetail({
+          shell,
+          projection: snapshot.projection,
+          runIds,
+          instructions,
+        }),
+        participants,
+      },
       page,
     });
   }, Effect.mapError(unavailable));
@@ -361,6 +408,8 @@ const make = Effect.gen(function* () {
       providers: projectManagedProviders(list),
       threadProviderContinuation: true as const,
       threadModelHandoff: true as const,
+      initialDelegates: true as const,
+      threadTools: registeredThreadToolNames(),
     })),
   );
 
@@ -415,6 +464,10 @@ const make = Effect.gen(function* () {
 
   const startTurn = Effect.fn("ManagedDevPc.startTurn")(function* (command: LegacyTurnStart) {
     const shell = yield* threads.getThreadShell(command.threadId);
+    if (command.initialDelegates !== undefined && shell !== null) {
+      if (yield* threads.hasReceipt(command.commandId)) return { sequence: 0 };
+      return yield* refuse("A collaboration must start in a new thread.");
+    }
     const attachments = yield* prepareAttachments(command);
     const create = command.bootstrap?.createThread;
     if (shell === null || shell.deletedAt !== null) {
@@ -440,6 +493,9 @@ const make = Effect.gen(function* () {
           text: command.message.text,
           attachments,
         },
+        ...(command.initialDelegates === undefined
+          ? {}
+          : { initialDelegates: command.initialDelegates }),
         createdBy: "user",
         creationSource: "web",
       }).pipe(Effect.provide(intakeContext));

@@ -9790,20 +9790,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command: Extract<OrchestrationV2Command, { readonly type: "delegated_task.request" }>,
       events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
       effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+      launch?: { attachments: ReadonlyArray<ChatAttachment>; ordinal: number },
     ) {
-      const parentProjection = yield* projectionStore
-        .getRunProviderRecords(command.parentThreadId, command.parentRunId, command.parentNodeId)
-        .pipe(
-          Effect.mapError(
-            (cause) => new OrchestratorProjectionError({ threadId: command.parentThreadId, cause }),
-          ),
-        );
+      const parentProjection = launch
+        ? yield* getProjectionWithPendingEvents(command.parentThreadId, events)
+        : yield* projectionStore
+            .getRunProviderRecords(
+              command.parentThreadId,
+              command.parentRunId,
+              command.parentNodeId,
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestratorProjectionError({ threadId: command.parentThreadId, cause }),
+              ),
+            );
       const parentRun = parentProjection.runs.find(
         (candidate) => candidate.id === command.parentRunId,
       );
       if (
         parentRun === undefined ||
-        !(isActiveRun(parentRun) || (yield* backgroundSubagentOutlivesRun(parentRun)))
+        !(launch || isActiveRun(parentRun) || (yield* backgroundSubagentOutlivesRun(parentRun)))
       ) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
@@ -9811,7 +9819,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: `Parent run ${command.parentRunId} is not active.`,
         });
       }
-      if (yield* stopReachedRun(command, command.parentThreadId, parentRun.id)) {
+      if (!launch && (yield* stopReachedRun(command, command.parentThreadId, parentRun.id))) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
@@ -9861,7 +9869,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         parentTitle: parentProjection.thread.title,
         prompt: command.task,
         ...(command.title === undefined ? {} : { title: command.title }),
-        ordinal: (yield* subagentCount(command.parentThreadId)) + 1,
+        ordinal: launch?.ordinal ?? (yield* subagentCount(command.parentThreadId)) + 1,
       });
       const childThread: OrchestrationV2AppThread = {
         ...makeSubagentChildThread({
@@ -9995,7 +10003,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         senderThreadId: command.parentThreadId,
         messageId: childMessageId,
         text: command.task,
-        attachments: [],
+        attachments: launch?.attachments ?? [],
         modelSelection: command.modelSelection,
         dispatchMode:
           command.workspaceStrategy === undefined
@@ -15437,6 +15445,38 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             events,
             effects,
           );
+          if (command.initialDelegates) {
+            const parent = yield* getProjectionWithPendingEvents(command.threadId, events);
+            const run = parent.runs[0];
+            if (!run?.rootNodeId) {
+              return yield* new OrchestratorDispatchError({
+                commandId: command.commandId,
+                commandType: command.type,
+                cause: "The collaboration has no parent run.",
+              });
+            }
+            for (const [index, delegate] of command.initialDelegates.entries()) {
+              yield* dispatchDelegatedTaskRequest(
+                {
+                  type: "delegated_task.request",
+                  commandId: CommandId.make(`${command.commandId}:participant:${index}`),
+                  createdBy: command.createdBy,
+                  creationSource: command.creationSource,
+                  parentThreadId: command.threadId,
+                  parentRunId: run.id,
+                  parentNodeId: run.rootNodeId,
+                  modelSelection: delegate.modelSelection,
+                  task: delegate.task,
+                  runtimeMode: command.runtimeMode,
+                  interactionMode: command.interactionMode,
+                  completionWake: "always",
+                },
+                events,
+                effects,
+                { attachments: initialMessage.attachments, ordinal: index + 1 },
+              );
+            }
+          }
         }
         break;
       }
