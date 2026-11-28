@@ -391,6 +391,7 @@ export function AldoConversationPage(props: {
     waiting === 0 &&
     finished === 0 &&
     dismissed === 0 &&
+    !home?.upcoming?.length &&
     !unread &&
     props.supported !== false;
   useEffect(() => {

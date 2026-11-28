@@ -25,6 +25,13 @@ const quiet = {
 const job = { title: "Close September", browsing: null };
 
 describe("Aldo presence header", () => {
+  it("shows scheduled work even when nobody is running or waiting for the user", () => {
+    expect(presenceLine({ ...quiet, upcoming: 1 })).toEqual({
+      text: "1 scheduled",
+      state: "idle",
+      dot: null,
+    });
+  });
   it("keeps needs-you and working counts together while showing the attention state", () => {
     expect(presenceLine({ ...quiet, waiting: 2, working: [job] })).toEqual({
       text: "2 need you · 1 working",

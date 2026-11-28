@@ -374,6 +374,7 @@ export function presenceLine(input: {
   readonly waiting: number;
   /** Moved since they last looked. */
   readonly moved: number;
+  readonly upcoming?: number;
   /** The read is recent (readIsFresh). */
   readonly fresh: boolean;
   /** Nothing's been read: what's waiting and working isn't known. */
@@ -423,6 +424,7 @@ export function presenceLine(input: {
   if (live === 1 && first)
     return { text: first.browsing ? `On ${first.browsing.site}` : first.title, state, dot };
   if (stuck > 0) return { text: `${stuck} with no word`, state, dot };
+  if (input.upcoming) return { text: `${input.upcoming} scheduled`, state, dot };
   return input.fresh
     ? { text: "All caught up", state: "idle", dot: null }
     : { text: "Checking…", state: "idle", dot: null, dim: true };
