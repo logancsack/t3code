@@ -5,7 +5,7 @@
 // titles and the helpers' models.
 
 import { BadgeCheckIcon, BotIcon } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { lazy, Suspense, useSyncExternalStore } from "react";
 
 import { ProjectDefaultsSettings } from "../components/settings/ProjectDefaultsSettings";
 import { ThreadsSettingsPanel } from "../components/settings/SettingsPanels";
@@ -23,6 +23,12 @@ import { AldoSubagentsPanel } from "./AldoSubagentsPanel";
 import { aldoOffersItsModels, subscribeAldoEnvironments } from "./directory";
 import { planRunning } from "./home.logic";
 import { useAldoHomeRead } from "./homeFeed";
+
+const AldoAgentConnections = lazy(() =>
+  import("./AldoAgentConnections").then(({ AldoAgentConnections }) => ({
+    default: AldoAgentConnections,
+  })),
+);
 
 /** The rows under Advanced: a search for one unfolds it. */
 const ADVANCED_IDS: ReadonlySet<string> = new Set([
@@ -72,6 +78,9 @@ export function AldoAgentsPage() {
           ) : null
         }
       />
+      <Suspense>
+        <AldoAgentConnections />
+      </Suspense>
       <SettingsSection
         id="project-defaults"
         title="New threads"

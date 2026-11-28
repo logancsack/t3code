@@ -21,6 +21,7 @@ export type AldoPolicyRuleId =
   | "reviews"
   | "spendThreshold"
   | "paidFallback"
+  | "paidConnectedModels"
   | "onProviderLimit"
   | "contextBudget"
   | "mediaRouting"
@@ -95,6 +96,16 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
     read: (p) => p.modelRouting?.paidFallback,
     set: (v) =>
       v === "never" || v === "authorized" ? { modelRouting: { paidFallback: v } } : null,
+  },
+  paidConnectedModels: {
+    clear: ["paidConnectedModels"],
+    fallback: "never",
+    options: [
+      { value: "never", label: "Never" },
+      { value: "authorized", label: "Allow" },
+    ],
+    read: (p) => p.paidConnectedModels,
+    set: (v) => (v === "never" || v === "authorized" ? { paidConnectedModels: v } : null),
   },
   onProviderLimit: {
     clear: ["onProviderLimit"],

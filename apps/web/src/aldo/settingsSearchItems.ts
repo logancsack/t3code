@@ -291,6 +291,13 @@ export const ALDO_SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-paid-connected-models",
+    title: "Allow paid models in Automatic",
+    to: "/settings/agents",
+    searchTerms: ["paid model automatic routing fallback opencode api key"],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-merge",
     title: "Merge pull requests",
     to: "/settings/permissions",

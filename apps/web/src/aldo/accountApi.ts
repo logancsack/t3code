@@ -30,6 +30,13 @@ export interface AldoAccount {
   readonly plan: string | null;
 }
 
+export type AldoAgentAccounts = {
+  opencode?: AldoAccount & {
+    methods: ReadonlyArray<{ method: string; kind: string; connected: boolean }>;
+  };
+  antigravity?: AldoAccount & { instanceId: string | null };
+};
+
 export async function listAldoRepositories(): Promise<
   ReadonlyArray<SourceControlRepositorySummary>
 > {
@@ -45,10 +52,11 @@ export async function listAldoRepositories(): Promise<
 let reportedAccounts: ReadonlySet<string> | null = null;
 
 export async function fetchAldoAccounts(): Promise<
-  Record<AldoAccountKind | AldoGitHostKind, AldoAccount>
+  Record<AldoAccountKind | AldoGitHostKind, AldoAccount> & AldoAgentAccounts
 > {
-  const accounts =
-    await api<Record<AldoAccountKind | AldoGitHostKind, AldoAccount>>("/api/connections");
+  const accounts = await api<
+    Record<AldoAccountKind | AldoGitHostKind, AldoAccount> & AldoAgentAccounts
+  >("/api/connections");
   reportedAccounts = new Set(Object.keys(accounts));
   return accounts;
 }
@@ -67,9 +75,9 @@ export async function connectAldoGitHost(
 }
 
 export async function disconnectAldoAccount(
-  kind: AldoAccountKind | AldoGitHostKind,
+  kind: AldoAccountKind | AldoGitHostKind | "antigravity" | `opencode:${string}`,
 ): Promise<void> {
-  await api(`/api/connections/${kind}`, { method: "DELETE" });
+  await api(`/api/connections/${encodeURIComponent(kind)}`, { method: "DELETE" });
 }
 
 export const aldoAuthConnectors = {

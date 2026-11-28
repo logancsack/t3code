@@ -1,7 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { EllipsisIcon } from "lucide-react";
-import { useState, type ReactNode, type Ref } from "react";
+import { lazy, Suspense, useState, type ReactNode, type Ref } from "react";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "../lib/utils";
@@ -19,6 +19,13 @@ import type { AldoPickedPlace } from "./AldoPlaceTile";
 import { useAldoDeveloperTools } from "./developerTools";
 import { aldoHandoffFor } from "./handoffs.logic";
 import { useAldoHomeRead } from "./homeFeed";
+import { useEnvironmentPresentation } from "../state/presentation";
+
+const AldoLegacyContinuation = lazy(() =>
+  import("./AldoLegacyContinuation").then(({ AldoLegacyContinuation }) => ({
+    default: AldoLegacyContinuation,
+  })),
+);
 
 interface ThreadProps {
   readonly environmentId: EnvironmentId;
@@ -138,6 +145,10 @@ export function AldoThreadHeader({
   const phone = useIsMobile();
   const developer = useAldoDeveloperTools();
   const { home } = useAldoHomeRead();
+  const { presentation } = useEnvironmentPresentation(props.environmentId);
+  const descriptor = presentation?.serverConfig?.environment;
+  const legacy =
+    isServerThread && descriptor && (descriptor.orchestrationProtocolVersion ?? 1) === 1;
   const takeover = aldoHandoffFor(home, {
     environmentId: props.environmentId,
     threadId: props.threadId,
@@ -190,6 +201,11 @@ export function AldoThreadHeader({
           />
         ) : null}
         {controls.gpu}
+        {legacy ? (
+          <Suspense>
+            <AldoLegacyContinuation environmentId={props.environmentId} threadId={props.threadId} />
+          </Suspense>
+        ) : null}
         {controls.preview}
         {controls.tools}
       </div>

@@ -6,6 +6,7 @@ import {
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
+  type ServerProviderSubProvider,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { resolveSelectableModel } from "@t3tools/shared/model";
@@ -72,6 +73,7 @@ import {
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
 import { hasRuntimeModelCatalog } from "../../providerModels";
+import { isAldoCloud } from "../../aldo/api";
 
 type ModelPickerItem = {
   slug: string;
@@ -383,6 +385,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const activeEntry = props.instanceEntries.find(
     (entry) => entry.instanceId === props.activeInstanceId,
   );
+  const openCodeModelGroup = (driver: ProviderDriverKind | undefined, slug: string) => {
+    if (!isAldoCloud || driver !== "opencode") return undefined;
+    return slug.startsWith("aldo/") ? gt("Aldo’s models") : "OpenCode";
+  };
   const activeModel = resolveModelPickerSelectedModel({
     driverKind: activeEntry?.driverKind,
     model: props.model,
@@ -467,12 +473,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ),
   );
   // The thread's backend opens expanded, so its models show without a click.
+  const activeGroup =
+    openCodeModelGroup(activeEntry?.driverKind, activeModelSlug) ?? activeModel?.subProvider;
   const [expandedSubProviderKeys, setExpandedSubProviderKeys] = useState(
     () =>
       new Set<string>(
-        activeModel?.subProvider
-          ? [modelPickerSubProviderSectionKey(props.activeInstanceId, activeModel.subProvider)]
-          : [],
+        activeGroup ? [modelPickerSubProviderSectionKey(props.activeInstanceId, activeGroup)] : [],
       ),
   );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -597,17 +603,19 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           continue;
         }
         seenKeys.add(key);
+        const group = openCodeModelGroup(entry.driverKind, model.slug);
+        const subProvider = group ?? model.subProvider;
         out.push({
           slug: model.slug,
           name: model.name,
           ...(model.shortName ? { shortName: model.shortName } : {}),
-          ...(model.subProvider ? { subProvider: model.subProvider } : {}),
+          ...(subProvider ? { subProvider } : {}),
           ...(model.badge ? { badge: model.badge } : {}),
           ...(model.isLegacy ? { isLegacy: true } : {}),
           ...(model.isUnavailable ? { isUnavailable: true } : {}),
           instanceId,
           driverKind: entry.driverKind,
-          instanceDisplayName: entry.displayName,
+          instanceDisplayName: group ?? entry.displayName,
           ...(entry.accentColor ? { instanceAccentColor: entry.accentColor } : {}),
           ...(entry.acpRegistryAgentId ? { acpRegistryAgentId: entry.acpRegistryAgentId } : {}),
           ...(entry.acpRegistryIconUrl ? { acpRegistryIconUrl: entry.acpRegistryIconUrl } : {}),
@@ -621,11 +629,21 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   })();
 
   const subProvidersByInstance = new Map(
-    instanceEntries.flatMap((entry) =>
-      entry.snapshot.subProviders?.length
+    instanceEntries.flatMap<
+      readonly [ProviderInstanceId, ReadonlyArray<ServerProviderSubProvider>]
+    >((entry) => {
+      if (isAldoCloud && entry.driverKind === "opencode") {
+        const groups = new Set(
+          flatModels
+            .filter((model) => model.instanceId === entry.instanceId)
+            .map((model) => model.instanceDisplayName),
+        );
+        return [[entry.instanceId, [...groups].map((name) => ({ name }))] as const];
+      }
+      return entry.snapshot.subProviders?.length
         ? [[entry.instanceId, entry.snapshot.subProviders] as const]
-        : [],
-    ),
+        : [];
+    }),
   );
   const isLocked = lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;

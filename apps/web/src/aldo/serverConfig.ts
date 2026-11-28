@@ -25,11 +25,12 @@ type EncodedConfig = {
 const encodeServerConfig = Schema.encodeUnknownSync(ServerConfig);
 
 /** Which Aldo sign-in each provider driver runs on. */
-const ACCOUNT_FOR_DRIVER: Record<string, "claude" | "codex" | "grok" | "muse"> = {
+const ACCOUNT_FOR_DRIVER: Record<string, "claude" | "codex" | "grok" | "muse" | "antigravity"> = {
   claudeAgent: "claude",
   codex: "codex",
   grok: "grok",
   muse: "muse",
+  antigravity: "antigravity",
 };
 
 let latest: EncodedConfig | null = null;
@@ -169,24 +170,48 @@ export async function aldoServerConfigTemplate(): Promise<EncodedConfig | null> 
     loadAldoMachineSettings(),
   ]);
   const settings = { ...(base.settings as Record<string, unknown> | undefined), ...kept };
-  const providers = base.providers.map((provider) => {
-    const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
-    const auth = (provider.auth ?? {}) as Record<string, unknown>;
-    // An Aldo that doesn't keep this sign-in (an older one, for Muse Code) leaves it to the machine.
-    if (!account || !accounts || !(account in accounts)) return provider;
-    if (accounts[account]?.connected === true) {
-      if (auth.status === "authenticated") return provider;
-      const { message: _message, ...rest } = provider;
-      return { ...rest, status: "ready", auth: { ...auth, status: "authenticated" } };
-    }
-    if (auth.status !== "authenticated") return provider;
-    return {
-      ...provider,
-      status: "error",
-      auth: { status: "unauthenticated" },
-      message: "Not signed in. Connect it in Settings → Models.",
-    };
-  });
+  const providers = base.providers
+    .filter((provider) => {
+      const id = String(provider.instanceId);
+      return (
+        !id.startsWith("antigravity-aldo-") ||
+        !accounts?.antigravity ||
+        id === accounts.antigravity.instanceId
+      );
+    })
+    .map((provider) => {
+      if (provider.driver === "opencode" && accounts?.opencode && Array.isArray(provider.models)) {
+        const kinds = new Set(
+          accounts.opencode.methods
+            .filter((method) => method.connected)
+            .map((method) => method.kind),
+        );
+        const kept = provider.models.filter((model) => {
+          const prefix = String(model.slug).split("/", 1)[0];
+          const known = accounts.opencode?.methods.some(
+            (method) => method.kind === `opencode:${prefix}`,
+          );
+          return !known || kinds.has(`opencode:${prefix}`);
+        });
+        return { ...provider, models: kept };
+      }
+      const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
+      const auth = (provider.auth ?? {}) as Record<string, unknown>;
+      // An Aldo that doesn't keep this sign-in (an older one, for Muse Code) leaves it to the machine.
+      if (!account || !accounts || !(account in accounts)) return provider;
+      if (accounts[account]?.connected === true) {
+        if (auth.status === "authenticated") return provider;
+        const { message: _message, ...rest } = provider;
+        return { ...rest, status: "ready", auth: { ...auth, status: "authenticated" } };
+      }
+      if (auth.status !== "authenticated") return provider;
+      return {
+        ...provider,
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "Not signed in. Connect it in Settings → Models.",
+      };
+    });
   return { ...base, providers, settings };
 }
 

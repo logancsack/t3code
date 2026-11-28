@@ -11,6 +11,7 @@ export const AuthConnectorKind = Schema.Literals([
   "muse",
   "prime-agent",
   "opencode",
+  "antigravity",
   "github",
   "gitlab",
   "azure-devops",
@@ -34,6 +35,7 @@ export const AuthConnectorMethod = Schema.Literals([
   "amazon-bedrock",
   "google-vertex",
   "opencode-api-key",
+  "opencode-go-api-key",
   "openrouter-api-key",
 ]);
 export type AuthConnectorMethod = typeof AuthConnectorMethod.Type;
