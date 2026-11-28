@@ -37,8 +37,8 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
 function toastFailure(result: AldoAppResult) {
   toastManager.add({
     type: "error",
-    title: "Couldn't connect the app",
-    description: result.message ?? "The sign-in didn't finish. Try again.",
+    title: "Couldn’t connect the app",
+    description: result.message ?? "The sign-in didn’t finish. Try again.",
   });
 }
 
@@ -210,8 +210,8 @@ export function AldoConnectorAddress(props: { readonly searched?: string }) {
         </p>
         <p className="text-muted-foreground text-xs">
           {searched
-            ? "If it gives you a connector address (an MCP server’s, often ending in /mcp), paste it here and your agents can use it."
-            : "Any app with a connector address (an MCP server’s, often ending in /mcp)."}
+            ? "If it provides a connector web address (often ending in /mcp), paste it here and your agents can use it."
+            : "Paste any app’s connector web address (often ending in /mcp)."}
         </p>
       </div>
       <form

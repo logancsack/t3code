@@ -80,8 +80,8 @@ function fullView(): void {
   setAldoSimpleMode(false);
   toastManager.add({
     type: "info",
-    title: "Simple mode is off",
-    description: "Turn it on again from your account, at the foot of the sidebar.",
+    title: "Switched to Full view",
+    description: "Switch back to Simple view anytime from your account menu or Preferences.",
   });
 }
 

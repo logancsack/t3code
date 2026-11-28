@@ -1,14 +1,13 @@
-// Settings → Models: what the user's agents run on. Aldo's own models (where
-// its plan includes them) and the AI subscriptions they sign in with, what a
-// new thread starts on (and what happens when a subscription runs out), and,
-// folded away, how long a conversation grows, the model that writes thread
-// titles and the helpers' models.
+// Settings → Models: Aldo's included models, AI subscriptions (Claude, ChatGPT,
+// Grok, Muse Code, Google Antigravity), API keys (OpenCode + arbitrary providers),
+// default model for new threads, all limit/paid-overflow rules, and folded Advanced
+// (conversation length and helper models).
 
-import { BadgeCheckIcon, BotIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { BadgeCheckIcon, CpuIcon } from "lucide-react";
 import { lazy, Suspense, useSyncExternalStore } from "react";
 
 import { ProjectDefaultsSettings } from "../components/settings/ProjectDefaultsSettings";
-import { ThreadsSettingsPanel } from "../components/settings/SettingsPanels";
 import {
   SettingsPageContainer,
   SettingsRow,
@@ -23,25 +22,26 @@ import { AldoSubagentsPanel } from "./AldoSubagentsPanel";
 import { aldoOffersItsModels, subscribeAldoEnvironments } from "./directory";
 import { planRunning } from "./home.logic";
 import { useAldoHomeRead } from "./homeFeed";
+import { useAldoAccounts } from "./useAldoAccounts";
 
 const AldoAgentConnections = lazy(() =>
   import("./AldoAgentConnections").then(({ AldoAgentConnections }) => ({
     default: AldoAgentConnections,
   })),
 );
+const AldoGoogleAntigravityRow = lazy(() =>
+  import("./AldoAgentConnections").then(({ AldoGoogleAntigravityRow }) => ({
+    default: AldoGoogleAntigravityRow,
+  })),
+);
 
 /** The rows under Advanced: a search for one unfolds it. */
-const ADVANCED_IDS: ReadonlySet<string> = new Set([
-  "aldo-subagents",
-  "aldo-context-budget",
-  "text-generation-model",
-]);
+const ADVANCED_IDS: ReadonlySet<string> = new Set(["aldo-subagents", "aldo-context-budget"]);
 const opensAdvanced = (targetId: string) => ADVANCED_IDS.has(targetId);
 
 export function AldoAgentsPage() {
   const policy = useAldoPolicy();
-  // Where agents already run without one, a subscription is optional (Home no longer asks for it):
-  // on Aldo's models while the plan is active. Without one, they need a plan or a subscription.
+  const { accounts } = useAldoAccounts();
   const aldoModels = useSyncExternalStore(
     subscribeAldoEnvironments,
     aldoOffersItsModels,
@@ -55,7 +55,7 @@ export function AldoAgentsPage() {
     <SettingsPageContainer>
       <AldoAccountsPanel
         id="aldo-subscriptions"
-        title="Subscriptions"
+        title="AI subscriptions"
         icon={<BadgeCheckIcon className="size-4" />}
         kinds={["claude", "codex", "grok", "muse"]}
         before={
@@ -71,11 +71,16 @@ export function AldoAgentsPage() {
               }
               description={
                 included
-                  ? "Agents run on them unless you connect a subscription of yours below."
-                  : "Agents run on them while your plan is active, or on a subscription of yours below."
+                  ? "Agents run on these by default unless you connect a subscription below."
+                  : "Agents run on these while your plan is active, or on a subscription you connect below."
               }
             />
           ) : null
+        }
+        after={
+          <Suspense>
+            <AldoGoogleAntigravityRow />
+          </Suspense>
         }
       />
       <Suspense>
@@ -83,20 +88,45 @@ export function AldoAgentsPage() {
       </Suspense>
       <SettingsSection
         id="project-defaults"
-        title="New threads"
-        icon={<BotIcon className="size-4" />}
+        title="New threads and limits"
+        icon={<CpuIcon className="size-4" />}
       >
         <ProjectDefaultsSettings category="general" aldoPart="model" />
         <AldoPolicyRuleRow
           rule="onProviderLimit"
           setting="aldo-provider-limit"
           policy={policy}
-          description="Ask me: the thread waits and tells you. Switch: it carries on at once on another model with room. Wait: it picks up when the limit resets."
+          description="What happens if your active subscription hits its usage limit mid-task: switch automatically to another available model, or pause until the limit resets."
         />
+        <AldoPolicyRuleRow
+          rule="paidFallback"
+          setting="aldo-paid-fallback"
+          policy={policy}
+          description="When your subscriptions run out, keep threads moving using extra Aldo credits, Claude extra usage or ChatGPT credits."
+        />
+        {accounts?.opencode?.connected ? (
+          <AldoPolicyRuleRow
+            rule="paidConnectedModels"
+            setting="aldo-paid-connected-models"
+            policy={policy}
+            description="Let Automatic choose models that can bill your connected OpenCode or API accounts, including when another model hits a limit."
+          />
+        ) : null}
+        <p className="px-3 py-2.5 text-muted-foreground text-xs sm:px-4">
+          Extra Aldo credits follow your monthly cap in{" "}
+          <Link
+            to="/settings/account"
+            hash="aldo-extra-usage-cap"
+            className="text-foreground underline underline-offset-2 hover:text-primary"
+          >
+            Account & billing
+          </Link>
+          .
+        </p>
       </SettingsSection>
       <AldoSettingsFold
         title="Advanced"
-        hint="Conversation length, thread titles, helper models"
+        hint="Conversation length and helper models"
         opensFor={opensAdvanced}
       >
         <SettingsSection title="Advanced" hideTitle>
@@ -104,9 +134,8 @@ export function AldoAgentsPage() {
             rule="contextBudget"
             setting="aldo-context-budget"
             policy={policy}
-            description="How much a thread keeps in full before its agent summarizes the oldest part, keeping the goal, decisions and open work. Longer keeps more detail, and uses more of your plan each turn."
+            description="How much a thread keeps in full before its agent summarizes earlier work while preserving the goal, decisions and open tasks."
           />
-          <ThreadsSettingsPanel aldoPart="text-generation" />
           <AldoSubagentsPanel bare />
         </SettingsSection>
       </AldoSettingsFold>

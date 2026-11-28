@@ -313,6 +313,21 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
         void router.navigate({ to: "/settings" });
     }),
   ];
+  if (isAldoCloud) {
+    const onSettingsShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.key !== ",") return;
+      if (isKeybindingCaptureTarget(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!/^\/settings(\/|$)/.test(router.state.location.pathname)) {
+        void router.navigate({ to: "/settings" });
+      }
+    };
+    window.addEventListener("keydown", onSettingsShortcut);
+    disposers.push(() => window.removeEventListener("keydown", onSettingsShortcut));
+  }
   return () => {
     for (const dispose of disposers) dispose();
   };
@@ -513,7 +528,13 @@ export function AppSidebarLayout({
         ) : null}
         {children}
         <BackgroundThreadAnnouncer />
-        <SidebarControl showSidebar={showSidebar && aldoSimpleRail !== "rail"} />
+        <SidebarControl
+          showSidebar={
+            showSidebar &&
+            aldoSimpleRail !== "rail" &&
+            !(aldoSimpleRail === "sheet" && pathname === "/")
+          }
+        />
         {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

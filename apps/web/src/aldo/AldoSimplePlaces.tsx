@@ -14,6 +14,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { ApprovalsSection } from "./AldoApprovals";
+import { AldoMobileAccountButton } from "./AldoAccountMenu";
 import { AldoPlanCard } from "./AldoPlanCard";
 import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip, Section } from "./AldoHomeBoard";
@@ -82,9 +83,8 @@ function PlacePage(props: {
             props.tabs ? "pb-6" : "pb-[max(2rem,env(safe-area-inset-bottom))]",
           )}
         >
-          <header className="flex min-h-8 flex-wrap items-center gap-2">
-            {/* Clear of the sidebar's button, which floats at the top left on a phone; what to do is on a row of its own under it. */}
-            <h1 className={cn("font-semibold text-lg", props.tabs && "ps-11 leading-10")}>
+          <header className="flex min-h-11 flex-wrap items-center gap-2">
+            <h1 className="font-semibold text-lg leading-10">
               {props.title}
               {props.count ? (
                 <span className="ms-2 font-normal text-muted-foreground text-sm">
@@ -92,6 +92,7 @@ function PlacePage(props: {
                 </span>
               ) : null}
             </h1>
+            {props.tabs ? <AldoMobileAccountButton className="ms-auto -me-1.5 md:hidden" /> : null}
             {props.action ? (
               <span className={props.tabs ? "w-full" : "ms-auto"}>{props.action}</span>
             ) : null}

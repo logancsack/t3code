@@ -134,12 +134,20 @@ export function AldoPolicySelect(props: {
 /** A list under a rule: one line each, a name and its own control. */
 export function AldoPolicySubList(props: {
   readonly heading?: string;
+  readonly bordered?: boolean;
   readonly children: ReactNode;
 }) {
+  const showBorder = props.bordered ?? props.heading !== undefined;
   return (
-    <div className="space-y-1.5 pt-1 pb-2.5">
+    <div className="space-y-1.5 pt-2 pb-2.5">
       {props.heading ? <p className="text-muted-foreground text-xs">{props.heading}</p> : null}
-      <div className="flex flex-col gap-1.5 border-border/60 border-s ps-3">{props.children}</div>
+      <div
+        className={
+          showBorder ? "flex flex-col gap-2 border-border/60 border-s ps-3" : "flex flex-col gap-2"
+        }
+      >
+        {props.children}
+      </div>
     </div>
   );
 }
@@ -165,6 +173,7 @@ export function AldoPolicyRuleRow(props: {
   readonly setting: SettingsSearchItemId;
   readonly description: ReactNode;
   readonly policy: AldoPolicyState;
+  readonly selectClassName?: string;
 }) {
   const { view, saving, edit } = props.policy;
   const row = searchableSetting(props.setting);
@@ -189,6 +198,7 @@ export function AldoPolicyRuleRow(props: {
           value={value}
           options={view ? aldoRuleOptions(props.rule, value, { defaults: view.defaults }) : []}
           label={row.title}
+          {...(props.selectClassName ? { className: props.selectClassName } : {})}
           {...(view ? {} : { placeholder: "…" })}
           disabled={!view || saving}
           onChange={(next) => change(next)}

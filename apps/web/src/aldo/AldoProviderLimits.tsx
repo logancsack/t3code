@@ -82,7 +82,13 @@ export function useAldoProviderLimits() {
   return { state, refresh };
 }
 
-export function AldoProviderLimitsSection({ state }: { readonly state: AldoProviderLimitsState }) {
+export function AldoProviderLimitsSection({
+  state,
+  hideHeading = false,
+}: {
+  readonly state: AldoProviderLimitsState;
+  readonly hideHeading?: boolean;
+}) {
   const minute = useNowMinute();
   if (state.status === "unavailable") return null;
   const now = Date.parse(`${minute}:00Z`);
@@ -90,17 +96,30 @@ export function AldoProviderLimitsSection({ state }: { readonly state: AldoProvi
   const checked = providers ? limitsCheckedCopy(providers, now) : null;
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="aldo-plan-limits-heading">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 id="aldo-plan-limits-heading" className="text-sm font-medium text-foreground">
-          Plan limits
-        </h2>
-        {checked ? (
-          <span className="text-xs text-muted-foreground">
-            {state.status === "loading" ? "Checking…" : checked}
-          </span>
-        ) : null}
-      </div>
+    <section
+      className="flex flex-col gap-3"
+      aria-labelledby={hideHeading ? undefined : "aldo-plan-limits-heading"}
+    >
+      {hideHeading ? (
+        checked ? (
+          <div className="flex justify-end">
+            <span className="text-xs text-muted-foreground">
+              {state.status === "loading" ? "Checking…" : checked}
+            </span>
+          </div>
+        ) : null
+      ) : (
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="aldo-plan-limits-heading" className="text-sm font-medium text-foreground">
+            Plan limits
+          </h2>
+          {checked ? (
+            <span className="text-xs text-muted-foreground">
+              {state.status === "loading" ? "Checking…" : checked}
+            </span>
+          ) : null}
+        </div>
+      )}
       {providers ? (
         <div
           className={cn(

@@ -4,12 +4,17 @@
 // back. On a wider screen the nav is beside every page and this isn't shown.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronRightIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, RepeatIcon, SearchIcon } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { SettingsGroup } from "../components/settings/SettingsGroup";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
-import { searchSettings, type SettingsPath } from "../components/settings/settingsSearch";
+import { useOptionalSettingsScope } from "../components/settings/SettingsScopeContext";
+import {
+  SETTINGS_SECTION_LABELS,
+  searchSettings,
+  type SettingsPath,
+} from "../components/settings/settingsSearch";
 import { useAvailableSettingsSearchItems } from "../components/settings/useAvailableSettingsSearchItems";
 import { Button } from "../components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
@@ -29,18 +34,24 @@ import { ALDO_ORG_ROLE_LABELS, aldoOrgMembersSummary } from "./organization.logi
 import { aldoSettingsPage } from "./settings.logic";
 import {
   settingsAccounts,
+  settingsBrief,
+  settingsHeadsUps,
+  settingsInstructions,
   settingsMemory,
   settingsOrg,
   settingsPhone,
+  settingsPolicy,
+  settingsSkills,
   settingsVault,
 } from "./settingsData";
 import {
+  aldoAboutYouSummary,
   aldoAccountSummary,
   aldoAppearanceSummary,
   aldoEndedPlan,
-  aldoMemorySummary,
   aldoModelsSummary,
-  aldoPhoneSummary,
+  aldoNotificationsSummary,
+  aldoPermissionsSummary,
   aldoVaultSummary,
 } from "./settingsHome.logic";
 import { useSettingsResource } from "./settingsResource";
@@ -83,10 +94,16 @@ function useSummaries(
 ): Partial<Record<SettingsPath, { readonly text: string; readonly attention?: boolean }>> {
   const ownModels = useOwnModels(feed);
   const accounts = useSettingsResource(settingsAccounts).data;
+  const policy = useSettingsResource(settingsPolicy).data;
   const vault = useSettingsResource(settingsVault).data;
   const memory = useSettingsResource(settingsMemory).data;
+  const instructions = useSettingsResource(settingsInstructions).data;
+  const skills = useSettingsResource(settingsSkills).data;
   const phone = useSettingsResource(settingsPhone).data;
+  const brief = useSettingsResource(settingsBrief).data;
+  const headsUps = useSettingsResource(settingsHeadsUps).data;
   const org = useSettingsResource(settingsOrg).data;
+  const projectCount = useOptionalSettingsScope()?.groups.length ?? 0;
   const { appearanceMode } = useTheme();
   const simple = useAldoSimpleMode();
   const connections = useAldoConnectionsSummary();
@@ -94,11 +111,16 @@ function useSummaries(
     ["/settings/organization", org ? ALDO_ORG_ROLE_LABELS[org.role] : null],
     ["/settings/members", org ? aldoOrgMembersSummary(org) : null],
     ["/settings/agents", aldoModelsSummary(accounts, ownModels)],
-    ["/settings/instructions", aldoMemorySummary(memory)],
+    ["/settings/permissions", aldoPermissionsSummary(policy)],
+    ["/settings/instructions", aldoAboutYouSummary({ memory, instructions, skills })],
+    ["/settings/notifications", aldoNotificationsSummary({ phone, brief, headsUps })],
     ["/settings/connections", connections?.text ?? null, connections?.broken === true],
     ["/settings/vault", aldoVaultSummary(vault)],
-    ["/settings/appearance", aldoAppearanceSummary(appearanceMode, simple)],
-    ["/settings/phone", aldoPhoneSummary(phone)],
+    ["/settings/general", aldoAppearanceSummary(appearanceMode, simple)],
+    [
+      "/settings/projects",
+      projectCount > 0 ? `${projectCount} ${projectCount === 1 ? "project" : "projects"}` : null,
+    ],
   ];
   return Object.fromEntries(
     entries.flatMap(([to, text, attention]) =>
@@ -111,26 +133,34 @@ function ListRow(props: {
   readonly leading: ReactNode;
   readonly title: string;
   readonly summary?: { readonly text: string; readonly attention?: boolean } | undefined;
+  readonly badge?: string | null;
   readonly subtitle?: string | null;
   readonly onOpen: () => void;
 }) {
   return (
     <button
       type="button"
-      className="flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left outline-none transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60"
+      className="flex min-h-12 w-full items-center gap-3 px-3 py-2.5 text-left outline-none transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60"
       onClick={props.onOpen}
     >
       {props.leading}
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-foreground text-sm">{props.title}</span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex items-baseline justify-between gap-2">
+          <span className="truncate font-medium text-foreground text-sm">{props.title}</span>
+          {props.badge ? (
+            <span className="shrink-0 text-muted-foreground text-xs">{props.badge}</span>
+          ) : null}
+        </span>
         {props.subtitle ? (
-          <span className="truncate text-muted-foreground text-xs">{props.subtitle}</span>
+          <span className="line-clamp-2 text-muted-foreground text-xs leading-snug">
+            {props.subtitle}
+          </span>
         ) : null}
       </span>
       {props.summary ? (
         <span
           className={cn(
-            "flex min-w-0 max-w-[45%] items-center gap-1.5 text-sm",
+            "flex min-w-0 max-w-[42%] shrink-0 items-center gap-1.5 text-xs",
             props.summary.attention ? "text-warning-foreground" : "text-muted-foreground",
           )}
         >
@@ -158,7 +188,15 @@ export function AldoSettingsHome() {
   const searching = query.trim() !== "";
   const ended = aldoEndedPlan(usage);
 
-  const open = (to: SettingsPath, hash = "") =>
+  const open = (to: SettingsPath, hash = "") => {
+    if (to === "/settings/scheduled-tasks") {
+      void navigate({ to: "/routines" });
+      return;
+    }
+    if (to === "/settings/shared") {
+      void navigate({ to: "/library" });
+      return;
+    }
     void navigate({
       to,
       search: { project: undefined },
@@ -166,6 +204,7 @@ export function AldoSettingsHome() {
       state: { aldoFromSettingsList: true, ...(hash ? { settingsTargetHighlight: true } : {}) },
       ...(hash ? { hashScrollIntoView: false } : {}),
     });
+  };
 
   return (
     <SettingsPageContainer className="gap-6">
@@ -190,15 +229,20 @@ export function AldoSettingsHome() {
           </p>
         ) : (
           <SettingsGroup>
-            {results.map((item) => (
-              <ListRow
-                key={item.id}
-                leading={null}
-                title={item.title}
-                subtitle={aldoSettingsPage(item.to)?.title ?? null}
-                onOpen={() => open(item.to, item.targetId ?? item.id)}
-              />
-            ))}
+            {results.map((item) => {
+              const pageLabel =
+                aldoSettingsPage(item.to)?.title ?? SETTINGS_SECTION_LABELS[item.to] ?? null;
+              return (
+                <ListRow
+                  key={item.id}
+                  leading={null}
+                  title={item.title}
+                  badge={pageLabel}
+                  subtitle={item.description ?? null}
+                  onOpen={() => open(item.to, item.targetId ?? item.id)}
+                />
+              );
+            })}
           </SettingsGroup>
         )
       ) : (
@@ -212,8 +256,8 @@ export function AldoSettingsHome() {
           <SettingsGroup>
             <ListRow
               leading={<AldoAvatar profile={profile} className="size-9" />}
-              title={profile === undefined ? "Account" : profileName(profile)}
-              subtitle={aldoAccountSummary(usage) ?? "Your plan, credits and sign-in"}
+              title={profile === undefined ? "Account & billing" : profileName(profile)}
+              subtitle={aldoAccountSummary(usage) ?? "Plan, credits, billing & computers"}
               onOpen={() => open("/settings/account")}
             />
           </SettingsGroup>
@@ -236,6 +280,14 @@ export function AldoSettingsHome() {
               </SettingsGroup>
             </section>
           ))}
+          <SettingsGroup>
+            <ListRow
+              leading={<AldoIconTile icon={<RepeatIcon />} />}
+              title="Routines"
+              subtitle="Scheduled work and webhooks"
+              onOpen={() => void navigate({ to: "/routines" })}
+            />
+          </SettingsGroup>
         </>
       )}
     </SettingsPageContainer>

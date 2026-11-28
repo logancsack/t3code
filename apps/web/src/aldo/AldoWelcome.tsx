@@ -201,8 +201,8 @@ export function AldoWelcome() {
                 </button>
               </div>
               <p className="mt-4 text-muted-foreground text-xs leading-5">
-                Picking Code and apps adds the developer tools. You can change this in Settings →
-                General.
+                Picking Code and apps adds the developer tools. You can change this anytime in
+                Settings → About you.
               </p>
             </>
           )}

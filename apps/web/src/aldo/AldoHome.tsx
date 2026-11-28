@@ -46,6 +46,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { SidebarInset } from "../components/ui/sidebar";
 import { cn } from "~/lib/utils";
 import { useAldoAccounts } from "./useAldoAccounts";
+import { AldoMobileAccountButton } from "./AldoAccountMenu";
 import { AldoAtAGlance, useAldoAssistantAvailable } from "./AldoAssistant";
 import { AldoConversationPage } from "./AldoConversationPage";
 import {
@@ -418,6 +419,7 @@ function AldoHomeContent() {
         now={now}
         tabs={tabs}
         actions={null}
+        mobileAccount={mobile ? <AldoMobileAccountButton /> : null}
         welcome={welcome}
         issues={issues}
         chips={chips}
@@ -442,6 +444,7 @@ function AldoHomeContent() {
             quiet
           />
         }
+        mobileAccount={mobile ? <AldoMobileAccountButton /> : null}
         welcome={welcome}
         issues={issues}
         chips={chips}
@@ -469,6 +472,7 @@ function AldoHomeContent() {
             <header className="flex flex-wrap items-center gap-2">
               <h1 className="mr-auto font-semibold text-lg">Your threads</h1>
               {newMenu}
+              {mobile ? <AldoMobileAccountButton className="-me-1.5" /> : null}
             </header>
             {repos.length > 1 ? (
               <div className="flex flex-wrap gap-1.5">

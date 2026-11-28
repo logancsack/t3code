@@ -1,15 +1,19 @@
 import { settingsInstructions, settingsRepositories } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
-import { LoaderCircleIcon, NotebookPenIcon, PlusIcon } from "lucide-react";
+import { HomeIcon, NotebookPenIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import { Skeleton } from "../components/ui/skeleton";
 import { Textarea } from "../components/ui/textarea";
 import { AldoApiError } from "./api";
 import { aldoInstructions, type AldoInstructions } from "./accountApi";
+import { AldoInterestChips } from "./AldoInterestChips";
+import { useAldoDeveloperTools } from "./developerTools";
 import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
+import { saveAldoOnboarding, useAldoOnboardingState } from "./onboarding";
 
 const EVERY_PROJECT = "*";
 
@@ -26,12 +30,16 @@ function projectLabel(ref: string): string {
   return host && path ? `${path} (${HOSTS[host]})` : ref;
 }
 
-const PLACEHOLDERS = {
-  every:
-    "How you like agents to work everywhere, e.g.\n- Keep answers short.\n- Write in British English.\n- Use pnpm, never npm.",
-  project:
-    "What agents should know about this project, e.g.\n- Run pnpm test before opening a pull request.\n- Reuse the components in packages/ui.",
-};
+function placeholderFor(every: boolean, developer: boolean): string {
+  if (every) {
+    return developer
+      ? "Rules every agent follows, e.g.\n- Lead with the answer.\n- Write in British English.\n- Use pnpm, never npm."
+      : "Rules every agent follows, e.g.\n- Lead with the takeaway.\n- Write in plain, direct English.\n- Keep emails under 150 words.";
+  }
+  return developer
+    ? "Notes for this project, e.g.\n- Run tests before opening a pull request.\n- Reuse components in packages/ui."
+    : "Notes for this project, e.g.\n- Keep decks on-brand and concise.\n- Address clients by first name.";
+}
 
 function ago(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -46,6 +54,7 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
 function InstructionsEditor(props: {
   scope: string;
   saved: AldoInstructions | null;
+  developer: boolean;
   onRemoved: () => void;
 }) {
   const { scope } = props;
@@ -116,7 +125,7 @@ function InstructionsEditor(props: {
       </div>
       <Textarea
         aria-label={`Instructions for ${scope === EVERY_PROJECT ? "all projects" : title}`}
-        placeholder={scope === EVERY_PROJECT ? PLACEHOLDERS.every : PLACEHOLDERS.project}
+        placeholder={placeholderFor(scope === EVERY_PROJECT, props.developer)}
         className="text-base sm:text-sm"
         value={draft}
         onChange={(e) => setDraft(e.currentTarget.value)}
@@ -190,8 +199,39 @@ function InstructionsEditor(props: {
 
 type Entry = { scope: string; saved: AldoInstructions | null };
 
-/** Settings → Instructions: what every agent is told, for all projects and for each one. */
+/** What you hand Aldo (moved from General into About you). */
+function WorkFocusSection() {
+  const onboarding = useAldoOnboardingState();
+  const [failed, setFailed] = useState(false);
+  if (!onboarding) return null;
+  return (
+    <SettingsSection title="Your work focus" icon={<HomeIcon className="size-4" />}>
+      <div id="aldo-interests" className="space-y-2.5 px-3 py-3 sm:px-4">
+        <p className="text-muted-foreground text-xs">
+          Shapes the starter ideas on Home. You can also turn Developer tools on or off anytime in
+          Preferences.
+        </p>
+        <AldoInterestChips
+          label="Your work focus"
+          value={onboarding.interests ?? []}
+          onChange={(next) => {
+            setFailed(false);
+            void saveAldoOnboarding(next, { revert: true }).then((saved) => setFailed(!saved));
+          }}
+        />
+        {failed ? (
+          <p role="alert" className="text-destructive-foreground text-xs">
+            Couldn’t save that. Try again.
+          </p>
+        ) : null}
+      </div>
+    </SettingsSection>
+  );
+}
+
+/** Settings → About you → Instructions: standing rules every agent reads. */
 export function AldoInstructionsPanel() {
+  const developer = useAldoDeveloperTools();
   const cached = useSettingsResource(settingsInstructions, true, false);
   const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
   const error = unsupported ? null : cached.error;
@@ -208,7 +248,6 @@ export function AldoInstructionsPanel() {
       ]
     : null;
   const threads = useSyncExternalStore(subscribeAldoEnvironments, getAldoEnvironments, () => null);
-  // The connected accounts' repositories too, so a project can have instructions before its first thread.
   const [accountRepos, setAccountRepos] = useState<ReadonlyArray<string>>([]);
 
   useEffect(() => {
@@ -226,52 +265,57 @@ export function AldoInstructionsPanel() {
   }, [entries, threads, accountRepos]);
 
   return (
-    <SettingsSection
-      title="Instructions"
-      icon={<NotebookPenIcon className="size-4" />}
-      headerAction={
-        entries ? (
-          <Menu>
-            <MenuTrigger
-              disabled={addable.length === 0}
-              render={<Button size="compact" variant="outline" />}
-            >
-              <PlusIcon className="size-3.5" /> Add a project
-            </MenuTrigger>
-            <MenuPopup align="end" className="max-w-80">
-              {addable.map((repo) => (
-                <MenuItem key={repo} onClick={() => setAdded((all) => [...all, repo])}>
-                  {projectLabel(repo)}
-                </MenuItem>
-              ))}
-            </MenuPopup>
-          </Menu>
-        ) : null
-      }
-    >
-      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-        What every agent is told, for all projects or for one, kept out of your repositories. When
-        you ask an agent to remember something for later threads, it's saved here too. A thread
-        picks up changes the next time its computer starts or wakes. A repository's own notes for
-        agents (AGENTS.md or CLAUDE.md) still apply.
-      </p>
-      {unsupported ? (
-        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          This Aldo server doesn't have instructions yet.
+    <>
+      <SettingsSection
+        title="Instructions"
+        icon={<NotebookPenIcon className="size-4" />}
+        headerAction={
+          entries ? (
+            <Menu>
+              <MenuTrigger
+                disabled={addable.length === 0}
+                render={<Button size="compact" variant="outline" />}
+              >
+                <PlusIcon className="size-3.5" /> Add a project
+              </MenuTrigger>
+              <MenuPopup align="end" className="max-w-80">
+                {addable.map((repo) => (
+                  <MenuItem key={repo} onClick={() => setAdded((all) => [...all, repo])}>
+                    {projectLabel(repo)}
+                  </MenuItem>
+                ))}
+              </MenuPopup>
+            </Menu>
+          ) : null
+        }
+      >
+        <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
+          Standing rules every agent reads before starting. Changes apply the next time a thread’s
+          computer starts or wakes.
         </p>
-      ) : null}
-      {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
-      {entries === null && !unsupported && !error ? (
-        <LoaderCircleIcon className="mx-4 size-4 animate-spin text-muted-foreground" />
-      ) : null}
-      {entries?.map((entry) => (
-        <InstructionsEditor
-          key={entry.scope}
-          scope={entry.scope}
-          saved={entry.saved}
-          onRemoved={() => setAdded((all) => all.filter((scope) => scope !== entry.scope))}
-        />
-      ))}
-    </SettingsSection>
+        {unsupported ? (
+          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+            This Aldo server doesn’t support instructions yet.
+          </p>
+        ) : null}
+        {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
+        {entries === null && !unsupported && !error ? (
+          <div className="space-y-2 px-3 py-3 sm:px-4" aria-busy="true">
+            <Skeleton className="h-4 w-28 rounded" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+          </div>
+        ) : null}
+        {entries?.map((entry) => (
+          <InstructionsEditor
+            key={entry.scope}
+            scope={entry.scope}
+            saved={entry.saved}
+            developer={developer}
+            onRemoved={() => setAdded((all) => all.filter((scope) => scope !== entry.scope))}
+          />
+        ))}
+      </SettingsSection>
+      <WorkFocusSection />
+    </>
   );
 }

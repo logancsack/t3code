@@ -24,7 +24,7 @@ export function aldoApprovalRulesChanged(): void {
  * made on another device shows, and when one is made or undone here.
  */
 export function useAldoApprovalRules() {
-  const { data } = useSettingsResource(settingsApprovalRules);
+  const { data, loading } = useSettingsResource(settingsApprovalRules);
   const rules = data ?? null;
   const [removing, setRemoving] = useState<string | null>(null);
   const remove = async (rule: AldoApprovalRule) => {
@@ -37,12 +37,12 @@ export function useAldoApprovalRules() {
     } catch (cause) {
       toastManager.add({
         type: "error",
-        title: "Couldn't remove the rule",
+        title: "Couldn’t remove the rule",
         description: messageOf(cause),
       });
     } finally {
       setRemoving(null);
     }
   };
-  return { rules, removing, remove };
+  return { rules, loading: loading && data === undefined, removing, remove };
 }

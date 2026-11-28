@@ -62,6 +62,7 @@ import {
   DeviceHubSetupStatus,
   deviceHubReadiness,
 } from "~/components/device/DeviceSetup";
+import { isAldoCloud } from "../../aldo/api";
 import { isElectron } from "../../env";
 
 import { Badge } from "../ui/badge";
@@ -838,17 +839,24 @@ export function PullRequestLinksOpenInAppSetting() {
   const gt = useGT();
   const openInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
   const updateSettings = useUpdatePrimarySettings();
+  const appName = isAldoCloud ? "Aldo" : "T3 Code";
 
   return (
     <SettingsRow
       {...searchableSetting("pull-request-links-open-in-app")}
-      description={gt(
-        "Clicking a pull request link opens it in T3 Code. Turn off to open pull request links like any other link, on your git host.",
-      )}
+      description={
+        isAldoCloud
+          ? gt(
+              "Clicking a pull request link opens it in Aldo. Turn off to open pull request links on your code host.",
+            )
+          : gt(
+              "Clicking a pull request link opens it in T3 Code. Turn off to open pull request links like any other link, on your git host.",
+            )
+      }
       resetAction={
         openInApp ? null : (
           <SettingResetButton
-            ariaLabel={gt("Reset open pull requests in T3 Code to default")}
+            ariaLabel={gt("Reset open pull requests in {app} to default", { app: appName })}
             onClick={() => updateSettings({ pullRequestLinksOpenInApp: true })}
           />
         )
@@ -859,7 +867,7 @@ export function PullRequestLinksOpenInAppSetting() {
           onCheckedChange={(checked) =>
             updateSettings({ pullRequestLinksOpenInApp: Boolean(checked) })
           }
-          aria-label={gt("Open pull requests in T3 Code")}
+          aria-label={gt("Open pull requests in {app}", { app: appName })}
         />
       }
     />

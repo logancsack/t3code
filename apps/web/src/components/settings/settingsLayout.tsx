@@ -557,40 +557,44 @@ export function SettingsRow({
       <div
         className={
           inline
-            ? "flex items-center gap-3 @min-[32rem]/settings-row:gap-8"
+            ? "flex items-center justify-between gap-3 @min-[32rem]/settings-row:gap-8"
             : "flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-8"
         }
       >
-        {leading ? <div className="shrink-0 self-start pt-0.5">{leading}</div> : null}
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-h-5 flex-wrap items-center gap-1.5">
-            <h3 className="text-sm font-medium text-foreground">{title}</h3>
-            {badge}
-            {renderedInheritance ? (
-              <span
-                className={cn(
-                  "inline-flex h-5 w-5 shrink-0 items-center justify-center",
-                  // Values set right here explain nothing new, so their marker waits for hover or focus.
-                  (inheritance.state === "default" || inheritance.state === "environment") &&
-                    overridingProjects.length === 0 &&
-                    "opacity-0 group-hover/settings-row:opacity-100 has-focus-visible:opacity-100 has-data-popup-open:opacity-100",
-                )}
-              >
-                {renderedInheritance}
-              </span>
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          {leading ? <div className="shrink-0 self-start pt-0.5">{leading}</div> : null}
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex min-h-5 flex-wrap items-center gap-1.5">
+              <h3 className="text-sm font-medium text-foreground">{title}</h3>
+              {badge}
+              {renderedInheritance ? (
+                <span
+                  className={cn(
+                    "inline-flex h-5 w-5 shrink-0 items-center justify-center",
+                    // Values set right here explain nothing new, so their marker waits for hover or focus.
+                    (inheritance.state === "default" || inheritance.state === "environment") &&
+                      overridingProjects.length === 0 &&
+                      "opacity-0 group-hover/settings-row:opacity-100 has-focus-visible:opacity-100 has-data-popup-open:opacity-100",
+                  )}
+                >
+                  {renderedInheritance}
+                </span>
+              ) : null}
+              {renderedReset ? (
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                  {renderedReset}
+                </span>
+              ) : null}
+            </div>
+            {description ? (
+              <p className="max-w-2xl text-pretty text-xs leading-normal text-muted-foreground">
+                {description}
+              </p>
             ) : null}
-            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-              {renderedReset}
-            </span>
+            {renderedStatus ? (
+              <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
+            ) : null}
           </div>
-          {description ? (
-            <p className="max-w-2xl text-pretty text-xs leading-normal text-muted-foreground">
-              {description}
-            </p>
-          ) : null}
-          {renderedStatus ? (
-            <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
-          ) : null}
         </div>
         {renderedControl ? (
           <div

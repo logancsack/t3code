@@ -86,10 +86,10 @@ export function RoutinesSection(props: {
         toastManager.add({
           type: failed ? "error" : "success",
           title: failed
-            ? `"${routine.title}" couldn't run`
+            ? `“${routine.title}” couldn’t run`
             : result.startsWith("skipped")
               ? "Not run"
-              : `Running "${routine.title}"`,
+              : `Running “${routine.title}”`,
           description: result.replace(/^(failed|skipped): /, ""),
         });
         // Its first run makes its thread: list it now, so "Open its thread" goes somewhere.
@@ -101,7 +101,7 @@ export function RoutinesSection(props: {
       }
       props.onChanged();
     } catch (cause) {
-      toastManager.add({ type: "error", title: "Couldn't do that", description: messageOf(cause) });
+      toastManager.add({ type: "error", title: "Couldn’t do that", description: messageOf(cause) });
     } finally {
       setBusy(null);
     }
@@ -123,30 +123,47 @@ export function RoutinesSection(props: {
         }),
       )
       .catch(() =>
-        toastManager.add({ type: "error", title: "Couldn't copy it", description: url }),
+        toastManager.add({ type: "error", title: "Couldn’t copy it", description: url }),
       );
   };
 
   return (
     <Section
       title="Routines"
-      {...(props.routines.length > 0 ? { count: props.routines.length } : {})}
-      action={
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
-          onClick={() => setCreating(true)}
-        >
-          <PlusIcon className="size-3" /> New routine
-        </button>
-      }
+      {...(props.routines.length > 0
+        ? {
+            count: props.routines.length,
+            action: (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="min-h-10 sm:min-h-8"
+                onClick={() => setCreating(true)}
+              >
+                <PlusIcon className="size-3.5" /> New routine
+              </Button>
+            ),
+          }
+        : {})}
     >
       {props.routines.length === 0 ? (
-        <p className="rounded-xl border border-border/60 border-dashed px-4 py-3 text-muted-foreground text-xs">
-          Things to have done regularly, or whenever something happens: a morning briefing from your
-          inbox and calendar, a weekly check on your subscriptions, triaging what a form sends. Each
-          runs in a thread of its own, and you hear when it's done. Tell Aldo, or set one up here.
-        </p>
+        <div className="space-y-3 rounded-xl border border-border/60 border-dashed px-4 py-4">
+          <p className="text-muted-foreground text-sm">
+            Things to have done regularly, or whenever something happens: a morning briefing from
+            your inbox and calendar, a weekly check on your subscriptions, triaging what a form
+            sends. Each runs in a thread of its own, and you hear when it’s done.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="min-h-10 sm:min-h-8"
+            onClick={() => setCreating(true)}
+          >
+            <PlusIcon className="size-3.5" /> New routine
+          </Button>
+        </div>
       ) : (
         <ul className="rounded-xl border border-border/60 bg-card/30 p-1.5">
           {props.routines.map((routine) => {
@@ -154,49 +171,51 @@ export function RoutinesSection(props: {
             return (
               <li
                 key={routine.id}
-                className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-accent/40"
+                className="flex flex-col gap-2 rounded-lg px-2.5 py-2 hover:bg-accent/40 sm:flex-row sm:items-start sm:gap-2.5"
               >
-                <RepeatIcon
-                  className={cn(
-                    "mt-1 size-3.5 shrink-0",
-                    routine.enabled ? "text-muted-foreground" : "text-muted-foreground/50",
-                  )}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-                    <span
-                      className={cn("font-medium", !routine.enabled && "text-muted-foreground")}
-                    >
-                      {routine.title}
-                    </span>
-                    <Badge variant={routine.enabled ? "outline" : "warning"} size="sm">
-                      {routineStatus(routine, (iso) => dueIn(iso, props.now))}
-                    </Badge>
+                <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                  <RepeatIcon
+                    className={cn(
+                      "mt-1 size-3.5 shrink-0",
+                      routine.enabled ? "text-muted-foreground" : "text-muted-foreground/50",
+                    )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                      <span
+                        className={cn("font-medium", !routine.enabled && "text-muted-foreground")}
+                      >
+                        {routine.title}
+                      </span>
+                      <Badge variant={routine.enabled ? "outline" : "warning"} size="sm">
+                        {routineStatus(routine, (iso) => dueIn(iso, props.now))}
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 truncate text-muted-foreground text-xs">{routine.when}</p>
+                    {last ? (
+                      <p
+                        className={cn(
+                          "mt-0.5 line-clamp-1 text-xs",
+                          last.failed ? "text-destructive-foreground" : "text-muted-foreground",
+                        )}
+                      >
+                        Last run: {last.text}
+                      </p>
+                    ) : null}
+                    {routine.thread ? (
+                      <ThreadLink
+                        target={routine.thread}
+                        className="mt-0.5 block truncate text-muted-foreground text-xs hover:text-foreground"
+                      >
+                        Open its thread
+                      </ThreadLink>
+                    ) : null}
                   </div>
-                  <p className="mt-0.5 truncate text-muted-foreground text-xs">{routine.when}</p>
-                  {last ? (
-                    <p
-                      className={cn(
-                        "mt-0.5 line-clamp-1 text-xs",
-                        last.failed ? "text-destructive-foreground" : "text-muted-foreground",
-                      )}
-                    >
-                      Last run: {last.text}
-                    </p>
-                  ) : null}
-                  {routine.thread ? (
-                    <ThreadLink
-                      target={routine.thread}
-                      className="mt-0.5 block truncate text-muted-foreground text-xs hover:text-foreground"
-                    >
-                      Open its thread
-                    </ThreadLink>
-                  ) : null}
                 </div>
-                <div className="flex shrink-0 gap-1">
+                <div className="flex shrink-0 items-center gap-1 pl-6 sm:pl-0">
                   {routine.webhook ? (
                     <Button
-                      size="icon"
+                      size="icon-sm"
                       variant="ghost"
                       aria-label="Copy the link that runs it"
                       title="Copy the link that runs it"
@@ -206,7 +225,7 @@ export function RoutinesSection(props: {
                     </Button>
                   ) : null}
                   <Button
-                    size="icon"
+                    size="icon-sm"
                     variant="ghost"
                     aria-label={routine.enabled ? "Pause" : "Resume"}
                     title={routine.enabled ? "Pause" : "Resume"}
@@ -220,7 +239,7 @@ export function RoutinesSection(props: {
                     )}
                   </Button>
                   <Button
-                    size="compact"
+                    size="sm"
                     variant="outline"
                     disabled={busy !== null}
                     onClick={() => void act(routine, "run")}
@@ -228,7 +247,7 @@ export function RoutinesSection(props: {
                     Run now
                   </Button>
                   <Button
-                    size="icon"
+                    size="icon-sm"
                     variant="ghost"
                     aria-label="Remove"
                     title="Remove"

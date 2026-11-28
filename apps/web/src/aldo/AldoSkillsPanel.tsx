@@ -6,12 +6,13 @@ import { useSettingsResource } from "./settingsResource";
 // when a task needs it. Agents save them when the user asks (`save_skill`);
 // here the user reads, edits, adds and removes them.
 
-import { GraduationCapIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
+import { GraduationCapIcon, PlusIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
 import { Textarea } from "../components/ui/textarea";
 import { AldoApiError } from "./api";
 import { aldoSkills, type AldoSkill } from "./accountApi";
@@ -262,24 +263,23 @@ export function AldoSkillsPanel() {
         ) : null
       }
     >
-      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-        How your agents do a kind of task: the steps, what to do and what to avoid, your feedback.
-        Every agent in every thread sees what each skill is for and reads the rest when a task needs
-        it. Ask an agent to make one ("make a skill for podcast clips with this feedback") or to add
-        to one, or write it here. Threads running now get changes at once, the others when their
-        machine next starts or wakes.
+      <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
+        Saved step-by-step playbooks your agents load whenever a matching task comes up.
       </p>
       {unsupported ? (
         <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          This Aldo server doesn't have skills yet.
+          This Aldo server doesn’t support skills yet.
         </p>
       ) : null}
       {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
       {skills === null && !unsupported && !error ? (
-        <LoaderCircleIcon className="mx-4 size-4 animate-spin text-muted-foreground" />
+        <div className="space-y-2 px-3 py-3 sm:px-4" aria-busy="true">
+          <Skeleton className="h-16 w-full rounded-lg" />
+          <Skeleton className="h-16 w-full rounded-lg" />
+        </div>
       ) : null}
       {skills ? (
-        <div className="px-3 sm:px-4">
+        <div className="px-3 py-3 sm:px-4">
           <ul className="space-y-2">
             {adding ? (
               <SkillEditor saved={null} onSaved={setSkills} onClose={() => setAdding(false)} />

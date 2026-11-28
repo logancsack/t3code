@@ -1,6 +1,6 @@
 import { settingsPrebuilds, settingsRepositories } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
-import { BoxesIcon, LoaderCircleIcon, PlusIcon, TrashIcon } from "lucide-react";
+import { BoxesIcon, CheckIcon, LoaderCircleIcon, PlusIcon, TrashIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -13,6 +13,8 @@ import {
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
+import { cn } from "~/lib/utils";
 import {
   aldoPrebuilds,
   type AldoEnvironmentService,
@@ -92,28 +94,64 @@ function EnvironmentForm(props: {
       {draft.id ? (
         <p className="text-sm font-medium">{draft.repos.map(short).join(" + ")}</p>
       ) : (
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">
-            Repositories (the first is the main project)
+        <div className="space-y-1.5">
+          <span className="text-muted-foreground text-xs">
+            Repositories (the first picked is the main project)
           </span>
-          <select
-            multiple
-            className="min-h-24 rounded-md border border-border bg-background p-1 text-sm"
-            value={draft.repos}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                repos: [...e.currentTarget.selectedOptions].map((o) => o.value),
-              })
-            }
-          >
-            {props.repoOptions.map((ref) => (
-              <option key={ref} value={ref}>
-                {short(ref)}
-              </option>
-            ))}
-          </select>
-        </label>
+          {props.repoOptions.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              Connect a code host in Connections to pick repositories.
+            </p>
+          ) : (
+            <div
+              role="group"
+              aria-label="Repositories"
+              className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border/80 bg-background p-1.5"
+            >
+              {props.repoOptions.map((ref) => {
+                const index = draft.repos.indexOf(ref);
+                const selected = index !== -1;
+                return (
+                  <button
+                    key={ref}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        repos: selected
+                          ? draft.repos.filter((item) => item !== ref)
+                          : [...draft.repos, ref],
+                      })
+                    }
+                    className={cn(
+                      "flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
+                      selected
+                        ? "bg-primary/10 text-foreground"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded border",
+                        selected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background",
+                      )}
+                    >
+                      {selected ? <CheckIcon className="size-3" /> : null}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{short(ref)}</span>
+                    {index === 0 ? (
+                      <span className="shrink-0 text-muted-foreground text-xs">Main</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
       <label className="flex flex-col gap-1 text-xs">
         <span className="text-muted-foreground">
@@ -131,43 +169,50 @@ function EnvironmentForm(props: {
           Dev services (started with every thread, restarted after sleeps)
         </span>
         {draft.services.map((service, index) => (
-          // oxlint-disable-next-line react/no-array-index-key -- Rows are edited in place and have no id.
-          <div key={index} className="grid grid-cols-[6rem_1fr_6rem_auto] gap-1.5">
+          <div
+            // oxlint-disable-next-line react/no-array-index-key -- Rows are edited in place and have no id.
+            key={index}
+            className="flex flex-col gap-2 rounded-lg border border-border/60 p-2 sm:grid sm:grid-cols-[7rem_1fr_7.5rem_auto] sm:items-center sm:gap-1.5 sm:border-0 sm:p-0"
+          >
             <Input
-              size="compact"
+              size="sm"
               placeholder="web"
+              aria-label="Service name"
               value={service.name}
               onChange={(e) => setService(index, { name: e.currentTarget.value })}
             />
             <Input
-              size="compact"
+              size="sm"
               className="font-mono text-xs"
               placeholder="pnpm dev --port 3000"
+              aria-label="Service command"
               value={service.command}
               onChange={(e) => setService(index, { command: e.currentTarget.value })}
             />
             <Input
-              size="compact"
-              placeholder="cwd (opt.)"
+              size="sm"
+              placeholder="Folder (optional)"
+              aria-label="Working folder (optional)"
               value={service.cwd ?? ""}
               onChange={(e) => setService(index, { cwd: e.currentTarget.value })}
             />
             <Button
               type="button"
-              size="icon-xs"
+              size="icon-sm"
               variant="ghost"
               aria-label="Remove service"
+              className="self-end sm:self-auto"
               onClick={() =>
                 setDraft({ ...draft, services: draft.services.filter((_, i) => i !== index) })
               }
             >
-              <TrashIcon />
+              <TrashIcon className="size-3.5" />
             </Button>
           </div>
         ))}
         <Button
           type="button"
-          size="compact"
+          size="sm"
           variant="ghost"
           onClick={() =>
             setDraft({ ...draft, services: [...draft.services, { name: "", command: "" }] })
@@ -178,10 +223,10 @@ function EnvironmentForm(props: {
       </div>
       {error ? <p className="text-destructive-foreground text-xs">{error}</p> : null}
       <div className="flex justify-end gap-2">
-        <Button type="button" size="compact" variant="ghost" onClick={props.onCancel}>
+        <Button type="button" size="sm" variant="ghost" onClick={props.onCancel}>
           Cancel
         </Button>
-        <Button type="submit" size="compact" disabled={busy || draft.repos.length === 0}>
+        <Button type="submit" size="sm" disabled={busy || draft.repos.length === 0}>
           {busy ? "Saving…" : "Save and build"}
         </Button>
       </div>
@@ -344,7 +389,7 @@ export function AldoEnvironmentsPanel() {
       icon={<BoxesIcon className="size-4" />}
       headerAction={
         <Button
-          size="compact"
+          size="sm"
           variant="outline"
           onClick={() => setDraft({ repos: [], install: "", services: [] })}
         >
@@ -352,12 +397,9 @@ export function AldoEnvironmentsPanel() {
         </Button>
       }
     >
-      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-        A ready-to-go environment prebuilds a repository (or a set of repositories) with
-        dependencies installed, so new threads start working immediately, with their previews
-        already running. Agents set one up with <code className="text-xs">save_environment</code>, a
-        repository can define one in <code className="text-xs">.aldo/environment.json</code>, or add
-        one here. Aldo rebuilds them daily.
+      <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
+        Prebuilt environments install dependencies and start dev services ahead of time so new
+        threads start ready. Rebuilt daily.
       </p>
       {error || cached.error ? (
         <p className="px-3 text-destructive-foreground text-sm sm:px-4">{error ?? cached.error}</p>
@@ -376,12 +418,15 @@ export function AldoEnvironmentsPanel() {
       ) : null}
       {envs && envs.length === 0 && !draft ? (
         <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">
-          No environments yet. A repository's ready-to-go setup shows here once an agent saves one
+          No environments yet. A repository’s ready-to-go setup shows here once an agent saves one
           or you add one.
         </p>
       ) : null}
       {envs === null ? (
-        <LoaderCircleIcon className="mx-4 size-4 animate-spin text-muted-foreground" />
+        <div className="space-y-2 px-3 py-3 sm:px-4">
+          <Skeleton className="h-4 w-44" />
+          <Skeleton className="h-3.5 w-64" />
+        </div>
       ) : null}
       {envs?.map((env) => (
         <EnvironmentRow

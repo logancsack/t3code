@@ -10,7 +10,7 @@ import {
   resolveThreadDetailsVisibility,
   RESET_THREAD_DETAILS_ITEMS,
   setThreadDetailsItem,
-  THREAD_DETAILS_ITEMS,
+  VISIBLE_THREAD_DETAILS_ITEMS,
 } from "./threadDetailsItems";
 
 /** Menu body that shows and hides thread details items. The card's context menu and Settings share it. */
@@ -23,7 +23,7 @@ export function ThreadDetailsItemsMenuItems() {
         <MenuGroupLabel>
           <T>Show in thread details</T>
         </MenuGroupLabel>
-        {THREAD_DETAILS_ITEMS.map((item) => (
+        {VISIBLE_THREAD_DETAILS_ITEMS.map((item) => (
           <MenuCheckboxItem
             key={item.id}
             checked={visibility[item.id]}

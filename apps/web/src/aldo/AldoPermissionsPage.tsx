@@ -1,10 +1,9 @@
-// Settings → Permissions: what agents may do without asking. Their access in
-// a thread (T3's own row), what they do in the user's name (sign up for sites,
-// publish), what they may spend, how they merge and answer reviews, how they
-// pick media tools, and what the user always allows. Each
-// rule is the user's for all their workspaces, with the workspaces that
-// answered otherwise under it (AldoPolicy.tsx).
+// Settings → Permissions: pure safety and authority controls for knowledge
+// workers — purchase approval limit, acting in your name (sign-ups, publishing),
+// computer access, media tool defaults, and always-allowed rules. Code PR rules
+// live in Code (AldoCodePage.tsx) and reuse AldoCodePolicySection exported here.
 
+import { Link } from "@tanstack/react-router";
 import {
   CheckCheckIcon,
   CodeXmlIcon,
@@ -25,6 +24,7 @@ import {
 import { searchableSetting } from "../components/settings/settingsSearch";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
 import { useAldoApprovalRules } from "./AldoApprovalRules";
 import {
   ALDO_POLICY_ASK_AN_AGENT,
@@ -56,7 +56,7 @@ function MergeMethodRow(props: { readonly policy: AldoPolicyState }) {
   const { view, saving, edit } = props.policy;
   const [all, setAll] = useState(false);
   const row = searchableSetting("aldo-merge-method");
-  const description = "How each repository's pull requests merge, in every project it's in.";
+  const description = "How each repository’s pull requests merge, in every project it’s in.";
   const names = useAldoWorkspaceNames(Boolean(view && view.repos.length > 0));
   if (!view) {
     return (
@@ -68,19 +68,11 @@ function MergeMethodRow(props: { readonly policy: AldoPolicyState }) {
     );
   }
   const methods = aldoMergeMethods(view);
-  if (methods.length === 0) {
-    return (
-      <SettingsRow
-        {...row}
-        description={description}
-        status="Agents take it from each repository’s recent pull requests."
-      />
-    );
-  }
+  if (methods.length === 0) return null;
   const shown = all ? methods : methods.slice(0, MERGE_METHODS_SHOWN);
   return (
     <SettingsRow {...row} description={description}>
-      <AldoPolicySubList>
+      <AldoPolicySubList bordered>
         {shown.map((method) => (
           <Fragment key={method.repo}>
             <AldoPolicySubRow
@@ -139,6 +131,32 @@ function MergeMethodRow(props: { readonly policy: AldoPolicyState }) {
   );
 }
 
+/** Pull request auto-merge, merge method and automated reviews — rendered in Settings → Code. */
+export function AldoCodePolicySection() {
+  const policy = useAldoPolicy();
+  return (
+    <SettingsSection title="Pull requests" icon={<CodeXmlIcon className="size-4" />}>
+      {policy.error ? (
+        <p className="px-3 pt-2 text-destructive-foreground text-sm sm:px-4">{policy.error}</p>
+      ) : null}
+      <AldoPolicyRuleRow
+        rule="merge"
+        setting="aldo-merge"
+        policy={policy}
+        description="Once a pull request isn’t a draft and its checks have passed, Aldo merges it automatically or leaves that to you."
+      />
+      <MergeMethodRow policy={policy} />
+      <AldoPolicyRuleRow
+        rule="reviews"
+        setting="aldo-reviews"
+        policy={policy}
+        selectClassName="w-full sm:w-64"
+        description="What agents do with automated review comments. What matters: security, correctness, data loss and real user bugs."
+      />
+    </SettingsSection>
+  );
+}
+
 /** A repository by its project's name, with its address beside it where the two differ. */
 function RepositoryLabel(props: {
   readonly repo: string;
@@ -158,7 +176,7 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
   const [task, setTask] = useState<string>(ALDO_MEDIA_TASKS[0]!.value);
   const [tool, setTool] = useState("");
   const description =
-    "Name a tool for a kind of media (“Runway”, “Codex”), and agents use it as if you’d asked for it each time.";
+    "Name a tool for a kind of media (“Runway”, “ElevenLabs”), and agents use it automatically whenever you ask for that kind.";
   const defaults = view ? aldoMediaDefaults(view) : [];
   const names = useAldoWorkspaceNames(defaults.some((entry) => entry.repos));
   if (!view) {
@@ -178,7 +196,7 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
   };
   return (
     <SettingsRow id="aldo-media-defaults" title="Tools you always use" description={description}>
-      <AldoPolicySubList>
+      <AldoPolicySubList bordered={defaults.length > 0}>
         {defaults.map((entry) => (
           <AldoPolicySubRow
             key={`${entry.task} ${entry.repos?.join(",") ?? ""}`}
@@ -191,7 +209,7 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
             }
             control={
               <Button
-                size="xs"
+                size="sm"
                 variant="ghost"
                 disabled={saving}
                 onClick={() =>
@@ -209,7 +227,7 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
           />
         ))}
         <form
-          className="flex flex-wrap items-center gap-2"
+          className="flex flex-col gap-2 sm:flex-row sm:items-center"
           onSubmit={(event) => {
             event.preventDefault();
             void add();
@@ -219,7 +237,7 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
             value={task}
             options={ALDO_MEDIA_TASKS}
             label="Kind of media"
-            className="w-36"
+            className="w-full sm:w-40"
             onChange={setTask}
           />
           <Input
@@ -247,13 +265,13 @@ function InYourNameSection(props: { readonly policy: AldoPolicyState }) {
   const publishing = aldoRuleShown(view, "publishing");
   if (!accounts && !publishing) return null;
   return (
-    <SettingsSection title="In your name" icon={<UserRoundCheckIcon className="size-4" />}>
+    <SettingsSection title="Acting in your name" icon={<UserRoundCheckIcon className="size-4" />}>
       {accounts ? (
         <AldoPolicyRuleRow
           rule="accounts"
           setting="aldo-accounts"
           policy={props.policy}
-          description="With your name and email, when you ask for an account, then save the login to your vault. With “Ask me first”, they ask before each one; with “Never”, they write you the steps."
+          description="Create free accounts with your name and email when you ask, saving the login to your vault. “Ask me first” confirms each one; “Never” gives you the steps instead."
         />
       ) : null}
       {publishing ? (
@@ -261,7 +279,7 @@ function InYourNameSection(props: { readonly policy: AldoPolicyState }) {
           rule="publishing"
           setting="aldo-publishing"
           policy={props.policy}
-          description="Listings, posts and pages you asked for go live once they’re checked, and the agent says where. With “Show me first”, you see each one before it goes live."
+          description="Publish posts, pages and listings you asked for once checked. “Show me first” always waits for your approval before anything goes live."
         />
       ) : null}
     </SettingsSection>
@@ -269,17 +287,23 @@ function InYourNameSection(props: { readonly policy: AldoPolicyState }) {
 }
 
 function AlwaysAllowedSection() {
-  const { rules, removing, remove } = useAldoApprovalRules();
+  const { rules, loading, removing, remove } = useAldoApprovalRules();
   return (
     <SettingsSection
       {...searchableSetting("aldo-always-allowed")}
       icon={<CheckCheckIcon className="size-4" />}
     >
-      {rules && rules.length > 0 ? (
+      {loading ? (
+        <div className="space-y-2.5 px-3 py-3 sm:px-4" aria-busy="true">
+          <Skeleton className="h-5 w-3/4 rounded" />
+          <Skeleton className="h-5 w-1/2 rounded" />
+        </div>
+      ) : rules && rules.length > 0 ? (
         rules.map((rule) => (
           <SettingsRow
             key={rule.id}
             title={rule.text}
+            inline
             control={
               <Button
                 size="sm"
@@ -295,8 +319,8 @@ function AlwaysAllowedSection() {
         ))
       ) : (
         <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">
-          Nothing yet. When an agent asks for your yes, “Always allow” saves the rule here, and you
-          can remove it any time.
+          Nothing yet. When an agent asks for permission, tapping “Always allow” saves the rule here
+          so you can revoke it anytime.
         </p>
       )}
     </SettingsSection>
@@ -307,42 +331,29 @@ export function AldoPermissionsPage() {
   const policy = useAldoPolicy();
   return (
     <SettingsPageContainer>
-      <SettingsSection
-        id="aldo-access"
-        title="On the agent’s computer"
-        icon={<ShieldCheckIcon className="size-4" />}
-      >
-        <ProjectDefaultsSettings category="general" aldoPart="permissions" />
-      </SettingsSection>
       {policy.error ? (
         <p className="px-3 text-destructive-foreground text-sm sm:px-4">{policy.error}</p>
       ) : null}
-      <InYourNameSection policy={policy} />
-      <SettingsSection title="Money" icon={<WalletIcon className="size-4" />}>
+      <SettingsSection title="Spending" icon={<WalletIcon className="size-4" />}>
         <AldoPolicyRuleRow
           rule="spendThreshold"
           setting="aldo-spend-threshold"
           policy={policy}
           description={
             policy.view?.spending?.scope === "account"
-              ? `What an agent may spend per purchase before asking you, across all projects. A separate $${policy.view.spending.monthlyLimit} monthly safety net applies. Other approvals still apply.`
-              : "What an agent may spend before it asks you: a paid plan, a domain or a service’s usage, at once or in a month."
+              ? `Maximum an agent may spend per purchase without asking you, across all projects. A separate $${policy.view.spending.monthlyLimit} monthly safety net always applies.`
+              : "Maximum an agent may spend before asking you: a paid plan, domain or service usage."
           }
-        />
-        <AldoPolicyRuleRow
-          rule="paidFallback"
-          setting="aldo-paid-fallback"
-          policy={policy}
-          description="When your subscriptions run out, keep the threads Aldo starts going on Aldo’s credits, Claude’s extra usage or Codex credits."
         />
         <SettingsRow
           id="aldo-payments"
           title="Payments and commitments"
           description={
             policy.view?.spending?.scope === "account"
-              ? "Purchases above either limit, paid sign-ups, bookings and cancellations need your approval. Your wallet may also ask you to confirm a payment."
-              : "Agents show you what it is and the total with fees, and you approve each one."
+              ? "Purchases above either limit, paid sign-ups, bookings and cancellations always ask for your approval."
+              : "Agents always show you what it is and the total with fees before you approve."
           }
+          inline
           control={
             <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
               <LockIcon aria-hidden="true" className="size-3.5" />
@@ -350,30 +361,34 @@ export function AldoPermissionsPage() {
             </span>
           }
         />
+        <p className="px-3 py-2.5 text-muted-foreground text-xs sm:px-4">
+          Looking for your monthly cap on extra Aldo credits?{" "}
+          <Link
+            to="/settings/account"
+            hash="aldo-extra-usage-cap"
+            className="text-foreground underline underline-offset-2 hover:text-primary"
+          >
+            Manage in Account & billing
+          </Link>
+          .
+        </p>
       </SettingsSection>
-      <SettingsSection title="Images, video and audio" icon={<ImageIcon className="size-4" />}>
+      <InYourNameSection policy={policy} />
+      <SettingsSection
+        id="aldo-access"
+        title="Agent access"
+        icon={<ShieldCheckIcon className="size-4" />}
+      >
+        <ProjectDefaultsSettings category="general" aldoPart="permissions" />
+      </SettingsSection>
+      <SettingsSection title="Media tools" icon={<ImageIcon className="size-4" />}>
         <AldoPolicyRuleRow
           rule="mediaRouting"
           setting="aldo-media-routing"
           policy={policy}
-          description="For media you don’t name a tool for: agents choose, from what your plans include first, or show you the options each time."
+          description="When you don’t name a tool for images, video, audio or 3D, agents pick from what your plans include first or ask you each time."
         />
         <MediaDefaultsRow policy={policy} />
-      </SettingsSection>
-      <SettingsSection title="Code" icon={<CodeXmlIcon className="size-4" />}>
-        <AldoPolicyRuleRow
-          rule="merge"
-          setting="aldo-merge"
-          policy={policy}
-          description="Once a pull request isn’t a draft and its checks have passed, Aldo merges it, or leaves that to you."
-        />
-        <MergeMethodRow policy={policy} />
-        <AldoPolicyRuleRow
-          rule="reviews"
-          setting="aldo-reviews"
-          policy={policy}
-          description="What agents do with review comments from Codex and other reviewers. What matters: security, correctness, data loss and what you’d hit."
-        />
       </SettingsSection>
       <AlwaysAllowedSection />
     </SettingsPageContainer>

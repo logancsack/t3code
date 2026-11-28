@@ -3,26 +3,12 @@ import { useState, type FormEvent } from "react";
 
 import { AldoBillingSection, useAldoCheckoutReturn } from "../../aldo/AldoBilling";
 import { isAldoCloud } from "../../aldo/api";
-import { deleteAldoWindowsDisk, setAldoSpendLimit } from "../../aldo/accountApi";
+import { setAldoSpendLimit } from "../../aldo/accountApi";
 
-import type {
-  AldoWindowsDisk,
-  AldoWorkspaceUsage,
-  AldoWorkspaceUsageState,
-} from "../../state/aldoWorkspaceUsage";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogPopup,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
+import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../../state/aldoWorkspaceUsage";
+import { SettingsRow } from "../settings/settingsLayout";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Spinner } from "../ui/spinner";
-import { toastManager } from "../ui/toast";
 import {
   aldoPlanEnded,
   aldoUsageAlertCopy,
@@ -30,7 +16,6 @@ import {
   aldoUsageFootnote,
   aldoUsageMeter,
   aldoUsageUnmeteredCopy,
-  aldoWindowsDiskCopy,
   formatCents,
   formatCredits,
 } from "./aldoWorkspaceUsageView";
@@ -46,11 +31,14 @@ export function AldoWorkspaceUsageSection({
   state,
   onChanged,
   title = "Aldo workspace",
+  hideHeaderLimit = false,
 }: {
   readonly state: AldoWorkspaceUsageState;
   readonly onChanged?: () => void;
   /** Aldo's Settings → Account names it for what it shows there. */
   readonly title?: string;
+  /** Account & billing renders Monthly extra usage cap as its own dedicated SettingsRow. */
+  readonly hideHeaderLimit?: boolean;
 }) {
   useAldoCheckoutReturn(onChanged);
   if (state.status === "unavailable") return null;
@@ -60,14 +48,14 @@ export function AldoWorkspaceUsageSection({
     <>
       <section className="flex flex-col gap-3" aria-labelledby="aldo-workspace-usage-heading">
         <div className="flex items-center justify-between gap-3">
-          <h2 id="aldo-workspace-usage-heading" className="text-sm font-medium text-foreground">
+          <h3 id="aldo-workspace-usage-heading" className="text-sm font-medium text-foreground">
             {title}
-          </h2>
+          </h3>
           {isAldoCloud ? (
-            usage?.bill && !aldoPlanEnded(usage) && usage.seat ? (
+            hideHeaderLimit ? null : usage?.bill && !aldoPlanEnded(usage) && usage.seat ? (
               // A seat's limit is its organization's to set (the Plan section says whom to ask).
-              <span className="text-xs text-muted-foreground">
-                Extra usage limit: {formatCents(usage.bill.spendLimitCents)}
+              <span className="text-xs text-muted-foreground tabular-nums">
+                Extra usage cap: {formatCents(usage.bill.spendLimitCents)}
               </span>
             ) : usage?.bill && !aldoPlanEnded(usage) ? (
               <SpendLimitControl
@@ -95,34 +83,45 @@ export function AldoWorkspaceUsageSection({
         ) : (
           <AldoWorkspaceUsageSkeleton />
         )}
-        {isAldoCloud && usage?.windowsDisk ? (
-          <WindowsDiskControl
-            disk={usage.windowsDisk}
-            status={state.status}
-            onChanged={onChanged}
-          />
-        ) : null}
-        {isAldoCloud && usage?.windows ? (
-          <p className="text-xs text-muted-foreground">
-            Windows computers:{" "}
-            {usage.metered ? (
-              <>
-                {formatCredits(usage.windows.creditsPerHour)} credits/hour while running (
-                {formatCents(Math.round(usage.windows.extraHourlyUsd * 100))}/hour, billed
-                separately within your extra usage limit).
-              </>
-            ) : (
-              <>Your complimentary account isn't billed.</>
-            )}{" "}
-            Up to {usage.windows.concurrentLimit} at once. Each thread gets a fresh computer,
-            deleted with its files after use. No kept-disk charge.
-          </p>
-        ) : null}
       </section>
       {isAldoCloud && usage ? (
         <AldoBillingSection usage={usage} status={state.status} onChanged={onChanged} />
       ) : null}
     </>
+  );
+}
+
+/** Promoted SettingsRow for Monthly extra usage cap inside Settings → Account & billing. */
+export function AldoExtraUsageCapRow(props: {
+  readonly usage: AldoWorkspaceUsage;
+  readonly onChanged?: () => void;
+}) {
+  const { usage } = props;
+  if (!usage.bill || aldoPlanEnded(usage)) return null;
+  return (
+    <SettingsRow
+      id="aldo-extra-usage-cap"
+      title="Monthly extra usage cap"
+      description={
+        usage.seat
+          ? `Set by ${usage.seat.org}. Past your plan’s credits, extra Aldo credits stop here.`
+          : "Maximum extra Aldo credits billed past your included plan each month. Set to $0 to stop at your plan’s credits."
+      }
+      inline={!usage.seat}
+      control={
+        usage.seat ? (
+          <span className="text-sm font-medium text-foreground tabular-nums">
+            {formatCents(usage.bill.spendLimitCents)}/mo
+          </span>
+        ) : (
+          <SpendLimitControl
+            spendLimitCents={usage.bill.spendLimitCents}
+            onChanged={props.onChanged}
+            prominent
+          />
+        )
+      }
+    />
   );
 }
 
@@ -198,6 +197,7 @@ function AldoWorkspaceUsageBody({
 function SpendLimitControl(props: {
   readonly spendLimitCents: number;
   readonly onChanged: (() => void) | undefined;
+  readonly prominent?: boolean;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -226,107 +226,36 @@ function SpendLimitControl(props: {
   if (editing === null) {
     return (
       <Button
-        size="xs"
+        size={props.prominent ? "sm" : "xs"}
         variant="outline"
+        className="tabular-nums"
         onClick={() => setEditing(String(props.spendLimitCents / 100))}
       >
-        Extra usage limit: {formatCents(props.spendLimitCents)}
+        {props.prominent
+          ? `${formatCents(props.spendLimitCents)}/mo · Edit`
+          : `Extra usage cap: ${formatCents(props.spendLimitCents)}`}
       </Button>
     );
   }
   return (
-    <form onSubmit={save} className="flex items-center gap-1.5">
-      <span className="text-xs text-muted-foreground">Extra usage up to $</span>
+    <form onSubmit={save} className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">$</span>
       <Input
         autoFocus
-        aria-label="Extra usage limit in dollars"
+        aria-label="Monthly extra usage cap in dollars"
         inputMode="decimal"
-        className="h-7 w-20 text-xs"
+        className="h-8 w-20 text-xs tabular-nums"
         value={editing}
         onChange={(e) => setEditing(e.currentTarget.value)}
       />
-      <Button type="submit" size="xs" disabled={busy}>
+      <Button type="submit" size="sm" disabled={busy}>
         Save
       </Button>
-      <Button type="button" size="xs" variant="ghost" onClick={() => setEditing(null)}>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
         Cancel
       </Button>
-      {error ? <span className="text-xs text-destructive-foreground">{error}</span> : null}
+      {error ? <span className="w-full text-xs text-destructive-foreground">{error}</span> : null}
     </form>
-  );
-}
-
-/**
- * Aldo cloud: a stopped Windows computer's disk, kept (and charged) for next
- * time, and deleting it, once the summary is current.
- */
-function WindowsDiskControl(props: {
-  readonly disk: AldoWindowsDisk;
-  readonly status: AldoWorkspaceUsageState["status"];
-  readonly onChanged: (() => void) | undefined;
-}) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const message = await deleteAldoWindowsDisk();
-      setOpen(false);
-      toastManager.add({ type: "success", title: "Windows computer's disk", description: message });
-      props.onChanged?.();
-    } catch (cause) {
-      // Running, starting or stopping (409): Aldo says what to do first.
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border border-border px-3 py-2 text-xs text-foreground">
-      <span>{aldoWindowsDiskCopy(props.disk)}</span>
-      <Button
-        size="xs"
-        variant="outline"
-        disabled={props.status !== "ready" || busy}
-        onClick={() => {
-          setError(null);
-          setOpen(true);
-        }}
-      >
-        Delete
-      </Button>
-      <AlertDialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next && !busy) setOpen(false);
-        }}
-      >
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete your Windows computer's disk?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Its files, apps and Office sign-in go; it starts fresh next time.
-            </AlertDialogDescription>
-            {error ? (
-              <p className="text-sm text-destructive-foreground" role="alert">
-                {error}
-              </p>
-            ) : null}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" size="sm" />} disabled={busy}>
-              Keep it
-            </AlertDialogClose>
-            <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
-              {busy ? <Spinner className="size-3.5" /> : null}
-              Delete disk
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
-    </div>
   );
 }
 

@@ -58,6 +58,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
 
+import { isAldoCloud } from "../../aldo/api";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { cn } from "~/lib/utils";
 import {
@@ -1485,152 +1486,154 @@ export function VoiceSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="voice-transcription" title={gt("Transcription")}>
-        <SettingsRow
-          {...setting("voice-transcription-destination")}
-          title={gt("Transcribe with")}
-          description={
-            destination.environmentId && chosenUnsupported
-              ? gt("{label} can’t transcribe audio locally. Choose another destination.", {
-                  label: chosenEnvironment.label,
-                })
-              : gt("Where your speech is turned into text.")
-          }
-          control={
-            <div className="flex w-full min-w-0 items-center gap-1.5 @min-[32rem]/settings-row:w-auto">
-              <Select
-                value={destinationValue}
-                onValueChange={(value) => {
-                  if (!value) return;
-                  const cloud = cloudChoices.find((choice) => choice.value === value);
-                  if (cloud) {
-                    setPendingCloud({
-                      environmentId: cloud.environment.environmentId,
-                      provider: cloud.provider,
-                    });
-                    return;
-                  }
-                  setPendingCloud(null);
-                  const chosen = environmentChoices.find((choice) => choice.value === value);
-                  if (value === OFF) chooseAudioDestination(null);
-                  else if (chosen)
-                    chooseAudioDestination({
-                      kind: "environment",
-                      environmentId: chosen.environment.environmentId,
-                    });
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  aria-label={gt("Transcribe with")}
-                  className="min-w-0 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:max-w-72"
+        {!isAldoCloud || cloudGroups.length > 0 ? (
+          <SettingsRow
+            {...setting("voice-transcription-destination")}
+            title={gt("Transcribe with")}
+            description={
+              destination.environmentId && chosenUnsupported
+                ? gt("{label} can’t transcribe audio locally. Choose another destination.", {
+                    label: chosenEnvironment.label,
+                  })
+                : gt("Where your speech is turned into text.")
+            }
+            control={
+              <div className="flex w-full min-w-0 items-center gap-1.5 @min-[32rem]/settings-row:w-auto">
+                <Select
+                  value={destinationValue}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    const cloud = cloudChoices.find((choice) => choice.value === value);
+                    if (cloud) {
+                      setPendingCloud({
+                        environmentId: cloud.environment.environmentId,
+                        provider: cloud.provider,
+                      });
+                      return;
+                    }
+                    setPendingCloud(null);
+                    const chosen = environmentChoices.find((choice) => choice.value === value);
+                    if (value === OFF) chooseAudioDestination(null);
+                    else if (chosen)
+                      chooseAudioDestination({
+                        kind: "environment",
+                        environmentId: chosen.environment.environmentId,
+                      });
+                  }}
                 >
-                  <SelectValue>
-                    <span className="flex min-w-0 items-center gap-2">
-                      {destination.cloudProvider ? (
-                        <CloudSpeechLogo provider={destination.cloudProvider} />
-                      ) : destination.environmentId ? (
-                        <MonitorIcon aria-hidden className="size-4" />
-                      ) : (
-                        <MicOffIcon aria-hidden className="size-4" />
-                      )}
-                      <span className="truncate">
-                        {destination.cloudProvider
-                          ? CLOUD_SPEECH_LABELS[destination.cloudProvider]
-                          : destination.environmentId
-                            ? (chosenEnvironment?.label ?? gt("Chosen environment (unavailable)"))
-                            : gt("Off")}
-                        {destination.cloudProvider && (
-                          <span className="text-muted-foreground">
-                            {" via "}
-                            {chosenEnvironment?.label ?? gt("unavailable environment")}
-                          </span>
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={gt("Transcribe with")}
+                    className="min-w-0 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:max-w-72"
+                  >
+                    <SelectValue>
+                      <span className="flex min-w-0 items-center gap-2">
+                        {destination.cloudProvider ? (
+                          <CloudSpeechLogo provider={destination.cloudProvider} />
+                        ) : destination.environmentId ? (
+                          <MonitorIcon aria-hidden className="size-4" />
+                        ) : (
+                          <MicOffIcon aria-hidden className="size-4" />
                         )}
+                        <span className="truncate">
+                          {destination.cloudProvider
+                            ? CLOUD_SPEECH_LABELS[destination.cloudProvider]
+                            : destination.environmentId
+                              ? (chosenEnvironment?.label ?? gt("Chosen environment (unavailable)"))
+                              : gt("Off")}
+                          {destination.cloudProvider && (
+                            <span className="text-muted-foreground">
+                              {" via "}
+                              {chosenEnvironment?.label ?? gt("unavailable environment")}
+                            </span>
+                          )}
+                        </span>
                       </span>
-                    </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value={OFF}>
-                    <span className="flex items-center gap-2">
-                      <MicOffIcon aria-hidden className="size-4" />
-                      <T>Off</T>
-                    </span>
-                  </SelectItem>
-                  {environmentChoices.length > 0 && (
-                    <SelectGroup>
-                      <SelectGroupLabel>
-                        <T>On an environment</T>
-                      </SelectGroupLabel>
-                      {environmentChoices.map(({ environment, value }) => (
-                        <SelectItem key={value} value={value}>
-                          <span className="flex items-center gap-2">
-                            <MonitorIcon aria-hidden className="size-4" />
-                            {environment.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  )}
-                  {cloudGroups.map(({ environment, choices }) => (
-                    <SelectGroup key={environment.environmentId}>
-                      <SelectGroupLabel>
-                        <T>
-                          Cloud via <Var>{environment.label}</Var>
-                        </T>
-                      </SelectGroupLabel>
-                      {choices.map(({ value, provider }) => (
-                        <SelectItem
-                          key={value}
-                          value={value}
-                          aria-label={`${CLOUD_SPEECH_LABELS[provider]} via ${environment.label}`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <CloudSpeechLogo provider={provider} />
-                            {CLOUD_SPEECH_LABELS[provider]}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                  {destination.environmentId &&
-                  (!chosenEnvironment ||
-                    (destination.cloudProvider &&
-                      !cloudChoices.some((option) => option.value === destinationValue))) ? (
-                    <SelectItem value={destinationValue}>
-                      <T>Chosen environment (unavailable)</T>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value={OFF}>
+                      <span className="flex items-center gap-2">
+                        <MicOffIcon aria-hidden className="size-4" />
+                        <T>Off</T>
+                      </span>
                     </SelectItem>
-                  ) : null}
-                </SelectPopup>
-              </Select>
-              {destination.cloudProvider &&
-                chosenEnvironment &&
-                (canManageKey || destination.cloudProvider === "openrouter") && (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          size="icon-sm"
-                          type="button"
-                          variant="ghost"
-                          aria-label={manageLabel}
-                          onClick={() => {
-                            if (destination.cloudProvider)
-                              setPendingCloud({
-                                provider: destination.cloudProvider,
-                                environmentId: chosenEnvironment.environmentId,
-                              });
-                          }}
-                        >
-                          <KeyRoundIcon aria-hidden className="size-4" />
-                        </Button>
-                      }
-                    />
-                    <TooltipPopup>{manageLabel}</TooltipPopup>
-                  </Tooltip>
-                )}
-            </div>
-          }
-        />
+                    {!isAldoCloud && environmentChoices.length > 0 && (
+                      <SelectGroup>
+                        <SelectGroupLabel>
+                          <T>On an environment</T>
+                        </SelectGroupLabel>
+                        {environmentChoices.map(({ environment, value }) => (
+                          <SelectItem key={value} value={value}>
+                            <span className="flex items-center gap-2">
+                              <MonitorIcon aria-hidden className="size-4" />
+                              {environment.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {cloudGroups.map(({ environment, choices }) => (
+                      <SelectGroup key={environment.environmentId}>
+                        <SelectGroupLabel>
+                          <T>
+                            Cloud via <Var>{environment.label}</Var>
+                          </T>
+                        </SelectGroupLabel>
+                        {choices.map(({ value, provider }) => (
+                          <SelectItem
+                            key={value}
+                            value={value}
+                            aria-label={`${CLOUD_SPEECH_LABELS[provider]} via ${environment.label}`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <CloudSpeechLogo provider={provider} />
+                              {CLOUD_SPEECH_LABELS[provider]}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                    {destination.environmentId &&
+                    (!chosenEnvironment ||
+                      (destination.cloudProvider &&
+                        !cloudChoices.some((option) => option.value === destinationValue))) ? (
+                      <SelectItem value={destinationValue}>
+                        <T>Chosen environment (unavailable)</T>
+                      </SelectItem>
+                    ) : null}
+                  </SelectPopup>
+                </Select>
+                {destination.cloudProvider &&
+                  chosenEnvironment &&
+                  (canManageKey || destination.cloudProvider === "openrouter") && (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-sm"
+                            type="button"
+                            variant="ghost"
+                            aria-label={manageLabel}
+                            onClick={() => {
+                              if (destination.cloudProvider)
+                                setPendingCloud({
+                                  provider: destination.cloudProvider,
+                                  environmentId: chosenEnvironment.environmentId,
+                                });
+                            }}
+                          >
+                            <KeyRoundIcon aria-hidden className="size-4" />
+                          </Button>
+                        }
+                      />
+                      <TooltipPopup>{manageLabel}</TooltipPopup>
+                    </Tooltip>
+                  )}
+              </div>
+            }
+          />
+        ) : null}
         {pendingCloud && cloudEnvironment && (
           <CloudVoiceConfiguration
             key={JSON.stringify(pendingCloud)}
@@ -1711,7 +1714,7 @@ export function VoiceSettingsPanel() {
             />
           }
         />
-        {prepared ? (
+        {!isAldoCloud && prepared ? (
           <SpeechModelBrowser
             key={prepared.environmentId}
             prepared={prepared}
@@ -1723,7 +1726,9 @@ export function VoiceSettingsPanel() {
             projectName={project?.title ?? null}
           />
         ) : null}
-        {prepared && <AdvancedSpeechSettings prepared={prepared} catalog={catalog} />}
+        {!isAldoCloud && prepared && (
+          <AdvancedSpeechSettings prepared={prepared} catalog={catalog} />
+        )}
       </SettingsSection>
 
       <SettingsSection id="voice-dictionary" title={gt("Dictionary")}>
@@ -1740,7 +1745,7 @@ export function VoiceSettingsPanel() {
             />
           </div>
         </SettingsRow>
-        <ProjectDictionaryRow />
+        {isAldoCloud ? null : <ProjectDictionaryRow />}
       </SettingsSection>
 
       <SettingsSection id={setting("speech-post-processing").id} title={gt("Cleanup")}>
