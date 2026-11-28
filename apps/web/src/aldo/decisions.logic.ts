@@ -18,7 +18,14 @@ import {
   type AldoHomePullRequest,
   type AldoPayment,
 } from "./homeApi";
-import { boardFor, isPausedMidTurn, isTurnAsk, needsYouKind, sameTarget } from "./home.logic";
+import {
+  boardFor,
+  type HomeBoard,
+  isPausedMidTurn,
+  isTurnAsk,
+  needsYouKind,
+  sameTarget,
+} from "./home.logic";
 
 export type AldoDecision =
   | { readonly kind: "aldo-approval"; readonly key: string; readonly approval: AldoApproval }
@@ -92,6 +99,43 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
   return null;
 }
 
+/**
+ * A thread waiting on an approval card of Aldo's asks once, on that card: the
+ * ask its turn ended on (or its bare wait) isn't another decision, nor while
+ * the card is being carried out ("sending") and the thread hasn't caught up.
+ * A request it's stopped on, a plan or a failure still is. Every list of what
+ * waits leaves it out (Needs you, the board, the summon menu), and so does
+ * Aldo's brief (src/lib/assistant/brief.ts candidatesOf).
+ */
+export function askedOnCard(home: Pick<AldoHome, "approvals">, c: AldoHomeConversation): boolean {
+  const kind = needsYouKind(c);
+  return (
+    !c.plan &&
+    (kind === "waiting" || (kind === "question" && isTurnAsk(c.pending))) &&
+    waitingApprovals(home.approvals, true).some((a) => sameTarget(a.thread, c.thread))
+  );
+}
+
+/**
+ * The board, with each thread that asks on an approval card of Aldo's moved
+ * from Needs you to the threads waiting to continue: the card above is where
+ * it asks, so it isn't a second form to answer.
+ */
+export function boardAskingOnce(board: HomeBoard, home: Pick<AldoHome, "approvals">): HomeBoard {
+  const onCard = board.needsYou.filter((c) => askedOnCard(home, c));
+  if (onCard.length === 0) return board;
+  return {
+    ...board,
+    needsYou: board.needsYou.filter((c) => !onCard.includes(c)),
+    waiting: [...onCard, ...board.waiting],
+  };
+}
+
+/** The key of what a thread asks itself (aldoDecisions keys it so), or null when it asks nothing of the kind. */
+export function threadDecisionKey(c: AldoHomeConversation): string | null {
+  return conversationDecision(c)?.key ?? null;
+}
+
 /** Put away in the user's list: settled, or snoozed (still, by `now`) without asking them anything (a turn's own ask is how it waits). */
 export function putAway(c: AldoHomeConversation, now: number): boolean {
   if (c.settled === true) return true;
@@ -133,6 +177,7 @@ export function aldoDecisions(
       )
     )
       return [];
+    if (askedOnCard(home, c)) return [];
     const decision = conversationDecision(c);
     return decision ? [decision] : [];
   });
