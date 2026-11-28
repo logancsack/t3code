@@ -441,25 +441,21 @@ it("a handoff whose details have not arrived still has a direct way into the req
   expect(el.textContent).toContain("Open browser request");
 });
 
-it("keeps a failed thread’s technical report behind Details beside its original retry action", async () => {
+it("shows a known runtime failure on the card beside its retry action", async () => {
   const found = decisions.find((d) => d.kind === "failed")!;
   if (found.kind !== "failed") throw new Error("Failed fixture missing");
   const d = {
     ...found,
     conversation: {
       ...found.conversation,
-      summary: "The agent reports CI failed. Type checking and lint passed.",
+      summary: "The connection to the model closed.",
     },
   };
   await act(async () =>
     root.render(<DecisionCard decision={d} now={Date.now()} open onOpen={() => {}} pick={null} />),
   );
-  const details = el.querySelector("details")!;
-  expect(details.open).toBe(false);
-  expect(el.textContent).toContain("I couldn’t finish this attempt.");
-  expect(details.textContent).toContain("The agent reports CI failed.");
-  await act(async () => details.querySelector("summary")!.click());
-  expect(details.open).toBe(true);
+  expect(el.textContent).toContain("The connection to the model closed.");
+  expect(el.textContent).not.toContain("I couldn’t finish this attempt.");
   expect(button("Retry")).toBeDefined();
 });
 

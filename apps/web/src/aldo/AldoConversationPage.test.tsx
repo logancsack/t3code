@@ -54,7 +54,7 @@ vi.mock("./AldoAssistant", () => ({
 }));
 vi.mock("./AldoHomeBoard", () => ({ HealthStrip: () => <div>Setup failed to build</div> }));
 vi.mock("./AldoLiveCard", () => ({ AldoOpenContext: createContext(null) }));
-vi.mock("./AldoPresence", () => ({ AldoPresence: () => null }));
+vi.mock("./AldoPresence", () => ({ AldoPresence: () => <div>Work status</div> }));
 vi.mock("./AldoUpNext", () => ({ AldoUpNext: () => <div>Working thread</div> }));
 vi.mock("./arrive", () => ({
   settleAldoConversation: vi.fn(),
@@ -266,6 +266,19 @@ it("still opens an empty conversation at the welcome", async () => {
   await act(async () => root.render(<Page />));
   expect(beforePaint).toEqual([0]);
   expect(container.textContent).toContain("What should we get done?");
+});
+
+it("keeps scheduled work visible when the conversation is empty", async () => {
+  useAldoAssistant.setState({ historyLoaded: true });
+  const home = {
+    conversations: [],
+    pullRequests: [],
+    actions: [],
+    upcoming: [{ id: "r_rec_quota", message: "Gemini hit your Google plan’s limit." }],
+  } as unknown as AldoHome;
+  await act(async () => root.render(<Page home={home} />));
+  expect(container.textContent).toContain("Work status");
+  expect(container.textContent).not.toContain("What should we get done?");
 });
 
 it("keeps what finished and hasn't landed in view after its lines have left the feed", async () => {

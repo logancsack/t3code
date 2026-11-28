@@ -204,6 +204,7 @@ export function AldoPresence(props: {
     unfinished: board?.unfinished.rows.length ?? 0,
     waiting: board?.needsYou.rows.length ?? 0,
     moved: board?.moved.rows.length ?? 0,
+    upcoming: board?.coming.rows.length ?? 0,
     fresh: readIsFresh(readAt, now),
     unread: props.unread === true,
   });
