@@ -3182,6 +3182,88 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
+  it.effect.each(["full-access", "approval-required"] as const)(
+    "handles first-search setup in %s",
+    (mode) =>
+      Effect.gen(function* () {
+        const form = {
+          ...colorForm,
+          title: "Web Search",
+          metadata: { kind: "websearch.provider" },
+          fields: [
+            {
+              key: "choice",
+              type: "string",
+              description: "Allow OpenCode to search the web for up-to-date information?",
+              options: [
+                {
+                  value: "allow",
+                  label: "Allow search via Exa, Firecrawl, Parallel, Tavily, TinyFish",
+                },
+                { value: "choose", label: "Choose another provider" },
+                { value: "disable", label: "Disable web search" },
+              ],
+            },
+          ],
+        };
+        const { runtime, thread } = yield* resumed(
+          [
+            out("session.switchModel", {
+              sessionID: SESSION,
+              model: { id: "test", providerID: "aldo" },
+            }),
+            reply("session.switchModel", null),
+            out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+            promptAccepted,
+            event("session.execution.started", { sessionID: SESSION }),
+            event("form.created", { form }),
+            out("session.form.reply", {
+              sessionID: SESSION,
+              formID: form.id,
+              answer: { choice: "allow" },
+            }),
+            reply("session.form.reply", null),
+            event("session.execution.succeeded", { sessionID: SESSION }),
+          ],
+          { supervised: mode === "approval-required" },
+        );
+        const observed = yield* runtime.events.pipe(
+          Stream.tap((event) =>
+            Effect.gen(function* () {
+              if (event.type !== "runtime_request.updated") return;
+              const request = event.runtimeRequest;
+              if (request.status !== "pending") return;
+              assert.equal(mode, "approval-required");
+              assert.equal(request.kind, "user_input");
+              yield* runtime.respondToRuntimeRequest({
+                requestId: request.id,
+                answers: { choice: "allow" },
+              });
+            }),
+          ),
+          Stream.takeUntil((event) => event.type === "turn.terminal"),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        yield* runtime.startTurn(turnInput(thread, { instanceId, model: "aldo/test" }, mode));
+        const events = yield* Fiber.join(observed);
+        const terminal = events.at(-1);
+        assert.equal(terminal?.type === "turn.terminal" ? terminal.status : undefined, "completed");
+        if (mode === "approval-required") {
+          const item = events.find(
+            (event) =>
+              event.type === "turn_item.updated" && event.turnItem.type === "user_input_request",
+          );
+          assert.equal(
+            item?.type === "turn_item.updated" && item.turnItem.type === "user_input_request"
+              ? item.turnItem.questions[0]?.options[0]?.description
+              : undefined,
+            "Let OpenCode choose an available service to receive your search queries.",
+          );
+        }
+      }),
+  );
+
   it.effect("counts an answer to a request OpenCode already dropped as delivered", () =>
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed(

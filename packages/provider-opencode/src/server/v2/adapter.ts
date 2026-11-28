@@ -400,7 +400,7 @@ type TurnTerminal =
 type Rule = Permission.Rule;
 type RulesPolicy = Pick<
   ProviderAdapter.ProviderAdapterV2RuntimePolicy,
-  "runtimeMode" | "interactionMode"
+  "runtimeMode" | "interactionMode" | "approvalPolicy" | "sandboxPolicy"
 >;
 type NativeForm = EventOf<"form.created">["data"]["form"];
 
@@ -489,6 +489,14 @@ const sessionGrantLabel = (action: string, save: ReadonlyArray<string>) =>
 
 const text = (value: string | undefined, fallback: string) => value?.trim() || fallback;
 
+const webSearchDescriptions = new Map([
+  ["allow", "Let OpenCode choose an available service to receive your search queries."],
+  ["choose", "Choose which service receives your search queries."],
+  ["disable", "Turn off OpenCode’s web search on this machine and continue without it."],
+]);
+
+const isWebSearchSetup = (form: NativeForm) => form.metadata?.["kind"] === "websearch.provider";
+
 const formQuestions = (
   form: NativeForm,
 ):
@@ -505,7 +513,18 @@ const formQuestions = (
     const header = text(field.title, `Question ${index + 1}`);
     const options = (field.options ?? []).map((option) => {
       const label = text(option.label, text(option.value, "Option"));
-      return { label, description: text(option.description, label), value: option.value };
+      const description = isWebSearchSetup(form)
+        ? field.key === "choice"
+          ? webSearchDescriptions.get(option.value)
+          : field.key === "provider"
+            ? `Send web search queries to ${label}.`
+            : undefined
+        : undefined;
+      return {
+        label,
+        description: text(option.description, description ?? label),
+        value: option.value,
+      };
     });
     questions.push({
       id: field.key,
@@ -2713,7 +2732,36 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const onFormCreated = Effect.fnUntraced(function* (form: NativeForm) {
       const target = requestTurn(form.sessionID);
       if (target === undefined) return;
-      const { state } = target;
+      const { state, turn } = target;
+      const policy = state.policy;
+      const sandbox = policy.sandboxPolicy as { readonly type?: unknown } | undefined;
+      const [choice] = form.fields;
+      // This is the built-in first-search setup. Ordinary forms still require an answer.
+      if (
+        isWebSearchSetup(form) &&
+        form.fields.length === 1 &&
+        choice?.key === "choice" &&
+        choice.type === "string" &&
+        choice.options?.some((option) => option.value === "allow") &&
+        form.sessionID === state.sessionId &&
+        state.subagent === undefined &&
+        turn.input.modelSelection.model.startsWith("aldo/") &&
+        policy.runtimeMode === "full-access" &&
+        policy.interactionMode === "default" &&
+        policy.approvalPolicy === undefined &&
+        (sandbox === undefined || sandbox?.type === "dangerFullAccess")
+      ) {
+        const answered = yield* deliver(
+          client.session.form
+            .reply({
+              sessionID: form.sessionID,
+              formID: form.id,
+              answer: { choice: "allow" },
+            })
+            .pipe(Effect.catchTags(formGone)),
+        );
+        if (answered) return;
+      }
       const mapped = formQuestions(form);
       if ("questions" in mapped) {
         return yield* showRequest(
