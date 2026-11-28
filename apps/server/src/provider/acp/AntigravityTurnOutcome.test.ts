@@ -24,6 +24,8 @@ const errorPayload = (error: string) =>
     ),
   ]);
 // An unparsable reset timestamp must not hide the reset delay, nor a retry delay outrank it.
+const INDIVIDUAL_QUOTA =
+  "⚠ Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h56m47s.";
 const QUOTA_ERROR = errorPayload(
   "Error 429, Message: Quota exhausted for test model., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:42s] map[@type:type.googleapis.com/google.rpc.ErrorInfo domain:googleapis.com metadata:map[quotaResetDelay:3600s quotaResetTimeStamp:soon] reason:QUOTA_EXHAUSTED]]",
 );
@@ -72,11 +74,12 @@ describe("watchAntigravityPromptOutcome", () => {
       const turn = (
         steps: ReadonlyArray<readonly [number, Uint8Array]>,
         result: EffectAcpSchema.PromptResponse = { stopReason: "end_turn" },
+        finalAssistantText?: string,
       ) =>
         Effect.gen(function* () {
           const check = yield* watchAntigravityPromptOutcome(profileDirectory, sessionId);
           appendSteps(steps);
-          return yield* check(result);
+          return yield* check(result, finalAssistantText);
         });
       const input = Buffer.from("Run the fixture.");
       const reply = Buffer.from("FIXTURE_OK");
@@ -101,6 +104,34 @@ describe("watchAntigravityPromptOutcome", () => {
           resetAt: "1970-01-01T01:00:00.000Z",
         }),
       );
+      for (const payload of [
+        errorPayload(INDIVIDUAL_QUOTA),
+        errorPayload("Agent execution terminated"),
+      ]) {
+        assert.deepEqual(
+          yield* turn([[ERROR_MESSAGE, payload]], { stopReason: "end_turn" }, INDIVIDUAL_QUOTA),
+          reusable({
+            class: "usage_limit",
+            message: "You have reached your Antigravity quota for this period.",
+            code: "QUOTA_EXHAUSTED",
+            retryable: true,
+            resetAt: "1970-01-01T02:56:47.000Z",
+          }),
+        );
+      }
+      assert.isUndefined(
+        yield* turn(
+          [[PLANNER_RESPONSE, Buffer.from(INDIVIDUAL_QUOTA)]],
+          { stopReason: "end_turn" },
+          INDIVIDUAL_QUOTA,
+        ),
+      );
+      for (const error of ["RESOURCE_EXHAUSTED", "Rate limit exceeded"]) {
+        assert.equal(
+          (yield* turn([[ERROR_MESSAGE, errorPayload(error)]]))?.failure.class,
+          "usage_limit",
+        );
+      }
       // The earlier error step is outside this turn.
       assert.isUndefined(
         yield* turn(

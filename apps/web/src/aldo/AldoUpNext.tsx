@@ -866,18 +866,25 @@ export function DecisionCard(props: {
     }
     case "failed": {
       const c = d.conversation;
-      headline = "Couldn’t finish";
+      const reason = c.progress?.execution === "failed" ? c.progress.detail : c.summary;
+      const writtenSummary = failure?.summary;
+      const summary = plainCardText(
+        writtenSummary && !/^I couldn[’']t finish this attempt[.!]/i.test(writtenSummary)
+          ? writtenSummary
+          : reason || "",
+      );
+      headline = c.progress?.label || (summary ? "Stopped before finishing" : "Couldn’t finish");
       body = (
         <>
           <p className="text-sm text-muted-foreground leading-6">
-            {failure?.summary ??
+            {summary ||
               "I couldn’t finish this attempt. You can retry or open the work to see what happened."}
           </p>
           <AldoUpdateDetails
             checked={failure?.checked ?? c.result?.checked}
             notChecked={failure?.notChecked ?? c.result?.notChecked}
-            notes={[...(failure?.notes ?? []), c.summary || c.progress?.detail || ""].filter(
-              Boolean,
+            notes={[...(failure?.notes ?? []), c.summary || ""].filter(
+              (note) => note && plainCardText(note) !== summary,
             )}
             links={failure?.links.filter((link) => technicalUpdateLink(link.url))}
           />

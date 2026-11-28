@@ -391,7 +391,10 @@ export interface AcpAdapterV2Flavor {
   readonly watchPromptOutcome?: (
     sessionId: string,
   ) => Effect.Effect<
-    (result: EffectAcpSchema.PromptResponse) => Effect.Effect<AcpPromptOutcomeFailure | undefined>
+    (
+      result: EffectAcpSchema.PromptResponse,
+      finalAssistantText?: string,
+    ) => Effect.Effect<AcpPromptOutcomeFailure | undefined>
   >;
   readonly requiresSignIn?: (cause: unknown) => boolean;
   /**
@@ -9035,7 +9038,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     result.stopReason === "error" ||
                     result.stopReason === "cancelled"
                       ? undefined
-                      : yield* settle.checkPromptOutcome(result);
+                      : yield* settle.checkPromptOutcome(result, context.assistant.current?.text);
                   if (hiddenFailure !== undefined) {
                     yield* Ref.set(runtimeRestartRequired, true);
                   }

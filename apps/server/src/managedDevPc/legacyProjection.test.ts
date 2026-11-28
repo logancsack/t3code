@@ -176,7 +176,13 @@ describe("legacyThreadDetail", () => {
         item("tool", { type: "command_execution", input: "ls", status: "failed" }),
         item("error", {
           type: "error",
-          failure: { message: "Overloaded", class: "provider", code: "529", retryable: true },
+          failure: {
+            message: "Usage limit reached",
+            class: "usage_limit",
+            code: "QUOTA_EXHAUSTED",
+            retryable: true,
+            resetAt: "2026-08-09T13:00:00.000Z",
+          },
         }),
         item("notice", { type: "system_notice", message: "Context was compacted" }),
         item("stall", {
@@ -206,7 +212,15 @@ describe("legacyThreadDetail", () => {
     ["tool.completed", { turnId: run, payload: { toolCallId: "tool", status: "failed" } }],
     [
       "runtime.error",
-      { turnId: run, payload: { message: "Overloaded", class: "provider", code: "529" } },
+      {
+        turnId: run,
+        payload: {
+          message: "Usage limit reached",
+          class: "usage_limit",
+          code: "QUOTA_EXHAUSTED",
+          resetAt: "2026-08-09T13:00:00.000Z",
+        },
+      },
     ],
     ["runtime.warning", { turnId: run, payload: { message: "Context was compacted" } }],
     // Only the watchdog's stop is a stall; the user's Stop beside it is not.
