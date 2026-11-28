@@ -299,18 +299,18 @@ it("an approval that could do harm recommends not allowing it, and says why in p
   await mountDecision(
     explained(
       {
-        what: "Run a command that looks like it force-pushes code, which can overwrite work in a remote repository",
-        why: "The agent runs commands to do its work, and this thread asks before commands.",
+        what: "Run a command that looks like it force-pushes code, overwriting work in a remote repository",
+        why: "This thread asks before it runs commands.",
         safety: {
           level: "risky",
-          text: "This can't easily be undone: it can overwrite published work. Allow it only if you asked for something like this.",
+          text: "It can overwrite published work, which can't easily be undone. Allow it only if you asked for something like this.",
         },
         recommended: "decline",
       },
       "git push --force origin main",
     ),
   );
-  expect(el.textContent).toContain("Can't easily be undone.");
+  expect(el.textContent).toContain("Be careful.");
   const choices = Array.from(el.querySelectorAll("button")).filter((b) =>
     b.className.includes("justify-between"),
   );

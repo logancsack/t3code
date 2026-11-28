@@ -40,7 +40,7 @@ export function approvalHeadline(what: string): string {
 export const SAFETY_LABEL: Record<AldoApprovalExplain["safety"]["level"], string> = {
   safe: "Safe to allow",
   changes: "Changes something",
-  risky: "Can't easily be undone",
+  risky: "Be careful",
   unclear: "Not sure what it does",
 };
 
