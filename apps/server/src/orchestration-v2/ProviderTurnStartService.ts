@@ -686,30 +686,30 @@ export const layer: Layer.Layer<
         const lineage = projection.thread.lineage;
         const parentId =
           lineage.relationshipToParent === "subagent" ? lineage.parentThreadId : null;
-        const group = yield* projectionStore.getThreadRecords(parentId ?? run.threadId, [
-          "subagents",
-          "runs",
-        ]);
         const owner =
           parentId === null
             ? undefined
-            : group.subagents.find((task) => task.childThreadId === run.threadId);
-        const ownerRunId =
-          parentId === null ? run.id : owner?.createdBy === "user" ? owner.runId : null;
+            : (yield* projectionStore.getThreadRecords(parentId, ["subagents"], {
+                subagentChildThreadIds: [run.threadId],
+                initialLaunchSubagents: true,
+              })).subagents[0];
+        const ownerRunId = parentId === null ? run.id : owner?.runId;
+        const group =
+          ownerRunId == null
+            ? null
+            : yield* projectionStore.getThreadRecords(
+                parentId ?? run.threadId,
+                ["subagents", "runs"],
+                {
+                  runIds: [ownerRunId],
+                  subagentRunIds: [ownerRunId],
+                  initialLaunchSubagents: true,
+                },
+              );
         const otherFailed =
-          ownerRunId != null &&
-          ((parentId !== null &&
-            group.runs.some(
-              (candidate) => candidate.id === ownerRunId && candidate.status === "failed",
-            )) ||
-            group.subagents.some(
-              (task) =>
-                task.id !== owner?.id &&
-                task.runId === ownerRunId &&
-                task.origin === "app_owned" &&
-                task.createdBy === "user" &&
-                task.status === "failed",
-            ));
+          group &&
+          ((parentId !== null && group.runs.some((candidate) => candidate.status === "failed")) ||
+            group.subagents.some((task) => task.id !== owner?.id && task.status === "failed"));
         if (otherFailed) {
           const message = "A required collaborator failed. This participant was not started.";
           yield* settleStartFailure({

@@ -341,11 +341,9 @@ const make = Effect.gen(function* () {
     const instructions = yield* turnInstructions.supplied(
       snapshot.projection.runs.map((run) => run.id),
     );
-    const { subagents } = yield* threads.getThreadRecords(threadId, ["subagents"]);
-    const launchTasks = subagents.filter(
-      (task) =>
-        task.origin === "app_owned" && task.createdBy === "user" && task.childThreadId !== null,
-    );
+    const { subagents: launchTasks } = yield* threads.getThreadRecords(threadId, ["subagents"], {
+      initialLaunchSubagents: true,
+    });
     const participants = yield* Effect.forEach(
       launchTasks,
       (task) =>
