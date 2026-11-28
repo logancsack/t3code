@@ -13,18 +13,34 @@ import {
   scrollToSettingsTarget,
 } from "../components/settings/settingsLayout";
 import { searchableSetting } from "../components/settings/settingsSearch";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import {
   AldoExtraUsageCapRow,
   AldoWorkspaceUsageSection,
 } from "../components/usage/AldoWorkspaceUsage";
-import { formatCents, formatCredits } from "../components/usage/aldoWorkspaceUsageView";
+import {
+  aldoWindowsDiskCopy,
+  formatCents,
+  formatCredits,
+} from "../components/usage/aldoWorkspaceUsageView";
 import {
   useAldoWorkspaceUsage,
   type AldoActiveComputer,
+  type AldoWindowsDisk,
   type AldoWorkspaceUsage,
+  type AldoWorkspaceUsageState,
 } from "../state/aldoWorkspaceUsage";
+import { deleteAldoWindowsDisk } from "./accountApi";
 import { AldoAvatar, profileName, useAldoProfile } from "./AldoAccountMenu";
 import { AldoProviderLimitsSection, useAldoProviderLimits } from "./AldoProviderLimits";
 import { AldoPlanEndedBanner } from "./AldoSettingsHome";
@@ -36,8 +52,83 @@ function accountManageHref(url: string): string {
   return `${url}${sep}from=settings`;
 }
 
+function LegacyWindowsDiskRow(props: {
+  readonly disk: AldoWindowsDisk;
+  readonly status: AldoWorkspaceUsageState["status"];
+  readonly onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const message = await deleteAldoWindowsDisk();
+      setOpen(false);
+      toastManager.add({ type: "success", title: "Windows computer’s disk", description: message });
+      props.onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <SettingsRow
+        title="Windows computer disk"
+        description={aldoWindowsDiskCopy(props.disk)}
+        inline
+        control={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={props.status !== "ready" || busy}
+            onClick={() => {
+              setError(null);
+              setOpen(true);
+            }}
+          >
+            Delete
+          </Button>
+        }
+      />
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && !busy) setOpen(false);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your Windows computer’s disk?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Its files, apps and Office sign-in go; it starts fresh next time.
+            </AlertDialogDescription>
+            {error ? (
+              <p className="text-sm text-destructive-foreground" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" size="sm" />} disabled={busy}>
+              Cancel
+            </AlertDialogClose>
+            <Button variant="destructive" size="sm" disabled={busy} onClick={() => void remove()}>
+              {busy ? "Deleting…" : "Delete disk"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+    </>
+  );
+}
+
 function ComputersSection(props: {
   readonly usage: AldoWorkspaceUsage;
+  readonly status: AldoWorkspaceUsageState["status"];
   readonly onChanged: () => void;
 }) {
   const { usage } = props;
@@ -46,13 +137,17 @@ function ComputersSection(props: {
   const active = usage.computers?.active ?? [];
   const [stopping, setStopping] = useState<string | null>(null);
 
-  if (!windows && !gpu?.configured && active.length === 0) return null;
+  if (!windows && !usage.windowsDisk && !gpu?.configured && active.length === 0) return null;
 
-  const stop = async (computer: AldoActiveComputer) => {
-    const key = `${computer.kind}:${computer.threadId}`;
+  const stop = async (computer: AldoActiveComputer, key: string) => {
+    if (!computer.environmentId) return;
     setStopping(key);
     try {
-      const message = await stopAldoComputer(computer.threadId, computer.kind);
+      const message = await stopAldoComputer(
+        computer.environmentId,
+        computer.kind,
+        computer.t3ThreadId,
+      );
       toastManager.add({
         type: "success",
         title: computer.kind === "gpu" ? "GPU computer stopped" : "Windows computer stopped",
@@ -94,6 +189,13 @@ function ComputersSection(props: {
           }
         />
       ) : null}
+      {usage.windowsDisk ? (
+        <LegacyWindowsDiskRow
+          disk={usage.windowsDisk}
+          status={props.status}
+          onChanged={props.onChanged}
+        />
+      ) : null}
       {gpu?.configured ? (
         <SettingsRow
           title="GPU computers"
@@ -109,29 +211,25 @@ function ComputersSection(props: {
           }
         />
       ) : null}
-      {active.map((computer) => {
-        const key = `${computer.kind}:${computer.threadId}`;
+      {active.map((computer, index) => {
+        const key = `${computer.kind}:${computer.environmentId ?? "none"}:${computer.t3ThreadId ?? index}`;
         return (
           <SettingsRow
             key={key}
-            title={
-              computer.title
-                ? `${computer.kind === "gpu" ? "GPU" : "Windows"} · ${computer.title}`
-                : computer.kind === "gpu"
-                  ? "Running GPU computer"
-                  : "Running Windows computer"
-            }
+            title={computer.kind === "gpu" ? "Running GPU computer" : "Running Windows computer"}
             description={`Status: ${computer.status}`}
             inline
             control={
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={stopping !== null}
-                onClick={() => void stop(computer)}
-              >
-                {stopping === key ? "Stopping…" : "Stop"}
-              </Button>
+              computer.environmentId ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={stopping !== null}
+                  onClick={() => void stop(computer, key)}
+                >
+                  {stopping === key ? "Stopping…" : "Stop"}
+                </Button>
+              ) : undefined
             }
           />
         );
@@ -234,7 +332,13 @@ export function AldoAccountPage() {
           </div>
         </SettingsSection>
       ) : null}
-      {usage ? <ComputersSection usage={usage} onChanged={workspace.refresh} /> : null}
+      {usage ? (
+        <ComputersSection
+          usage={usage}
+          status={workspace.state.status}
+          onChanged={workspace.refresh}
+        />
+      ) : null}
       {profile ? (
         <SettingsSection title="This device" icon={<LogOutIcon className="size-4" />}>
           <SettingsRow

@@ -80,11 +80,10 @@ export interface AldoWorkspaceUsage {
 }
 
 export interface AldoActiveComputer {
-  readonly threadId: string;
   readonly kind: "windows" | "gpu";
-  readonly status: string;
-  readonly startedAt: string | null;
-  readonly title: string | null;
+  readonly status: "starting" | "running" | "stopping";
+  readonly environmentId: string | null;
+  readonly t3ThreadId: string | null;
 }
 
 export interface AldoComputersSummary {
@@ -215,11 +214,10 @@ function isComputersSummary(value: unknown): value is AldoComputersSummary {
     value.active.every(
       (item) =>
         isRecord(item) &&
-        typeof item.threadId === "string" &&
         (item.kind === "windows" || item.kind === "gpu") &&
-        typeof item.status === "string" &&
-        (item.startedAt === null || typeof item.startedAt === "string") &&
-        (item.title === null || typeof item.title === "string"),
+        (item.status === "starting" || item.status === "running" || item.status === "stopping") &&
+        (item.environmentId === null || typeof item.environmentId === "string") &&
+        (item.t3ThreadId === null || typeof item.t3ThreadId === "string"),
     )
   );
 }
