@@ -137,7 +137,12 @@ function movedRows(home: AldoHome, now: number, seenAt: number | null) {
     const reported = c.result?.state === "finished";
     moves.push({
       at: c.stateAt ?? c.at,
-      text: c.progress?.label ?? (reported ? "Reported complete" : "Reply received · unverified"),
+      text:
+        c.progress?.label && !/^(?:Reported complete|Reply received)$/i.test(c.progress.label)
+          ? c.progress.label
+          : reported
+            ? "Done"
+            : "Updated",
       kind: reported ? "finished" : "replied",
     });
     // The latest wins; at the same time a pull request's word is the more telling.
@@ -212,12 +217,12 @@ export function presenceBoard(
       ["failed", "deploy failed"],
       ["merged", "merged"],
       ["green", "checks passed"],
-      ["finished", "reported complete"],
-      ["replied", "replies received"],
+      ["finished", "done"],
+      ["replied", "updated"],
     ] as const
   ).flatMap(([kind, words]) => {
     const n = moves.filter((m) => m.move.kind === kind).length;
-    return n > 0 ? [kind === "replied" ? plural(n, "reply received", words) : `${n} ${words}`] : [];
+    return n > 0 ? [`${n} ${words}`] : [];
   });
 
   const tasks = boardFor(home.conversations, now);
@@ -397,14 +402,13 @@ export function presenceLine(input: {
     return { text: "Typing…", state: "thinking", ...none };
   if (phase === "error") return { text: "Tap to talk again", state: "error", ...none };
   if (input.unread) return { text: "Couldn't check on your agents", state: "error", ...none };
-  const { waiting, moved, stuck, unfinished = 0 } = input;
+  const { waiting, stuck, unfinished = 0 } = input;
   const live = input.working.length;
   const [first] = input.working;
-  const dot = waiting > 0 ? "needs-you" : moved > 0 ? "moved" : null;
-  // What needs them leads, then what moved and remains unfinished; the first two say it.
+  const dot = waiting > 0 ? "needs-you" : null;
+  // Show only what needs attention or is actively running now.
   const tiers = [
     waiting > 0 ? `${waiting} need${waiting === 1 ? "s" : ""} you` : null,
-    moved > 0 ? `${moved} moved` : null,
     unfinished > 0 ? `${unfinished} stopped` : null,
     live > 0 ? `${live} working` : null,
     stuck > 0 ? `${stuck} with no word` : null,
@@ -418,7 +422,6 @@ export function presenceLine(input: {
       state,
       dot,
     };
-  if (moved > 0) return { text: `${plural(moved, "thread", "threads")} moved`, state, dot };
   if (unfinished > 0) return { text: `${plural(unfinished, "job", "jobs")} stopped`, state, dot };
   if (live > 1) return { text: `${live} working`, state, dot };
   if (live === 1 && first)

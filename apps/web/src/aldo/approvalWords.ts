@@ -22,18 +22,20 @@ export function aldoApprovalOption(option: ProviderApprovalOption): ProviderAppr
   return label ? { ...option, label: label as ProviderApprovalOption["label"] } : option;
 }
 
-/** What the agent wants to do, in a sentence. */
+/** What needs approval, in plain words. */
 export function aldoApprovalSentence(kind: string, appName: string | null | undefined): string {
-  if (kind === "mcp-elicitation") return `Your agent wants to use ${appName || "an app"}.`;
-  if (kind === "command") return "Your agent wants to run a command.";
-  if (kind === "file-read") return "Your agent wants to read a file.";
-  if (kind === "permission") return "Your agent wants more access.";
-  return "Your agent wants to change a file.";
+  if (kind === "mcp-elicitation") return `Use ${appName || "this app"}?`;
+  if (kind === "command") return "Run this command?";
+  if (kind === "file-read") return "Read this file?";
+  if (kind === "permission") return "Allow more access?";
+  return "Change this file?";
 }
 
-/** The card's headline: what the agent wants to do, as a sentence ("Run a command" becomes "Your agent wants to run a command"). */
+/** The card's headline: direct plain question without third-person filler ("Run a command" -> "Run a command?"). */
 export function approvalHeadline(what: string): string {
-  return `Your agent wants to ${what.charAt(0).toLowerCase()}${what.slice(1)}`;
+  const clean = what.trim().replace(/\.+$/, "");
+  if (!clean) return "Allow this step?";
+  return clean.endsWith("?") ? clean : `${clean}?`;
 }
 
 /** How serious a step is, in two or three words, said before what it does. */

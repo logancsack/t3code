@@ -267,6 +267,14 @@ export function AldoPresence(props: {
       : age < 60_000
         ? "Updated just now"
         : `Updated ${elapsed(new Date(readAt).toISOString(), now)} ago`;
+  const hasNeedsYou =
+    board.needsYou.rows.length + board.putOff + board.hidden + board.dismissed.length > 0;
+  const hasAnySection =
+    hasNeedsYou ||
+    board.unfinished.rows.length > 0 ||
+    board.working.rows.length > 0 ||
+    board.coming.rows.length > 0;
+  const showFreshness = readAt === 0 || age >= FRESH_MS;
   return (
     <Popover open={open} onOpenChange={change}>
       <PopoverTrigger
@@ -283,63 +291,57 @@ export function AldoPresence(props: {
         <div className="flex max-h-[min(34rem,calc(100dvh-9rem))] flex-col overflow-y-auto py-1">
           {view === "index" ? (
             <>
-              <ul className="flex flex-col">
-                <IndexRow
-                  tone="attention"
-                  title={TITLES.needsYou}
-                  section={board.needsYou}
-                  openable={
-                    board.needsYou.rows.length +
-                      board.putOff +
-                      board.hidden +
-                      board.dismissed.length >
-                    0
-                  }
-                  onOpen={() => setView("needsYou")}
-                />
-                <IndexRow
-                  tone="live"
-                  title={TITLES.moved}
-                  section={board.moved}
-                  dot="bg-primary"
-                  onOpen={() => setView("moved")}
-                />
-                {board.unfinished.rows.length > 0 ? (
-                  <IndexRow
-                    tone="quiet"
-                    title={TITLES.unfinished}
-                    section={board.unfinished}
-                    onOpen={() => setView("unfinished")}
-                  />
-                ) : null}
-                <IndexRow
-                  tone="live"
-                  title={TITLES.working}
-                  section={board.working}
-                  onOpen={() => setView("working")}
-                />
-                <IndexRow
-                  tone="quiet"
-                  title={TITLES.coming}
-                  section={board.coming}
-                  onOpen={() => setView("coming")}
-                />
-              </ul>
-              <div className="mt-1 border-foreground/[0.06] border-t pt-1">
+              {hasAnySection ? (
+                <ul className="flex flex-col">
+                  {hasNeedsYou ? (
+                    <IndexRow
+                      tone="attention"
+                      title={TITLES.needsYou}
+                      section={board.needsYou}
+                      openable
+                      onOpen={() => setView("needsYou")}
+                    />
+                  ) : null}
+                  {board.working.rows.length > 0 ? (
+                    <IndexRow
+                      tone="live"
+                      title={TITLES.working}
+                      section={board.working}
+                      onOpen={() => setView("working")}
+                    />
+                  ) : null}
+                  {board.unfinished.rows.length > 0 ? (
+                    <IndexRow
+                      tone="quiet"
+                      title={TITLES.unfinished}
+                      section={board.unfinished}
+                      onOpen={() => setView("unfinished")}
+                    />
+                  ) : null}
+                  {board.coming.rows.length > 0 ? (
+                    <IndexRow
+                      tone="quiet"
+                      title={TITLES.coming}
+                      section={board.coming}
+                      onOpen={() => setView("coming")}
+                    />
+                  ) : null}
+                </ul>
+              ) : (
+                <p className="px-2 py-2.5 text-[13px] text-muted-foreground">All caught up</p>
+              )}
+              <div className="mt-1 flex items-center justify-between border-foreground/[0.06] border-t pt-1">
                 <button
                   type="button"
-                  className={cn(ROW, "items-center")}
+                  className={cn(
+                    ROW,
+                    "min-h-10 items-center py-1.5 text-muted-foreground hover:text-foreground",
+                  )}
                   onClick={() => setAldoUnderTheHood(true)}
                 >
-                  <SlidersHorizontalIcon
-                    aria-hidden
-                    className="size-3.5 shrink-0 text-muted-foreground"
-                  />
-                  <span className="min-w-0 flex-1 font-medium text-sm">Under the hood</span>
-                  <ChevronRightIcon
-                    aria-hidden
-                    className="size-3.5 shrink-0 text-muted-foreground"
-                  />
+                  <SlidersHorizontalIcon aria-hidden className="size-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 text-[13px]">Under the hood</span>
+                  <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </button>
               </div>
             </>
@@ -457,10 +459,11 @@ export function AldoPresence(props: {
               ) : null}
             </div>
           ) : null}
-          <p className="px-2 pt-2 pb-1 text-[11px] text-muted-foreground tabular-nums">
-            {freshness}
-            {age >= FRESH_MS || readAt === 0 ? " · checking" : ""}
-          </p>
+          {showFreshness ? (
+            <p className="px-2 pt-2 pb-1 text-[11px] text-muted-foreground tabular-nums">
+              {freshness} · checking
+            </p>
+          ) : null}
         </div>
       </PopoverPopup>
     </Popover>
@@ -487,7 +490,7 @@ function IndexRow(props: {
         disabled={!openable}
         className={cn(
           ROW,
-          "min-h-16 items-center disabled:opacity-60 disabled:hover:bg-transparent",
+          "min-h-12 items-center py-2 disabled:opacity-60 disabled:hover:bg-transparent",
         )}
         onClick={props.onOpen}
       >

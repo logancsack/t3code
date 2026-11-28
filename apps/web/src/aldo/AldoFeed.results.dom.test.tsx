@@ -21,7 +21,7 @@ vi.mock("../components/ChatMarkdown", () => ({
 
 const { AldoFeedRun } = await import("./AldoFeed");
 
-it("keeps completion proof visible when a task settles into the finished feed", async () => {
+it("keeps the finished feed row clean without embedding the agent verification checklist", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   document.body.append(host);
@@ -51,14 +51,9 @@ it("keeps completion proof visible when a task settles into the finished feed", 
         />,
       ),
     );
-    await vi.waitFor(() =>
-      expect(host.querySelector('[aria-label="Task result"]')?.textContent).toContain(
-        "Phone preview works",
-      ),
-    );
-    expect(host.textContent).toContain("Opened at 390px.");
-    expect(host.textContent).toContain("Keyboard navigation passed.");
-    expect(host.textContent).toContain("Production sign-in was not checked.");
+    expect(host.textContent).toContain("Publish the page");
+    expect(host.querySelector('[aria-label="Task result"]')).toBeNull();
+    expect(host.textContent).not.toContain("Keyboard navigation passed.");
   } finally {
     act(() => root.unmount());
     host.remove();

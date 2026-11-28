@@ -565,16 +565,6 @@ export function healthIssues(home: Pick<AldoHome, "health" | "usage">): Readonly
       href: "/settings/account",
     });
   }
-  for (const env of home.health.environments) {
-    if (env.status === "failed") {
-      issues.push({
-        id: `env-${env.repos.join(",")}`,
-        text: `The ready-to-go setup for ${env.repos.map((r) => r.split("/").at(-1) ?? r).join(" + ")} failed to build. New threads start without it.`,
-        tone: "warn",
-        href: "/settings/code",
-      });
-    }
-  }
   return issues;
 }
 
