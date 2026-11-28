@@ -20,26 +20,19 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { cn } from "~/lib/utils";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
+import { ApprovalWords } from "./AldoApprovalWords";
+import { aldoApprovalLabel, approvalHeadline, recommendedOption } from "./approvalWords";
 import { seedAldoComposer } from "./assistantSession";
 import { AldoApiError } from "./api";
 import { plainCardText } from "./plainCardText";
 import {
   answerAldoThread,
   approveAldoPlan,
-  replyAldoThread,
   type AldoHomeConversation,
   type AldoHomePending,
   type AldoHomeTarget,
 } from "./homeApi";
-import {
-  elapsed,
-  NEEDS_YOU_LABEL,
-  needsYouKind,
-  repoName,
-  concreteWaitingQuestion,
-  waitingQuestion,
-  waitingReply,
-} from "./home.logic";
+import { elapsed, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
 import { useAldoModelName } from "./modelNames";
 import { sendAldoAnswer, useAldoHomeFeed } from "./homeFeed";
 import { PRIMARY, SECONDARY } from "./surface";
@@ -190,25 +183,11 @@ export function PendingForm(props: {
       <QuestionForm
         key={c.pending.requestId}
         conversation={c}
-        pending={concreteWaitingQuestion(c, c.pending)}
+        pending={c.pending}
         onActed={props.onActed}
         onSending={props.onSending}
       />
     );
-  // One that only waits is asked in plain words, its answer sent as a message.
-  if (kind === "waiting") {
-    const pending = waitingQuestion(c);
-    return (
-      <QuestionForm
-        key={pending.requestId}
-        conversation={c}
-        pending={pending}
-        reply={waitingReply}
-        onActed={props.onActed}
-        onSending={props.onSending}
-      />
-    );
-  }
   if (kind === "approval" && c.pending?.kind === "approval")
     return (
       <ApprovalForm
@@ -309,8 +288,6 @@ async function sendAnswer<T>(
 function QuestionForm(props: {
   readonly conversation: AldoHomeConversation;
   readonly pending: Extract<AldoHomePending, { kind: "question" }>;
-  /** Sent as a message instead, in these words: a thread that only waits takes no answer. */
-  readonly reply?: (answer: string) => string;
   readonly onActed: () => void;
   readonly onSending?: (() => void) | undefined;
 }) {
@@ -336,19 +313,13 @@ function QuestionForm(props: {
         props.conversation,
         requestId,
         { answers: given, other },
-        props.reply
-          ? () =>
-              replyAldoThread(
-                props.conversation.thread,
-                props.reply!(String(given[questions[0]!.id])),
-              ).then(() => "sent")
-          : () =>
-              answerAldoThread(props.conversation.thread, {
-                requestId,
-                answers: given,
-                decisionKey: props.conversation.decisionKey,
-                questionIds: props.pending.questions.map((q) => q.id),
-              }),
+        () =>
+          answerAldoThread(props.conversation.thread, {
+            requestId,
+            answers: given,
+            decisionKey: props.conversation.decisionKey,
+            questionIds: props.pending.questions.map((q) => q.id),
+          }),
       );
       toastManager.add({
         type: "success",
@@ -509,37 +480,69 @@ function ApprovalForm(props: {
       setBusy(null);
     }
   };
+  const e = props.pending.explain;
+  const options = props.pending.options.map((o) => ({
+    ...o,
+    label: aldoApprovalLabel(o.decision, o.label),
+  }));
+  const suggested = e ? recommendedOption(options, e.recommended) : undefined;
+  const ordered = suggested ? [suggested, ...options.filter((o) => o !== suggested)] : options;
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-sm">{plainCardText(props.pending.summary)}</p>
-      {props.pending.detail ? (
-        <div>
-          <button
-            type="button"
-            className="text-muted-foreground text-xs hover:text-foreground"
-            onClick={() => setShowDetail((v) => !v)}
-          >
-            {showDetail ? "Hide details" : "Show details"}
-          </button>
-          {showDetail ? (
-            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-xs">
-              {props.pending.detail}
-            </pre>
+      {e ? (
+        <>
+          <p className="font-medium text-sm">{approvalHeadline(e.what)}</p>
+          <ApprovalWords
+            explain={e}
+            detail={props.pending.detail}
+            kind={props.pending.requestKind}
+          />
+        </>
+      ) : (
+        <>
+          <p className="text-sm">{plainCardText(props.pending.summary)}</p>
+          {props.pending.detail ? (
+            <div>
+              <button
+                type="button"
+                className="text-muted-foreground text-xs hover:text-foreground"
+                onClick={() => setShowDetail((v) => !v)}
+              >
+                {showDetail ? "Hide details" : "Show details"}
+              </button>
+              {showDetail ? (
+                <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-xs">
+                  {props.pending.detail}
+                </pre>
+              ) : null}
+            </div>
           ) : null}
-        </div>
-      ) : null}
+        </>
+      )}
       <div className="flex flex-wrap gap-1.5">
-        {props.pending.options.map((o) => {
+        {ordered.map((o) => {
           const refuses = o.decision === "decline" || o.decision === "cancel";
           return (
             <Button
               key={o.decision}
               size="sm"
-              variant={refuses ? "outline" : "default"}
+              variant={
+                suggested
+                  ? o === suggested
+                    ? "default"
+                    : "outline"
+                  : refuses
+                    ? "outline"
+                    : "default"
+              }
               disabled={busy !== null}
               onClick={() => void decide(o.decision)}
             >
-              {busy === o.decision ? "Sending…" : o.label}
+              {busy === o.decision
+                ? "Sending…"
+                : o === suggested
+                  ? `${o.label} (recommended)`
+                  : o.label}
             </Button>
           );
         })}

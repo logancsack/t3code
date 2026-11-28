@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { BLOCKED_NOTE, homeActionsFixture } from "./homeActions.test-fixtures";
 import { aldoDecisions } from "./decisions.logic";
+import { needsYouKind } from "./home.logic";
+import type { AldoHomePending } from "./homeApi";
 import { DecisionCard } from "./AldoUpNext";
 import { useAldoReceipts } from "./receipts";
 const backend = vi.hoisted(() => ({ fetch: vi.fn(), toast: vi.fn() }));
@@ -146,54 +148,16 @@ it("requests plan changes without approving it", async () => {
     changes: "Check my account first",
   });
 });
-const type = async (text: string) => {
-  const input = el.querySelector("input")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () =>
-    el
-      .querySelector("form")!
-      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-  );
-  return input;
-};
 const sent = () => JSON.parse(backend.fetch.mock.calls[0]![1].body);
 const JARGON = /holdout|provenance|unadmitted|coverage|dedicated account/i;
 
-it("a thread that only waits asks in plain words with choices to tap, never its notes or a bare text box", async () => {
-  const d = await mount("waiting");
-  expect(d.kind === "waiting" && d.conversation.summary).toBe(BLOCKED_NOTE);
-  expect(el.querySelector("h4")?.textContent).toContain("choose an account");
-  expect(el.textContent).not.toMatch(JARGON);
-  // Choices first, the recommended one marked; typing only once asked for.
-  expect(el.querySelector("input")).toBeNull();
-  expect(button("I'll provide an account to useRecommended")).toBeDefined();
-  expect(button("Something else…")).toBeDefined();
-  expect(el.textContent).toContain("View result");
-  expect(el.textContent).toContain("Ask Aldo about it");
-  await act(async () => button("Finish without the work that needs that account").click());
-  expect(backend.fetch.mock.calls[0]![0]).toBe("/api/environments/waiting/messages");
-  expect(sent()).toEqual({
-    t3ThreadId: "c-waiting",
-    text: "Finish without the work that needs that account",
-  });
-  expect(useAldoReceipts.getState().receipts).toHaveLength(1);
-});
-
-it("a waiting card's own words reply to the thread, kept on failure without claiming success", async () => {
-  backend.fetch.mockResolvedValue(
-    Response.json({ error: "Couldn't keep the reply. Try again." }, { status: 503 }),
+it("a thread that only waits is no card: with nothing to ask, nothing is shown", async () => {
+  const waiting = home.conversations.find((c) => c.ref === "waiting")!;
+  expect(waiting.summary).toBe(BLOCKED_NOTE);
+  expect(needsYouKind(waiting)).toBeNull();
+  expect(decisions.some((d) => "conversation" in d && d.conversation.ref === "waiting")).toBe(
+    false,
   );
-  await mount("waiting");
-  await act(async () => button("Something else…").click());
-  const input = await type("Use my test account");
-  expect(backend.fetch.mock.calls[0]![0]).toBe("/api/environments/waiting/messages");
-  expect(sent().text).toBe("Use my test account");
-  expect(el.querySelector('[role="alert"]')?.textContent).toContain("Couldn't keep the reply");
-  expect(input.value).toBe("Use my test account");
-  expect(useAldoReceipts.getState().receipts).toHaveLength(0);
 });
 
 it("a turn's own ask is its question, answered with a tap, its notes behind View result", async () => {
@@ -217,32 +181,18 @@ it("a turn's own ask is its question, answered with a tap, its notes behind View
   );
 });
 
-it("the board's form for a thread that only waits answers with a tap, as a reply", async () => {
+it("the board's form for a thread that only waits is empty, not a made-up question", async () => {
   const { PendingForm } = await import("./AldoHomeInbox");
-  const d = decisions.find((d) => d.kind === "waiting" && d.conversation.ref === "waiting")!;
-  if (d.kind !== "waiting") throw new Error("Waiting fixture missing");
-  await act(async () =>
-    root.render(<PendingForm conversation={d.conversation} onActed={() => {}} />),
-  );
-  expect(el.textContent).toContain("choose an account");
-  expect(el.textContent).not.toMatch(JARGON);
-  await act(async () => button("Finish without the work that needs that account").click());
-  expect(backend.fetch.mock.calls[0]![0]).toBe("/api/environments/waiting/messages");
-  expect(sent().text).toBe("Finish without the work that needs that account");
+  const waiting = home.conversations.find((c) => c.ref === "waiting")!;
+  await act(async () => root.render(<PendingForm conversation={waiting} onActed={() => {}} />));
+  expect(el.textContent).toBe("");
+  expect(el.querySelector("button")).toBeNull();
 });
 
 it("no thread waiting on Home is left with only a text box", async () => {
   // A computer to start has its own card (AldoComputerRequest), as Up next leaves it out.
-  const waits = decisions.filter(
-    (d) =>
-      (d.kind === "waiting" && !d.conversation.computers?.some((c) => c.status === "asked")) ||
-      d.kind === "question",
-  );
-  expect(waits.map((d) => d.key.split(":")[1]).toSorted()).toEqual([
-    "question",
-    "turn-ask",
-    "waiting",
-  ]);
+  const waits = decisions.filter((d) => d.kind === "question");
+  expect(waits.map((d) => d.key.split(":")[1]).toSorted()).toEqual(["question", "turn-ask"]);
   for (const d of waits) {
     // A key of its own: no words kept from another test's card.
     const fresh = { ...d, key: `${d.key}:fresh` };
@@ -286,6 +236,88 @@ it.each([
   expect(backend.fetch.mock.calls[0]![0]).toBe(`/api/approvals/${kind}`);
   expect(useAldoReceipts.getState().receipts[0]?.text).toBe("Decision received");
 });
+const explained = (
+  explain: NonNullable<Extract<AldoHomePending, { kind: "approval" }>["explain"]>,
+  detail: string,
+) => {
+  const base = decisions.find((d) => d.kind === "approval")!;
+  if (base.kind !== "approval") throw new Error("Approval fixture missing");
+  return {
+    ...base,
+    key: `${base.key}:explained`,
+    pending: {
+      ...base.pending,
+      summary: "Approval requested",
+      detail,
+      requestKind: "command",
+      explain,
+    },
+  };
+};
+const mountDecision = async (d: ReturnType<typeof explained>) =>
+  act(async () =>
+    root.render(
+      <DecisionCard key={d.key} decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />,
+    ),
+  );
+
+it("an approval says what the step is, why, whether it's safe and which answer Aldo recommends, with the raw command behind Details", async () => {
+  await mountDecision(
+    explained(
+      {
+        what: "Run a command that reads",
+        why: "The agent is looking at its workspace.",
+        safety: {
+          level: "safe",
+          text: "It looks like it only reads or lists things. Nothing is changed.",
+        },
+        recommended: "accept",
+      },
+      "git status --short",
+    ),
+  );
+  expect(el.querySelector("h4")?.textContent).toBe("Your agent wants to run a command that reads");
+  expect(el.textContent).toContain("The agent is looking at its workspace.");
+  expect(el.textContent).toContain("Safe to allow.");
+  expect(el.textContent).not.toMatch(/Approval requested|git status/);
+  // The recommended answer is first, and marked on its own button.
+  const choices = Array.from(el.querySelectorAll("button")).filter((b) =>
+    b.className.includes("justify-between"),
+  );
+  expect(choices.map((b) => b.textContent)).toEqual(["AllowRecommended", "Don't allow"]);
+  // The command is one tap away, not in the way.
+  await act(async () => button("Details").click());
+  expect(el.textContent).toContain("git status --short");
+  await act(async () => button("AllowRecommended").click());
+  expect(JSON.parse(backend.fetch.mock.calls[0]![1].body)).toMatchObject({
+    action: "answer",
+    decision: "accept",
+  });
+});
+
+it("an approval that could do harm recommends not allowing it, and says why in plain words", async () => {
+  await mountDecision(
+    explained(
+      {
+        what: "Run a command that looks like it force-pushes code, which can overwrite work in a remote repository",
+        why: "The agent runs commands to do its work, and this thread asks before commands.",
+        safety: {
+          level: "risky",
+          text: "This can't easily be undone: it can overwrite published work. Allow it only if you asked for something like this.",
+        },
+        recommended: "decline",
+      },
+      "git push --force origin main",
+    ),
+  );
+  expect(el.textContent).toContain("Can't easily be undone.");
+  const choices = Array.from(el.querySelectorAll("button")).filter((b) =>
+    b.className.includes("justify-between"),
+  );
+  expect(choices.map((b) => b.textContent)).toEqual(["Don't allowRecommended", "Allow"]);
+  expect(el.textContent).not.toMatch(/force origin|git push/);
+});
+
 it("a refused command approval stays actionable with the actual reason", async () => {
   backend.fetch.mockResolvedValue(
     Response.json({ error: "This request was replaced." }, { status: 409 }),
@@ -514,7 +546,7 @@ it.each(["272 deterministic reliability checks passed.", "I’ve prepared the dr
   },
 );
 
-it("a bare blocked Grok report names Premium and declined payment, with matching choices", async () => {
+it("a bare blocked report with no question is no card, whatever its notes say", () => {
   const base = home.conversations.find((c) => c.ref === "waiting")!;
   const c = {
     ...base,
@@ -534,64 +566,44 @@ it("a bare blocked Grok report names Premium and declined payment, with matching
       decided: [],
     },
   };
-  const d = aldoDecisions({ ...home, conversations: [c] }, Date.now()).find(
-    (d) => d.kind === "waiting",
-  )!;
-  await act(async () =>
-    root.render(<DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />),
-  );
-  expect(el.querySelector("h4")?.textContent).toMatch(/Premium.*Grok Bot.*declined/);
-  expect(el.textContent).not.toContain("Decide for me and carry on");
-  expect(button("I'll provide an existing paid login")).toBeDefined();
-  expect(button("Skip the paid tasks and finish with what you have")).toBeDefined();
-  expect(backend.fetch).not.toHaveBeenCalled();
+  expect(needsYouKind(c)).toBeNull();
+  expect(
+    aldoDecisions({ ...home, conversations: [c] }, Date.now()).filter((d) => "conversation" in d),
+  ).toEqual([]);
 });
 
-it("repairs an old server's generic synthetic question without changing its response identity", async () => {
+it("an old server's generic made-up question is no card either", () => {
   const base = home.conversations.find((c) => c.ref === "turn-ask")!;
-  const c = {
-    ...base,
-    title: "Learn from Grok Bot",
-    summary: "I need your decision before I can finish.",
-    result: {
-      state: "blocked_on_user" as const,
-      doneWhen: [
-        {
-          criterion: "Run Grok tasks",
-          met: false,
-          evidence: "Premium is needed; payments were declined.",
-        },
-      ],
-      checked: [],
-      notChecked: [],
-      decided: [],
-    },
-    pending: {
-      ...base.pending,
-      kind: "question" as const,
-      requestId: "ask:old",
-      questions: [
-        {
-          id: "ask",
-          header: "",
-          question: "I need your decision before I can finish.",
-          options: [{ label: "Decide for me and carry on (Recommended)", description: "" }],
-          multiSelect: false,
-        },
-      ],
-    },
-  };
-  const d = aldoDecisions({ ...home, conversations: [c] }, Date.now()).find(
-    (d) => d.kind === "question",
-  )!;
-  await act(async () =>
-    root.render(<DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />),
-  );
-  expect(el.querySelector("h4")?.textContent).toMatch(/Premium.*declined/);
-  expect(el.textContent).not.toContain("Decide for me");
-  await act(async () => button("I'll provide an existing paid login").click());
-  expect(sent().requestId).toBe("ask:old");
-  expect(sent().answers.ask).toBe("I'll provide an existing paid login");
+  for (const question of [
+    "I need your decision before I can finish.",
+    "I haven't recorded what I need from you to finish “Learn from Grok Bot”.",
+  ]) {
+    const c = {
+      ...base,
+      title: "Learn from Grok Bot",
+      pending: {
+        kind: "question" as const,
+        requestId: "ask:old",
+        questions: [
+          {
+            id: "ask",
+            header: "",
+            question,
+            options: [
+              { label: "Explain exactly what you need from me (Recommended)", description: "" },
+              { label: "Finish only the parts you can do without me", description: "" },
+            ],
+            multiSelect: false,
+          },
+        ],
+      },
+    };
+    expect(needsYouKind(c), question).toBeNull();
+    expect(
+      aldoDecisions({ ...home, conversations: [c] }, Date.now()).filter((d) => "conversation" in d),
+      question,
+    ).toEqual([]);
+  }
 });
 
 it("a changed decision refreshes without an approval receipt or a dead-end error", async () => {

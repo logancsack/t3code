@@ -165,34 +165,34 @@ function needsYouItems(
     (c) => !putAway(c.conversation, now) && (withHidden || !c.conversation.chatDecision?.dismissed),
   );
   const asksForComputer = (ref: string) => computers.some((c) => c.conversation.ref === ref);
-  const decisions = (withHidden ? aldoDecisions(home, now, true) : aldoChatDecisions(home, now))
-    .filter((d) => d.kind !== "waiting" || !asksForComputer(d.conversation.ref))
-    .map((d) => ({
-      key: d.key,
-      title: decisionTitle(d),
-      at: decisionAt(d, home),
-      kind:
-        d.kind === "aldo-approval"
-          ? {
-              email: "Email draft",
-              event: "Calendar event",
-              start: "Approval",
-              confirm: "Approval",
-            }[d.approval.kind]
-          : {
-              plan: "Plan",
-              approval: "Approval",
-              question: "Question",
-              handoff: "Browser request",
-              payment: "Payment",
-              merge: "Pull request",
-              failed: "Stopped thread",
-              waiting: "Waiting thread",
-            }[d.kind],
-      selector: `[data-aldo-decision=${JSON.stringify(d.key)}]`,
-      thread: decisionThread(d),
-      ...hiddenBy(chatDecisionOf(d)),
-    }));
+  const decisions = (
+    withHidden ? aldoDecisions(home, now, true) : aldoChatDecisions(home, now)
+  ).map((d) => ({
+    key: d.key,
+    title: decisionTitle(d),
+    at: decisionAt(d, home),
+    kind:
+      d.kind === "aldo-approval"
+        ? {
+            email: "Email draft",
+            event: "Calendar event",
+            start: "Approval",
+            confirm: "Approval",
+          }[d.approval.kind]
+        : {
+            plan: "Plan",
+            approval: "Approval",
+            question: "Question",
+            handoff: "Browser request",
+            payment: "Payment",
+            merge: "Pull request",
+            failed: "Stopped thread",
+            waiting: "Waiting thread",
+          }[d.kind],
+    selector: `[data-aldo-decision=${JSON.stringify(d.key)}]`,
+    thread: decisionThread(d),
+    ...hiddenBy(chatDecisionOf(d)),
+  }));
   const plans = parseAldoPlans(home.plans)
     .filter((p) => !p.error && !planPutOff(p, now) && planCardState(p, { now }).kind === "waiting")
     .map((p) => ({

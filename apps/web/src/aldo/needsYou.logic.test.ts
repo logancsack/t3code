@@ -5,6 +5,22 @@ const at = "2026-10-23T12:00:00.000Z";
 const now = Date.parse(at);
 const approval = (id: string, status = "pending") =>
   ({ id, status, kind: "email", title: id, createdAt: at }) as AldoApproval;
+const ASKED = {
+  kind: "question" as const,
+  requestId: "ask:turn",
+  questions: [
+    {
+      id: "q",
+      header: "",
+      question: "Which account should I use?",
+      options: [
+        { label: "Personal", description: "" },
+        { label: "Work", description: "" },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
 const conversation = (overrides: Partial<AldoHomeConversation> = {}): AldoHomeConversation => ({
   ref: "thread",
   thread: { environmentId: "aldo-thread", threadId: "thread" },
@@ -14,6 +30,7 @@ const conversation = (overrides: Partial<AldoHomeConversation> = {}): AldoHomeCo
   at,
   state: "waiting",
   machine: "running",
+  pending: ASKED,
   ...overrides,
 });
 const home = (overrides: Record<string, unknown> = {}) =>
@@ -85,7 +102,7 @@ it("leaves out settled threads and threads snoozed until later, until their time
   });
   expect(pendingNeedsYou(read, now)).toEqual([]);
   expect(pendingNeedsYou(read, Date.parse(later) + 1).map((i) => i.key)).toEqual([
-    `waiting:snoozed:${at}`,
+    `question:snoozed:ask:turn`,
     `failed:failed:${at}`,
   ]);
 });
@@ -153,6 +170,7 @@ it("lists each computer request with its arrival time without duplicating its wa
   const read = home({
     conversations: [
       conversation({
+        pending: undefined as never,
         computers: [computer, { ...computer, computer: "windows", status: "running" }],
       }),
     ],
@@ -166,7 +184,9 @@ it("lists each computer request with its arrival time without duplicating its wa
   });
   expect(pendingNeedsYou(read, now, [items[0]!.key])).toEqual([]);
   const again = home({
-    conversations: [conversation({ computers: [{ ...computer, askedAt: at }] })],
+    conversations: [
+      conversation({ pending: undefined as never, computers: [{ ...computer, askedAt: at }] }),
+    ],
   });
   expect(pendingNeedsYou(again, now, [items[0]!.key])).toHaveLength(1);
 });

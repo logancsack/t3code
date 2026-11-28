@@ -57,7 +57,7 @@ export type AldoDecision =
     }
   | { readonly kind: "merge"; readonly key: string; readonly pullRequest: AldoHomePullRequest }
   | {
-      readonly kind: "failed" | "waiting";
+      readonly kind: "failed";
       readonly key: string;
       readonly conversation: AldoHomeConversation;
     };
@@ -94,7 +94,8 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
       plan: c.plan,
     };
   // By when it got there (a rename or a pin moves `at`, not this), as Aldo's brief keys it.
-  if (kind === "failed" || kind === "waiting")
+  // A thread that waits with nothing to answer is no decision: there is nothing to ask.
+  if (kind === "failed")
     return { kind, key: `${kind}:${c.ref}:${c.stateAt ?? c.at}`, conversation: c };
   return null;
 }
@@ -215,7 +216,7 @@ export function aldoDecisions(
 
 /** Whether a decision can be made without opening its thread: a tap, or a few words (a payment's, in Link). */
 export function decidesInPlace(decision: AldoDecision): boolean {
-  return decision.kind !== "failed" && decision.kind !== "waiting";
+  return decision.kind !== "failed";
 }
 
 /** What a decision is called, in a line. */
@@ -256,8 +257,6 @@ export function decisionAsk(decision: AldoDecision): string {
     }
     case "failed":
       return decision.conversation.summary ?? "Stopped with an error";
-    case "waiting":
-      return decision.conversation.summary ?? "Waiting on you";
   }
 }
 
@@ -335,8 +334,6 @@ export function decisionBrief(decision: AldoDecision): string {
     }
     case "failed":
       return `The thread "${decision.conversation.title}" (ref ${decision.conversation.ref}) stopped with an error: ${decision.conversation.summary ?? "no reason given"}.`;
-    case "waiting":
-      return `The thread "${decision.conversation.title}" (ref ${decision.conversation.ref}) waits on the user: ${decision.conversation.summary ?? "it didn't say why"}.`;
   }
 }
 

@@ -257,8 +257,8 @@ describe("every count on Home agrees", () => {
   });
 
   it("is what 'four waiting, a tap approval, a pile set aside' looked like at 12:06 AM: one number, one list", () => {
-    // A question, a report that isn't a question, a payment question and a tap approval wait;
-    // failures, a put-off prompt and a snoozed thread don't count anywhere.
+    // A question, a payment question and a tap approval wait; a report that isn't a
+    // question, failures, a put-off prompt and a snoozed thread don't count anywhere.
     const read = home({
       conversations: [
         thread({ title: "Invoice", pending: question }),
@@ -272,9 +272,9 @@ describe("every count on Home agrees", () => {
       approvals: [approval("server", { kind: "confirm", title: "Rent the Seattle server" })],
     });
     const c = everyCount(read);
-    expect(c.items).toHaveLength(4);
-    expect([c.pill, c.badge, c.list.length, c.walkthrough]).toEqual([4, 4, 4, 4]);
-    expect(c.statusLine).toBe("4 things need you");
+    expect(c.items).toHaveLength(3);
+    expect([c.pill, c.badge, c.list.length, c.walkthrough]).toEqual([3, 3, 3, 3]);
+    expect(c.statusLine).toBe("3 things need you");
     expect(c.items.map((i) => i.title)).toContain("Rent the Seattle server");
   });
 

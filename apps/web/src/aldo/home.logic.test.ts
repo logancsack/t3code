@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { type AldoHomeConversation } from "./homeApi";
 import {
-  waitingQuestion,
   boardFor,
   capacityLines,
   planRunning,
@@ -34,7 +33,22 @@ describe("needsYouKind", () => {
   it("names what a waiting conversation is waiting on", () => {
     expect(needsYouKind(conversation({ state: "working" }))).toBeNull();
     expect(needsYouKind(conversation({ state: "failed" }))).toBe("failed");
-    expect(needsYouKind(conversation({ state: "waiting" }))).toBe("waiting");
+    // Waiting with nothing to answer (no question, approval or plan) isn't asking.
+    expect(needsYouKind(conversation({ state: "waiting" }))).toBeNull();
+    expect(
+      needsYouKind(
+        conversation({
+          state: "waiting",
+          progress: {
+            execution: "replied",
+            verdict: "finished",
+            next: { owner: "you", kind: "release" },
+            label: "Release held for you",
+            detail: "Waiting for your merge decision.",
+          },
+        }),
+      ),
+    ).toBe("waiting");
     expect(needsYouKind(conversation({ state: "paused" }))).toBe("paused");
     // An older Aldo's read: working, on a machine asleep.
     expect(needsYouKind(conversation({ state: "working", machine: "asleep" }))).toBe("paused");
@@ -216,7 +230,7 @@ it("retains capacity and computer queues in a separate waiting board section", (
   });
 });
 
-it("an older server's bare report still names an unmet need without a payment decline", () => {
+it("a thread waiting with nothing to ask is not shown as asking, however its notes read", () => {
   const c = conversation({
     state: "waiting",
     title: "Run Grok study",
@@ -231,32 +245,14 @@ it("an older server's bare report still names an unmet need without a payment de
       decided: [],
     },
   });
-  expect(waitingQuestion(c).questions[0]?.question).toContain("Grok Bot needs Premium access");
-  expect(waitingQuestion(c).questions[0]?.question).not.toContain("haven't recorded");
+  expect(needsYouKind(c)).toBeNull();
+  expect(needsYouKind({ ...c, activity: { working: false, needsYou: true } })).toBeNull();
 });
 
-it("keeps account verification distinct from choosing an account on older servers", () => {
+it("a thread asking for one of their computers still needs them, on its own card", () => {
   const c = conversation({
     state: "waiting",
-    title: "Publish the listing",
-    summary: "I need your decision before I can finish.",
-    result: {
-      state: "blocked_on_user",
-      doneWhen: [
-        {
-          criterion: "Publish",
-          met: false,
-          evidence:
-            "Publishing requires account verification. The selected account's email must be verified.",
-        },
-      ],
-      checked: [],
-      notChecked: [],
-      decided: [],
-    },
+    computers: [{ computer: "windows", status: "asked", creditsPerHour: 38.4 }],
   });
-  const ask = waitingQuestion(c).questions[0]!;
-  expect(ask.question).toContain("account verification");
-  expect(ask.question).not.toContain("Which account");
-  expect(ask.options.map((o) => o.label).join(" ")).not.toContain("provide an account");
+  expect(needsYouKind(c)).toBe("waiting");
 });

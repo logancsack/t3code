@@ -306,11 +306,7 @@ export function AldoConversationPage(props: {
     if (!home) return [];
     return [
       ...chatDecisions
-        .filter(
-          (d) =>
-            !receipts.some((r) => r.key === d.key) &&
-            !(d.kind === "waiting" && d.conversation.computers?.some((c) => c.status === "asked")),
-        )
+        .filter((d) => !receipts.some((r) => r.key === d.key))
         .map((d) => ({ key: d.key, at: decisionAt(d, home) })),
       ...(home.approvals ?? [])
         .filter(

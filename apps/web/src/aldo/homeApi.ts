@@ -12,6 +12,17 @@ export interface AldoHomeTarget {
   readonly threadId: string;
 }
 
+/** A step waiting for approval, in words: what it does, why, whether it's safe, and the answer Aldo recommends. */
+export interface AldoApprovalExplain {
+  readonly what: string;
+  readonly why: string;
+  readonly safety: {
+    readonly level: "safe" | "changes" | "risky" | "unclear";
+    readonly text: string;
+  };
+  readonly recommended: "accept" | "decline";
+}
+
 /** What a conversation is waiting on the user for, with its choices. */
 export type AldoHomePending =
   | {
@@ -30,6 +41,10 @@ export type AldoHomePending =
       readonly requestId: string;
       readonly summary: string;
       readonly detail?: string;
+      /** T3's kind of request (command, file-read, file-change, ...). */
+      readonly requestKind?: string;
+      /** What the step is in plain words, and the answer Aldo recommends (an older Aldo sends none). */
+      readonly explain?: AldoApprovalExplain;
       readonly options: ReadonlyArray<{ readonly decision: string; readonly label: string }>;
     }
   | {
