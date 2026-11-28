@@ -146,7 +146,11 @@ function OtherOpenCodeProvider(props: {
     if (!open || providers) return;
     let cancelled = false;
     fetchOpenCodeProviders()
-      .then((list) => !cancelled && setProviders(list))
+      .then((list) => {
+        if (cancelled) return;
+        setFailed(false);
+        setProviders(list);
+      })
       .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
@@ -185,7 +189,15 @@ function OtherOpenCodeProvider(props: {
             />
           </div>
         ) : (
-          <Button size="sm" variant="outline" onClick={() => setOpen((was) => !was)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              // Reopening after a failed load tries again: show it loading, not the old error.
+              setFailed(false);
+              setOpen((was) => !was);
+            }}
+          >
             {open ? "Close" : "Choose a provider"}
           </Button>
         )
