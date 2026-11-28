@@ -206,7 +206,7 @@ it("unfinished work has its own section and never implies running or asks for us
       c,
       now,
     ),
-  ).toMatchObject({ status: "Unfinished", action: null, dot: "quiet" });
+  ).toMatchObject({ status: "Stopped before finishing", action: "continue", dot: "quiet" });
 });
 
 it("a queued computer takes precedence over an unfinished report", () => {

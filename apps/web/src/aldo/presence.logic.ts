@@ -68,6 +68,7 @@ export interface PresenceRow {
   readonly target: AldoHomeTarget | null;
   /** What dismissing it from Needs you names; none from an Aldo that can't dismiss. */
   readonly decision?: AldoChatDecision;
+  readonly retry?: AldoHomeConversation;
 }
 
 /** A list with the one line the index row says of it. */
@@ -223,7 +224,14 @@ export function presenceBoard(
   const unfinished: PresenceRow[] = tasks.unfinished.map((c) => ({
     key: `unfinished:${c.ref}`,
     title: c.title,
-    detail: c.summary ?? "Unfinished",
+    detail:
+      c.progress?.execution === "failed"
+        ? c.progress.detail
+        : (c.result?.doneWhen.find((line) => !line.met && line.evidence.trim())?.evidence ??
+          (c.summary && !/agent reports|task is unfinished/i.test(c.summary)
+            ? c.summary
+            : "The last attempt left work incomplete. Continue to try again.")),
+    retry: c,
     tone: "quiet",
     target: c.thread,
   }));
@@ -298,7 +306,7 @@ export function presenceBoard(
         tone: "quiet",
         detail: queue
           ? aldoComputerQueueLabel(queue.computer, queue.position)
-          : (c.progress?.label ?? "Waiting to start"),
+          : (c.progress?.detail ?? "Aldo will continue when capacity is available."),
       };
     });
 
@@ -330,7 +338,7 @@ export function presenceBoard(
     },
     unfinished: {
       rows: unfinished,
-      preview: unfinished[0]?.title ?? "Nothing unfinished",
+      preview: unfinished[0]?.title ?? "Nothing stopped",
     },
     working: {
       rows: working,
@@ -396,7 +404,7 @@ export function presenceLine(input: {
   const tiers = [
     waiting > 0 ? `${waiting} need${waiting === 1 ? "s" : ""} you` : null,
     moved > 0 ? `${moved} moved` : null,
-    unfinished > 0 ? `${unfinished} unfinished` : null,
+    unfinished > 0 ? `${unfinished} stopped` : null,
     live > 0 ? `${live} working` : null,
     stuck > 0 ? `${stuck} with no word` : null,
   ].filter((tier) => tier !== null);
@@ -410,8 +418,7 @@ export function presenceLine(input: {
       dot,
     };
   if (moved > 0) return { text: `${plural(moved, "thread", "threads")} moved`, state, dot };
-  if (unfinished > 0)
-    return { text: `${plural(unfinished, "task", "tasks")} unfinished`, state, dot };
+  if (unfinished > 0) return { text: `${plural(unfinished, "job", "jobs")} stopped`, state, dot };
   if (live > 1) return { text: `${live} working`, state, dot };
   if (live === 1 && first)
     return { text: first.browsing ? `On ${first.browsing.site}` : first.title, state, dot };
