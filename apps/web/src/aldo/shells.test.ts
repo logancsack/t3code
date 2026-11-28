@@ -167,3 +167,45 @@ it("updates an already-seeded sleeping picker when models change, including acro
   await sync();
   expect(cached().providers[0].availability).toBe("unavailable");
 });
+
+it("keeps healthy shells loading after a bad copy, reports the failure and retries it", async () => {
+  const storage = await import("../connection/storage");
+  const { fetchAldoShells } = await import("./threadApi");
+  const bad = {
+    environmentId: "aldo-bad",
+    threadId: "bad",
+    label: "Bad",
+    repo: "",
+    branch: "",
+    state: "stopped",
+    shellSequence: 1,
+  } as const;
+  const good = { ...bad, environmentId: "aldo-good", threadId: "good", label: "Good" };
+  vi.mocked(fetchAldoShells).mockResolvedValue({
+    bad: { snapshotSequence: 1 },
+    good: { snapshotSequence: 1 },
+  });
+  let finishGood = () => {};
+  const goodFinished = new Promise<void>((resolve) => {
+    finishGood = resolve;
+  });
+  vi.mocked(storage.seedEnvironmentCache).mockImplementation(({ environmentId }) =>
+    environmentId === bad.environmentId ? Promise.reject(new Error("Invalid copy")) : goodFinished,
+  );
+  const shells = await import("./shells");
+  shells.installAldoShellSync();
+  let finished = false;
+  const sync = host.sync!([bad, good]).then(() => {
+    finished = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(finished).toBe(false);
+  finishGood();
+  await sync;
+  expect(shells.aldoThreadsLoadState()).toBe("error");
+
+  vi.mocked(storage.seedEnvironmentCache).mockResolvedValue();
+  await host.sync!([bad, good]);
+  expect(shells.aldoThreadsLoadState()).toBe("ready");
+  expect(vi.mocked(fetchAldoShells).mock.calls.at(-1)?.[0]).toEqual(["bad"]);
+});

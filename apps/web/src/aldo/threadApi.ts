@@ -90,10 +90,17 @@ export async function saveAldoSubagents(
 export async function fetchAldoShells(
   threadIds: ReadonlyArray<string>,
 ): Promise<Record<string, unknown>> {
-  const { shells } = await api<{ shells: Record<string, unknown> }>(
-    `/api/environments/shells?ids=${threadIds.join(",")}`,
-  );
-  return shells;
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), 10_000);
+  try {
+    const { shells } = await api<{ shells: Record<string, unknown> }>(
+      `/api/environments/shells?ids=${threadIds.join(",")}`,
+      { signal: timeout.signal },
+    );
+    return shells;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** This browser's copy of a machine's threads, for Aldo to keep until the machine reports its own. */

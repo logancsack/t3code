@@ -2,16 +2,21 @@
 // directory hasn't listed the threads yet, and the way to archived ones.
 
 import { Link } from "@tanstack/react-router";
+import { T } from "gt-react";
 import { ArchiveIcon } from "lucide-react";
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { Skeleton } from "../components/ui/skeleton";
 import { isAldoCloud } from "./api";
 import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
-import { aldoThreadsSynced, subscribeAldoThreadsSynced } from "./shells";
+import {
+  aldoThreadsLoadState,
+  subscribeAldoThreadsSynced,
+  type AldoThreadsLoadState,
+} from "./shells";
 
 /** No rows yet is loading, not "No threads yet", until the directory and this page's copies are current. */
-export function useAldoThreadsLoading(): boolean {
+export function useAldoThreadsState(): AldoThreadsLoadState {
   const listed = useSyncExternalStore(
     subscribeAldoEnvironments,
     () => {
@@ -20,8 +25,41 @@ export function useAldoThreadsLoading(): boolean {
     },
     () => null,
   );
-  const synced = useSyncExternalStore(subscribeAldoThreadsSynced, aldoThreadsSynced, () => false);
-  return isAldoCloud && (listed === null || (listed && !synced));
+  const state = useSyncExternalStore(
+    subscribeAldoThreadsSynced,
+    aldoThreadsLoadState,
+    () => "loading" as const,
+  );
+  const [overdue, setOverdue] = useState(false);
+  const loading = isAldoCloud && (listed === null || (listed && state === "loading"));
+  // A blocked local cache must offer recovery even when no request can finish.
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => setOverdue(true), 15_000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+  if (!isAldoCloud || listed === false) return "ready";
+  return loading ? (overdue ? "error" : "loading") : state;
+}
+
+export function AldoSidebarThreadsError() {
+  return (
+    <div
+      role="status"
+      className="flex flex-col gap-2 px-2.5 py-3 text-xs text-sidebar-muted-foreground"
+    >
+      <p>
+        <T>Some threads couldn’t load.</T>
+      </p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="w-fit cursor-pointer rounded-md border border-sidebar-border px-3 py-2 hover:bg-sidebar-row-hover focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <T>Retry</T>
+      </button>
+    </div>
+  );
 }
 
 export function AldoSidebarThreadsSkeleton() {
