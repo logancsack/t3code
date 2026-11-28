@@ -32,7 +32,10 @@ export interface AldoAccount {
 
 export type AldoAgentAccounts = {
   opencode?: AldoAccount & {
-    methods: ReadonlyArray<{ method: string; kind: string; connected: boolean }>;
+    /** A key for another provider than the four Settings names carries its name (`label`). */
+    methods: ReadonlyArray<{ method: string; kind: string; connected: boolean; label?: string }>;
+    /** Whether Aldo takes a key for any provider in fetchOpenCodeProviders. */
+    otherProviders?: boolean;
   };
   antigravity?: AldoAccount & { instanceId: string | null };
 };
@@ -72,6 +75,20 @@ export async function connectAldoGitHost(
   values: Record<string, string>,
 ): Promise<void> {
   await api(`/api/hosts/${kind}`, { method: "POST", body: JSON.stringify(values) });
+}
+
+/** A provider OpenCode knows that takes one API key (OpenCode's registry, as Aldo reads it). */
+export interface AldoOpenCodeProvider {
+  readonly id: string;
+  readonly name: string;
+  readonly doc: string | null;
+}
+
+export async function fetchOpenCodeProviders(): Promise<ReadonlyArray<AldoOpenCodeProvider>> {
+  const { providers } = await api<{ providers: AldoOpenCodeProvider[] }>(
+    "/api/connections/opencode/providers",
+  );
+  return providers;
 }
 
 export async function disconnectAldoAccount(

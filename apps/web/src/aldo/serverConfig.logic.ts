@@ -120,3 +120,30 @@ export function mergeProviderSnapshots<P extends Provider>(
     ...reported.filter((p) => !previous.some((old) => old.instanceId === p.instanceId)),
   ];
 }
+
+/** An OpenCode model's backend: its slug's first segment (openrouter, opencode-go, aldo…). */
+function backendOf(model: unknown): string {
+  const slug = (model as { slug?: unknown } | null)?.slug;
+  return typeof slug === "string" && slug.includes("/") ? slug.slice(0, slug.indexOf("/")) : "";
+}
+
+/**
+ * A machine's OpenCode lists the backends of the keys it had when it started,
+ * so a machine started before a key was added lists fewer than the account
+ * has. Aldo's saved catalog keeps each backend a machine reported, and drops a
+ * disconnected one at once: a report gets the saved models of the backends it
+ * doesn't list, after its own.
+ */
+export function withSavedBackends<
+  P extends Provider & { readonly models?: ReadonlyArray<unknown> },
+>(reported: ReadonlyArray<P>, saved: ReadonlyArray<P>): P[] {
+  return reported.map((provider) => {
+    if (provider.driver !== "opencode" || !Array.isArray(provider.models)) return provider;
+    const own = saved.find(
+      (p) => p.instanceId === provider.instanceId && p.driver === provider.driver,
+    );
+    const listed = new Set(provider.models.map(backendOf));
+    const kept = (own?.models ?? []).filter((model) => !listed.has(backendOf(model)));
+    return kept.length > 0 ? { ...provider, models: [...provider.models, ...kept] } : provider;
+  });
+}

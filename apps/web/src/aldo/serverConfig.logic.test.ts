@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   missingProviders,
   mergeProviderSnapshots,
+  withSavedBackends,
   providerInstances,
   providerKinds,
   withAldoTemplate,
@@ -149,4 +150,29 @@ it("refreshes existing sleeping providers independently, without replacing a new
   const refreshed = withAldoTemplate(raw, { providers: reported }, {});
   expect(JSON.parse(refreshed!).config.providers).toEqual([future, claude]);
   expect(withAldoTemplate(refreshed, { providers: reported }, {})).toBeNull();
+});
+
+it("keeps the saved OpenCode backends a machine without their keys doesn't list", () => {
+  const model = (slug: string) => ({ slug, name: slug });
+  const opencode = (slugs: string[]) => ({
+    instanceId: "opencode",
+    driver: "opencode",
+    checkedAt: "2026-11-28T01:00:00Z",
+    models: slugs.map(model),
+  });
+  const codex = { instanceId: "codex", driver: "codex", models: [model("gpt")] };
+  const saved = [opencode(["aldo/a", "openrouter/x", "openrouter/y"]), codex];
+  // A machine started before the OpenRouter key: Aldo's saved models of it stay, after the machine's own.
+  expect(withSavedBackends([opencode(["aldo/a", "aldo/b"]), codex], saved)).toEqual([
+    opencode(["aldo/a", "aldo/b", "openrouter/x", "openrouter/y"]),
+    codex,
+  ]);
+  // A backend the machine lists is its own; other agents and an empty save are as reported.
+  expect(withSavedBackends([opencode(["openrouter/z"])], saved)).toEqual([
+    opencode(["openrouter/z", "aldo/a"]),
+  ]);
+  expect(withSavedBackends([opencode(["aldo/a"]), codex], [])).toEqual([
+    opencode(["aldo/a"]),
+    codex,
+  ]);
 });

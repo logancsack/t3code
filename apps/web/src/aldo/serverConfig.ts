@@ -15,7 +15,7 @@ import { fetchAldoServerConfig, reportAldoServerConfig } from "./threadApi";
 import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { settingsAccounts } from "./settingsData";
 import { loadAldoMachineSettings } from "./machineSettings";
-import { providerKinds, mergeProviderSnapshots } from "./serverConfig.logic";
+import { providerKinds, mergeProviderSnapshots, withSavedBackends } from "./serverConfig.logic";
 
 type EncodedConfig = {
   environment: Record<string, unknown>;
@@ -34,6 +34,8 @@ const ACCOUNT_FOR_DRIVER: Record<string, "claude" | "codex" | "grok" | "muse" | 
 };
 
 let latest: EncodedConfig | null = null;
+/** The providers of the catalog Aldo last returned (withSavedBackends). */
+let saved: EncodedConfig["providers"] = [];
 let reportedProviders: string | null = null;
 let fetchedFromAldo: Promise<void> | null = null;
 let fetchedAt = 0;
@@ -99,7 +101,10 @@ function capture(): void {
   const encoded = encodeServerConfig(config) as unknown as EncodedConfig;
   latest = {
     ...encoded,
-    providers: mergeProviderSnapshots(latest?.providers ?? [], encoded.providers),
+    providers: mergeProviderSnapshots(
+      latest?.providers ?? [],
+      withSavedBackends(encoded.providers, saved),
+    ),
   };
   // Save when the models (or their availability) change, not on every check.
   const providers = JSON.stringify(
@@ -129,6 +134,7 @@ async function template(): Promise<EncodedConfig | null> {
       .then((config) => {
         if (!config) return;
         const reported = config as EncodedConfig;
+        if (Array.isArray(reported.providers)) saved = reported.providers;
         latest = {
           ...reported,
           providers: mergeProviderSnapshots(latest?.providers ?? [], reported.providers),
