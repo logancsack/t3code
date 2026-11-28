@@ -7,6 +7,7 @@ import { type AldoHome } from "./homeApi";
 
 const NOW = Date.parse("2026-10-26T12:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
+const continueThread = vi.hoisted(() => vi.fn(async () => "queued"));
 const underTheHood = vi.hoisted(() => vi.fn());
 const dismiss = vi.hoisted(() => vi.fn(async () => undefined));
 const restore = vi.hoisted(() => vi.fn(async () => undefined));
@@ -27,10 +28,12 @@ vi.mock("./AldoHomeInbox", () => ({
 vi.mock("./homeApi", async (original) => ({
   ...(await original<typeof import("./homeApi")>()),
   removeAldoDecisions: remove,
+  continueAldoThread: continueThread,
 }));
 vi.mock("./homeFeed", async (original) => ({
   ...(await original<typeof import("./homeFeed")>()),
   refreshAldoHome: async () => undefined,
+  sendAldoAnswer: async (_conversation: unknown, send: () => Promise<unknown>) => send(),
 }));
 vi.mock("./clearNeedsYou", () => ({ dismissNeedsYou: dismiss, restoreNeedsYou: restore }));
 // No machine is connected here: no live step (and none of T3's thread state to load).
@@ -334,4 +337,47 @@ it("sends every request of a long Clear all at once, before the page can go", ()
   press("Clear all");
   press("Aldo:");
   expect(remove.mock.calls.map(([ids]) => ids.length)).toEqual([50, 50, 20]);
+});
+
+it("a stopped item has its reason and a Continue action without opening its thread", async () => {
+  const c = conversation("retry", {
+    state: "failed",
+    activity: { working: false, needsYou: false },
+    summary: "The release could not be reached.",
+  });
+  show(home([c]));
+  press("1 job stopped");
+  press("Stopped");
+  expect(text()).toContain("The release could not be reached.");
+  expect(text()).not.toContain("Unfinished");
+  expect(text()).not.toContain("agent reports");
+  await act(async () => {
+    press("Continue");
+  });
+  expect(continueThread).toHaveBeenCalledWith(c.thread);
+  expect(text()).toContain("Asked it to carry on");
+});
+
+it("unfinished work owned by Aldo appears in Coming up with its next step", () => {
+  show(
+    home([
+      conversation("followup", {
+        state: "unfinished",
+        activity: { working: false, needsYou: false },
+        progress: {
+          execution: "replied",
+          verdict: "unfinished",
+          next: { owner: "aldo", kind: "delivery" },
+          label: "Next step scheduled",
+          detail: "The phone layout still needs checking. Aldo has scheduled a follow-up.",
+        },
+      }),
+    ]),
+  );
+  press("All caught up");
+  expect(text()).not.toContain("Stopped");
+  press("Coming up");
+  expect(text()).toContain(
+    "The phone layout still needs checking. Aldo has scheduled a follow-up.",
+  );
 });

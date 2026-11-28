@@ -180,8 +180,15 @@ export function threadCardOf(
         body: null,
         action: null,
       };
+    case "failed":
     case "unfinished":
-      return { tone: "quiet", dot: "quiet", status: "Unfinished", body: null, action: null };
+      return {
+        tone: "quiet",
+        dot: "quiet",
+        status: "Stopped before finishing",
+        body: c.summary ?? "Continue to try again.",
+        action: "continue",
+      };
     case "stopped":
       return { tone: "quiet", dot: "quiet", status: "Stopped by you", body: null, action: null };
     case "starting":

@@ -192,7 +192,13 @@ export function boardFor(
     working: conversations.filter((c) => isWorkingNow(c)).sort(byAt),
     waiting: conversations.filter(waitingToContinue).sort(byAt),
     unfinished: conversations
-      .filter((c) => c.state === "unfinished" && !waitingToContinue(c))
+      .filter(
+        (c) =>
+          !c.settled &&
+          ["unfinished", "failed"].includes(c.state) &&
+          !waitingToContinue(c) &&
+          !needsYouKind(c),
+      )
       .sort(byAt),
     done: conversations
       .filter(
