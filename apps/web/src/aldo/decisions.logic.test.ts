@@ -189,6 +189,63 @@ describe("aldoDecisions", () => {
     expect(decisions.map((d) => d.key)).toEqual(["question:s:r1", "merge:acme/shop#9"]);
   });
 
+  it("asks a step on an approval card once: its thread's turn-end ask isn't another decision", () => {
+    const turnAsk = (ref: string) => ({
+      ...question,
+      ref,
+      thread: at(ref),
+      pending: { ...question.pending!, requestId: `ask:turn-${ref}` },
+    });
+    const card = (ref: string, over: Partial<AldoApproval> = {}) =>
+      approval(`ap-${ref}`, { kind: "confirm", thread: at(ref), ...over });
+    const read = home({
+      approvals: [
+        card("asks"),
+        card("waits"),
+        card("stopped"),
+        card("planned"),
+        card("failed"),
+        // Decided, or a card for another thread: the thread's own ask stays.
+        card("decided", { status: "approved" }),
+        card("elsewhere", { thread: at("other") }),
+      ],
+      conversations: [
+        // The paid step's card is the ask; the words its turn ended on repeat it.
+        turnAsk("asks"),
+        conversation({ ref: "waits", thread: at("waits"), state: "waiting" }),
+        // A request it's stopped on, a plan to start and a failure are their own decisions.
+        { ...question, ref: "stopped", thread: at("stopped") },
+        conversation({
+          ref: "planned",
+          thread: at("planned"),
+          state: "waiting",
+          plan: { id: "p1", text: "1. Buy it" },
+        }),
+        conversation({ ref: "failed", thread: at("failed"), state: "failed", at: ago(3) }),
+        turnAsk("decided"),
+        turnAsk("elsewhere"),
+      ],
+    });
+    const keys = aldoDecisions(read, NOW).map((d) => d.key);
+    expect(keys.filter((k) => !k.startsWith("aldo:"))).toEqual([
+      "question:stopped:r1",
+      "question:decided:ask:turn-decided",
+      "question:elsewhere:ask:turn-elsewhere",
+      "plan:planned:p1",
+      `failed:failed:${ago(3)}`,
+    ]);
+    expect(keys.filter((k) => k.startsWith("aldo:"))).toEqual([
+      "aldo:ap-asks",
+      "aldo:ap-waits",
+      "aldo:ap-stopped",
+      "aldo:ap-planned",
+      "aldo:ap-failed",
+      "aldo:ap-elsewhere",
+    ]);
+    // The count says the same: one thing per step.
+    expect(aldoWaitingCount(read, NOW)).toBe(keys.length);
+  });
+
   it("counts threads paused mid-turn among what waits, though they aren't decisions", () => {
     const read = home({
       conversations: [

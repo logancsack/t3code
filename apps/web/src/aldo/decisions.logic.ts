@@ -125,6 +125,18 @@ export function aldoDecisions(
   // waiting card that would suppress the PR's real actions. Live requests win.
   const releaseOnly = (c: AldoHomeConversation) =>
     c.progress?.next.owner === "you" && c.progress.next.kind === "release" && !c.pending && !c.plan;
+  // A thread waiting on an approval card of Aldo's asks once, on that card:
+  // the ask its turn ended on (or its bare wait) isn't another decision. A
+  // request it's stopped on, a plan or a failure still is.
+  const askedOnCard = (c: AldoHomeConversation) => {
+    const kind = needsYouKind(c);
+    return (
+      (kind === "waiting" || (kind === "question" && isTurnAsk(c.pending))) &&
+      waitingApprovals(home.approvals, true).some(
+        (a) => a.status === "pending" && sameTarget(a.thread, c.thread),
+      )
+    );
+  };
   const fromThreads = needsYou.flatMap((c) => {
     if (
       releaseOnly(c) &&
@@ -133,6 +145,7 @@ export function aldoDecisions(
       )
     )
       return [];
+    if (askedOnCard(c)) return [];
     const decision = conversationDecision(c);
     return decision ? [decision] : [];
   });
